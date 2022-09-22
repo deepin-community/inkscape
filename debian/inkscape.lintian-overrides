@@ -1,0 +1,2 @@
+# These are fine: inkscape invokes python by itself
+unusual-interpreter usr/share/inkscape/extensions/*.py python

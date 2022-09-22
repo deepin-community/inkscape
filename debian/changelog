@@ -1,0 +1,1773 @@
+inkscape (1.2.1+ds-1) UNRELEASED; urgency=medium
+
+  * update
+
+ -- Debian Multimedia Maintainers <debian-multimedia@lists.debian.org>  Tue, 02 Aug 2022 03:12:32 -0400
+
+inkscape (1.2.1+ds-1) unstable; urgency=medium
+
+  * New upstream version 1.2.1+ds
+    https://inkscape.org/news/2022/07/14/important-release-inkscape-version-121-fixes-data/
+    https://wiki.inkscape.org/wiki/index.php/Release_notes/1.2.1
+    + Repack to remove the embedded copy of cairo.
+  * Bump python3-cssselect from Suggests to Recommends, as it is now pulled in
+    by many python extensions.  Closes: #1014822
+
+ -- Mattia Rizzolo <mattia@debian.org>  Fri, 15 Jul 2022 14:28:31 +0200
+
+inkscape (1.2-1) unstable; urgency=medium
+
+  * New upstream version 1.2
+    https://inkscape.org/news/2022/05/16/inkscape-12/
+    https://wiki.inkscape.org/wiki/index.php/Release_notes/1.2
+  * Drop patched applied upstream.
+  * d/control:
+    + Bump version required of lib2geom.
+    + Drop the explicit dependency on libpoppler-glib8 previously
+      added as a workaround for #969907 (not fixed, but enough time passed).
+    + Add Suggests on python3-(cssselect|packaging), as used by two extension.
+    + Bump Standards-Version to 4.6.1, no changes needed.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Mon, 23 May 2022 16:48:55 +0200
+
+inkscape (1.1.2-3) unstable; urgency=medium
+
+  * Add patch from upstream to fix crash when copying a 3d box without a
+    prospective.  Closes: #1001937
+
+ -- Mattia Rizzolo <mattia@debian.org>  Tue, 01 Mar 2022 17:51:02 +0100
+
+inkscape (1.1.2-2) experimental; urgency=medium
+
+  * Make tests fatal on all architectures again, as they seem to
+    be passing now.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Sat, 19 Feb 2022 18:18:46 +0100
+
+inkscape (1.1.2-1) unstable; urgency=medium
+
+  * New upstream version 1.1.2.
+    https://wiki.inkscape.org/wiki/index.php/Release_notes/1.1.2
+  * Drop patch applied upstream.
+  * Add patch from upstream to fix a crash when inkscape is run with --batch
+    and a gui is not available.  Closes: #997359
+  * Add patch to call `python3` instead of `python` when running tests.
+  * Add new build-dep on python3-lxml <!nocheck>.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Sat, 19 Feb 2022 13:40:23 +0100
+
+inkscape (1.1.1-3) unstable; urgency=medium
+
+  * Apply patch from Jessica Clarke to fix several unaligned access and
+    endianess-specific bugs.
+  * Drop patch skipping some tests that are now fixed by the above patch.
+  * Add patch from upstream to fix build with poppler 21.11.
+  * Link against the system-wide lib2geom instead of the embedded copy.
+    Don't do that in ubuntu/i386 where it's not available.  Closes: #989606
+
+ -- Mattia Rizzolo <mattia@debian.org>  Sun, 23 Jan 2022 14:01:26 +0100
+
+inkscape (1.1.1-2) unstable; urgency=medium
+
+  * Upload to unstable.
+  * d/control: add explicit Build-Depends on:
+    + libfontconfig-dev: already pulled by something else, but used directly.
+    + librsvg2-common: required to run a tests.  Normally this package is also
+      pulled in by something, but in some occasion it isn't.  Closes: #994741
+
+ -- Mattia Rizzolo <mattia@debian.org>  Sun, 26 Sep 2021 19:28:41 +0200
+
+inkscape (1.1.1-1) experimental; urgency=medium
+
+  * New upstream version 1.1.1
+    https://wiki.inkscape.org/wiki/index.php/Release_notes/1.1.1
+    + Hide a console warning.  Closes: #990782
+  * d/rules: build the tests in parallel.
+  * Remove patch applied upstream.
+  * Add a patch to disable two failing tests on armhf (known to upstream).
+
+ -- Mattia Rizzolo <mattia@debian.org>  Thu, 23 Sep 2021 13:51:50 +0200
+
+inkscape (1.1-1) experimental; urgency=medium
+
+  * New upstream version 1.1.
+    https://wiki.inkscape.org/wiki/index.php/Release_notes/1.1
+    + Fix crash when too many fonts are installed.  Closes: #960036
+    + Fix crash when rotating some objects.  Closes: #864415
+    + Prevent popups from plugins on copy.  Closes: 553456; LP: #418242
+  * Refresh patches.
+  * d/watch: Also uversionmangle the pgp signature.
+  * d/rules:
+    + Drop configure option that is now the default upstream.
+    + Drop workaround for something now fixed upstream.
+    + Drop special case for buster's dzw.
+    + Do a static build of 2geom and statically link inkscape to it.
+      This is temporary until I'll package 2geom separately (see #989606),
+      to avoid shipping 2geom from src:inkscape.
+  * d/control:
+    + Add new build-dependency on libgspell-1-dev,
+      libboost-filesystem-dev, libreadline-dev, ragel.
+    + Drop libxml-xql-perl from Suggests (unused since v0.91).  Closes: #987917
+
+ -- Mattia Rizzolo <mattia@debian.org>  Tue, 08 Jun 2021 16:32:57 +0200
+
+inkscape (1.0.2-4) unstable; urgency=medium
+
+  * d/control: Add an explicit dependency on libpoppler-glib8 because we need
+    a stricter version than what would otherwise be generated.  See #969907
+
+ -- Mattia Rizzolo <mattia@debian.org>  Wed, 14 Apr 2021 17:27:50 +0200
+
+inkscape (1.0.2-3) unstable; urgency=medium
+
+  * Add a fake version restriction to the imagemagick build-dependency.
+    This is a workaround for #413954 in graphicsmagick, that it is lying
+    about providing the same imagemagick interface but missing the `compare`
+    tool, which is required here.  Adding a version there forces dependency
+    resolvers to pick up the real imagemagick, which should fix the test
+    failures in kbsd.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Mon, 25 Jan 2021 11:23:17 +0100
+
+inkscape (1.0.2-2) unstable; urgency=medium
+
+  * Add a depndency on librsvg2-common as we need it to render the svg icons
+    in the gui interface.  Closes: #980396
+    Add it only for architectures where librsvg2 is available, also
+    Recommends it for all the other architectures that might have it
+    somehow.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Wed, 20 Jan 2021 02:23:52 +0100
+
+inkscape (1.0.2-1) unstable; urgency=medium
+
+  * New upstream version 1.0.2.
+    https://wiki.inkscape.org/wiki/index.php/Release_notes/1.0.2
+    https://inkscape.org/release/inkscape-1.0.2/
+    https://inkscape.org/news/2021/01/17/102-and-11alpha/
+  * Drop patches applied upstream.
+  * Switch build system from cmake+make to cmake+ninja.
+    + Fixes FTBFS with a very high level of parallelism.  Closes: #976935
+
+ -- Mattia Rizzolo <mattia@debian.org>  Mon, 18 Jan 2021 00:40:50 +0100
+
+inkscape (1.0.1-2) unstable; urgency=medium
+
+  * Backport several patches from the upstream stable branch.
+    + Fix build with a newer boost.  Closes: #975429
+  * Bump Standards-Version to 4.5.1, no changes needed.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Sun, 22 Nov 2020 10:55:48 +0100
+
+inkscape (1.0.1-1) unstable; urgency=medium
+
+  * New upstream version 1.0.1.
+    https://wiki.inkscape.org/wiki/index.php/Release_notes/1.0.1
+    https://inkscape.org/release/inkscape-1.0.1/
+    https://inkscape.org/news/2020/09/06/inkscape-version-101-patches-crashes-bugs/
+  * Drop patches applied upstream.
+  * Add patch to fix a SyntaxWarning in a Python extension.
+  * Drop our copy of the bash auto completion, now shipped upstream.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Thu, 10 Sep 2020 16:31:05 +0200
+
+inkscape (1.0-5) unstable; urgency=medium
+
+  * Add patch from upstream to allow users to resize the document property
+    dialog again.  Closes: #962185
+
+ -- Mattia Rizzolo <mattia@debian.org>  Thu, 30 Jul 2020 14:37:18 +0200
+
+inkscape (1.0-4) unstable; urgency=medium
+
+  * Add patch from upstream to fix crash using some cursors under Wayland.
+    Closes: #965969
+
+ -- Mattia Rizzolo <mattia@debian.org>  Wed, 22 Jul 2020 12:13:47 +0200
+
+inkscape (1.0-3) unstable; urgency=medium
+
+  [ shouhuanxiaoji ]
+  * d/rules: Fix typo in dh_missing override.  MR: !2
+
+  [ Mattia Rizzolo ]
+  * d/rules: Drop now unneeded dh_missing override.
+  * Rebuild against glibmm2.4/2.64.2-2 to pick up the proper versioned
+    dependency.  Closes: #964390
+
+ -- Mattia Rizzolo <mattia@debian.org>  Mon, 06 Jul 2020 19:53:49 +0200
+
+inkscape (1.0-2) unstable; urgency=medium
+
+  * d/rules:
+    + Don't run dwz when building for buster-backports.
+    + Build with -DCMAKE_BUILD_TYPE=Release.  Closes: #960955, #962934
+
+ -- Mattia Rizzolo <mattia@debian.org>  Wed, 24 Jun 2020 18:29:43 +0200
+
+inkscape (1.0-1) unstable; urgency=medium
+
+  [ Mattia Rizzolo ]
+  * New upstream version 1.0.  LP: #1876996
+    https://wiki.inkscape.org/wiki/index.php/Release_notes/1.0
+    https://inkscape.org/release/inkscape-1.0/
+    https://inkscape.org/news/2020/05/04/introducing-inkscape-10/
+  * d/watch: Update to point at the new source archive.
+  * Update Marc Jeanmougin's upstream gpg key.
+  * Refresh patches.
+  * Bump debhelper compat level to 13.
+
+  [ Gianfranco Costamagna ]
+  * Increase test timeout to 3 minutes instead of 1, to avoid failures when
+    a slow machine runs tests (such as riscv64 that is emulated in Ubuntu).
+
+ -- Mattia Rizzolo <mattia@debian.org>  Thu, 07 May 2020 20:57:39 +0200
+
+inkscape (1.0~rc1-4) unstable; urgency=medium
+
+  * d/rules: Fix architecture match, only make the testsuite fata on little
+    endian architectures.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Mon, 27 Apr 2020 22:58:01 +0200
+
+inkscape (1.0~rc1-3) unstable; urgency=medium
+
+  * d/rules:
+    + Use the correct variable used as cmake's build directory.
+    + Only consider the testsuite fatal on amd64 and arm64.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Mon, 27 Apr 2020 14:40:49 +0200
+
+inkscape (1.0~rc1-2) unstable; urgency=medium
+
+  * Add a patch to add -latomic to the linker flags when needed.
+    This should fix FTBFS in armel, mipsel, m68k and sh4.
+  * Run the testsuite at build time, add Build-Dep on imagemagick for that.
+  * Upload to unstable.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Mon, 27 Apr 2020 11:58:44 +0200
+
+inkscape (1.0~rc1-1) experimental; urgency=medium
+
+  * New upstream version 1.0~rc1.
+    https://wiki.inkscape.org/wiki/index.php/Release_notes/1.0
+    https://inkscape.org/release/inkscape-1.0rc1/
+
+ -- Mattia Rizzolo <mattia@debian.org>  Mon, 13 Apr 2020 17:09:01 +0200
+
+inkscape (1.0~beta2-1) experimental; urgency=medium
+
+  * New upstream version 1.0~beta2.
+    http://wiki.inkscape.org/wiki/index.php/Release_notes/1.0
+    https://inkscape.org/release/inkscape-1.0beta2/
+  * Refresh patches
+  * d/rules: now the extensions are properly present in the tarball, drop
+    multitarball hack.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Fri, 06 Dec 2019 13:07:44 +0100
+
+inkscape (1.0~beta1+ds-2) experimental; urgency=medium
+
+  * Add a patch to make the program icon appear also under Gnome with Wayland.
+    Closes: #942600
+
+ -- Mattia Rizzolo <mattia@debian.org>  Tue, 03 Dec 2019 18:21:19 +0100
+
+inkscape (1.0~beta1+ds-1) experimental; urgency=low
+
+  * New upstream version 1.0~beta1.  Closes: #933678
+    http://wiki.inkscape.org/wiki/index.php/Release_notes/1.0
+    https://inkscape.org/release/inkscape-1.0beta1/
+    + Also include the extensions.  Closes: #933688
+  * Drop the Drop_PS_and_PDF_support_in_MimeType patch.
+    This was added without any real satisfying explanation many years ago,
+    and I could figure why anybody would want this.
+    Let's stop this unjustified divergence from upstream.
+  * Add back Marc Jeanmougin's upstream key.
+  * Drop all patches, mostly applied upstream.
+  * Move everything from Python2 to Python3.  Closes: #883155; LP: #1735363
+    + d/p/python3: Add patch to call python3 instead of python while building.
+  * d/control: Update Build-Depends.
+  * Bump debhlper compat level to 12.
+  * Remove an extension that work only on Windows.  Closes: #930154
+
+ -- Mattia Rizzolo <mattia@debian.org>  Fri, 04 Oct 2019 23:08:14 +0200
+
+inkscape (1.0~alpha-1) experimental; urgency=medium
+
+  * New upstream version 1.0~alpha.
+    http://wiki.inkscape.org/wiki/index.php/Release_notes/1.0
+    https://inkscape.org/news/2019/01/17/inkscape-launches-version-0924/
+    + Ability to invert the ruler coordinates.  LP: #170049
+  * d/control:
+    + Update Vcs information for the experimental branch.
+    + Update Build-Depends for the gtk2 → gtk3 move.
+  * d/inkscape.docs: update paths.
+  * d/rules:
+    + Simplify command now that the autotools build system is gone.
+    + Stop installing the several /usr/share/inkscape/*/README files.
+  * d/source/lintian-overrides: drop now unused override about the removed
+    autotools build system.
+  * d/patches: refresh
+    + Drop a bunch of patches that were cherry-picked from upstream.
+    + Refresh the libcroco typos patch.
+    + Add patch from upstream fixing a bunch of typos.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Tue, 22 Jan 2019 15:19:27 +0100
+
+inkscape (0.92.5-1) unstable; urgency=medium
+
+  * New upstream version 0.92.5.
+    https://wiki.inkscape.org/wiki/index.php/Release_notes/0.92.5
+  * d/upstream/signing-key.asc:
+    + Add back Marc Jeanmougin's upstream key.
+    + Refresh upstream signing keys.
+  * Drop patches applied upstream
+  * debian/inkscape.mime: drop quoting around filename placeholder.
+    See lintian's quoted-placeholder-in-mailcap-entry.
+  * d/control: Bump Standards-Version to 4.5.0, no changes needed.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Mon, 13 Apr 2020 15:10:28 +0200
+
+inkscape (0.92.4-5) unstable; urgency=medium
+
+  * Fix syntax error in a patch that would prevent building the package
+    against an older version of cairo.
+    Thanks to Thomas Arendsen Hein <thomas@intevation.de> for reporting.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Thu, 06 Feb 2020 14:43:49 +0100
+
+inkscape (0.92.4-4) unstable; urgency=medium
+
+  * Add patch from upstream to fix FTBFS with poppler 0.76.
+  * d/control: Bump Standards-Version to 4.4.1, no changes needed.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Fri, 04 Oct 2019 22:33:06 +0200
+
+inkscape (0.92.4-3) unstable; urgency=medium
+
+  * Add patch from upstream master branch to output a useful error if the
+    tutorials aren't installed.  LP: #1803021
+  * d/control: switch Recommends from non-existent transfig to fig2dev.
+    Closes: #925171
+
+ -- Mattia Rizzolo <mattia@debian.org>  Wed, 20 Mar 2019 21:54:39 +0100
+
+inkscape (0.92.4-2) unstable; urgency=medium
+
+  [ Matteo F. Vescovi ]
+  * debian/control: drop myself from Uploaders.
+
+  [ Mattia Rizzolo ]
+  * Add a patch to update the appstream data file.  Closes: #920338
+
+ -- Mattia Rizzolo <mattia@debian.org>  Thu, 24 Jan 2019 19:29:41 +0100
+
+inkscape (0.92.4-1) unstable; urgency=medium
+
+  * New upstream version 0.92.4.
+    http://wiki.inkscape.org/wiki/index.php/Release_notes/0.92.4
+    https://inkscape.org/news/2019/01/17/inkscape-launches-version-0924/
+  * d/patches:
+    + Remove patches applied upstream.
+    + Add patch to fix a spelling error.
+  * d/control:
+    + Bump debhelper compat level to 12.
+    + Bump Standards-Version to 4.3.0, no changes needed.
+    + Add a Build-Depends on libgmock-dev.
+  * Update upstream signing key.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Thu, 17 Jan 2019 20:46:29 +0100
+
+inkscape (0.92.3-7) unstable; urgency=medium
+
+  * Team upload.
+  * Add patch from upstream to fix build with poppler 0.71
+
+ -- Jeremy Bicha <jbicha@debian.org>  Sun, 25 Nov 2018 08:08:16 -0500
+
+inkscape (0.92.3-6) unstable; urgency=medium
+
+  * d/watch: fix a few syntax errors.  Thanks to yadd for pointing them out.
+  * Add patch from upstream to fix crashes during shift/ctrl+click actions.
+    Closes: #911652
+  * Override lintian tag autotools-pkg-config-macro-not-cross-compilation-safe,
+    as we are not using autotools.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Mon, 05 Nov 2018 20:23:06 +0100
+
+inkscape (0.92.3-5) unstable; urgency=medium
+
+  * Re-arrenge the patch files.
+  * Add patch from upstream to fix build with poppler 0.69.  Closes: #910867
+  * Use the new debhelper-compat(=11) notation and drop d/compat.
+  * Try to simplify d/watch using substitution patterns.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Sat, 13 Oct 2018 12:48:22 +0200
+
+inkscape (0.92.3-4) unstable; urgency=medium
+
+  [ Mattia Rizzolo ]
+  * d/bash-completion: fix completion to use the runtime-evaluating _have()
+    instead of the static check have().  LP: #1792835
+  * Mark inkscape-tutorials as Multi-Arch:foreign (from the m-a hinter).
+  * Bump Standards-Version to 4.2.1, no changes needed.
+  * Add patch from upstream to make the command-line PDF output reproducible.
+    Thanks to Chris Lamb <lamby@debian.org> for the patch!  Closes: #893314
+
+  [ Andrej Shadura ]
+  * Add patch from upstream to fix crash when resizing elements with snapping
+    enabled.  Closes: #910379; LP: #1796046
+
+ -- Mattia Rizzolo <mattia@debian.org>  Mon, 08 Oct 2018 11:27:04 +0200
+
+inkscape (0.92.3-3) unstable; urgency=medium
+
+  * Team upload.
+  * Backport 2 patches to fix build with poppler 0.65.
+
+ -- Jeremy Bicha <jbicha@debian.org>  Sat, 25 Aug 2018 10:29:08 -0400
+
+inkscape (0.92.3-2) unstable; urgency=medium
+
+  * d/control: Bump Standards-Version to 4.1.4, no changes needed.
+  * Split the tutorials on their own inkscape-tutorials binary, and don't
+    install them by default.  Closes: #471076; LP: #238276
+
+ -- Mattia Rizzolo <mattia@debian.org>  Mon, 21 May 2018 16:22:40 +0200
+
+inkscape (0.92.3-1) unstable; urgency=medium
+
+  * New upstream version 0.92.3.
+    http://wiki.inkscape.org/wiki/index.php/Release_notes/0.92.3
+    https://inkscape.org/en/news/2018/03/22/announcing-0923-release-inkscape
+
+ -- Mattia Rizzolo <mattia@debian.org>  Fri, 23 Mar 2018 17:43:46 +0100
+
+inkscape (0.92.3~pre0-1) unstable; urgency=medium
+
+  [ Mattia Rizzolo ]
+  * New upstream version 0.92.3~pre0.
+    http://wiki.inkscape.org/wiki/index.php/Release_notes/0.92.3
+    + Compact layout for Document Properties.  Closes: #867083; LP: #1510831
+  * d/control: Update Maintainer address to move away from alioth.
+  * Rename d/mime to d/inkscape.mime for consistency.
+  * Drop patch for poppler 0.58, applied upstream.
+
+  [ Ondřej Nový ]
+  * d/control: Set Vcs-* to salsa.debian.org
+
+ -- Mattia Rizzolo <mattia@debian.org>  Mon, 05 Mar 2018 21:53:25 +0100
+
+inkscape (0.92.2-3) unstable; urgency=medium
+
+  * Bump debhelper compat level to 11.
+  * Stop using gnome-pkg-tools.
+    inkscape in Ubuntu has been demoted from main to universe, so there is
+    no need to do anything regarding language packs.  Closes: #885108
+  * Rename d/docs to d/inkscape.docs for clearity.
+  * debian/control:
+    + Drop unused build-dependency on libart-2.0-dev.  Closes: #885794
+    + Bump Standards-Version to 4.1.3, no changes needed.
+    + Set Rules-Requires-Root: no.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Sat, 30 Dec 2017 23:15:28 +0100
+
+inkscape (0.92.2-2) unstable; urgency=medium
+
+  * debian/control:
+    + Remove alternative suggestion of dia-gnome, not available anymore.
+      Closes: #878585
+    + Bump Standards-Version 4.1.2, no changes needed.
+  * Add patch from upstream to fix build with poppler 0.58.  Closes: #883519
+
+ -- Mattia Rizzolo <mattia@debian.org>  Mon, 04 Dec 2017 21:02:35 +0100
+
+inkscape (0.92.2-1) unstable; urgency=medium
+
+  * New upstream version 0.92.2.
+    http://wiki.inkscape.org/wiki/index.php/Release_notes/0.92.2
+    + Fix PDF+TeX output for text inside groups with clip/mask.
+      Closes: #823953; LP: #1417470
+  * Update the upstream signing keys.
+  * Bump Standards-Version to 4.0.1, no changes needed.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Wed, 09 Aug 2017 11:36:38 +0200
+
+inkscape (0.92.2~pre0-1) unstable; urgency=medium
+
+  * New upstream version 0.92.2~pre0.
+    http://wiki.inkscape.org/wiki/index.php/Release_notes/0.92.2
+    + Fix an integer overflow.  Closes: #838654
+    + Fix compilation with GCC 7.  Closes: #853453
+  * d/dirs: remove, useless.
+  * d/patches: drop 15484 patch, applied upstream.
+  * d/control: bump Standards-Version to 4.0.0, no changes needed.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Wed, 26 Jul 2017 16:07:58 +0200
+
+inkscape (0.92.1-1) unstable; urgency=medium
+
+  * New upstream version 0.92.1.
+    http://wiki.inkscape.org/wiki/index.php/Release_notes/0.92.1
+    + Fixes a bug involving the line-height CSS property.  Closes: #852837
+  * Remove patches applied upstream.
+  * Backport patch from upstream trunk:
+    + 15484: support for old scour 0.26.  Closes: #852290
+
+ -- Mattia Rizzolo <mattia@debian.org>  Thu, 16 Feb 2017 11:32:16 +0100
+
+inkscape (0.92.0-4) unstable; urgency=medium
+
+  * Backport more patches from upstream 0.92.x branch:
+    + 15320: Fix regression on selecting objects after locking layers.
+    + 15323: Fix crash on ungrouping in v0.92.
+    + 15324: Fix insane memory leak and crash with pattern along path.
+    + 15325: Fixes bugs in copy LPE's.
+  * Move patches from upstream's 0.92.x branch under the upstream/0.92.x
+    directory, and the ones from trunk under upstream/trunk,
+    and name them after the upstream commit number.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Sun, 22 Jan 2017 20:45:39 +0100
+
+inkscape (0.92.0-3) unstable; urgency=medium
+
+  * d/rules: don't run dh_scour, to avoid breaking internal SVGs (markers, …).
+    LP: #1638373
+
+ -- Mattia Rizzolo <mattia@debian.org>  Thu, 12 Jan 2017 01:05:44 +0100
+
+inkscape (0.92.0-2) unstable; urgency=medium
+
+  * Upload to unstable.
+  * Gbp: back to master.
+  * d/control:
+    + require a new enough version of bash-completion, so backports users will
+      still have bash completion after the upgrade.
+    + Recommend python-scour to enable the feature "save as optimized svg".
+  * New patches from upstream trunk:
+    + 0002-Fix-lintian-s-executable-not-elf-or-script.patch
+    + 0003-Install-the-localized-manpages-in-the-correct-path.patch
+    + 0006-Suppress-warnings-on-symbols-dialog.patch
+  * New patches waiting to be upstreamed:
+    + 0004-typos-libcroco.patch
+    + 0005-Fix-typo-in-a-variable-name.patch
+  * d/inkscape.lintian-overrides: drop, lintian warnings fixed by properly
+    installing the manpages.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Mon, 09 Jan 2017 15:03:04 +0100
+
+inkscape (0.92.0-1) experimental; urgency=medium
+
+  * New upstream version 0.92.0.
+    https://inkscape.org/en/news/2017/01/04/inkscape-version-092-released/
+    http://wiki.inkscape.org/wiki/index.php/Release_notes/0.92
+    + Fix bug where arcs were not rendered accuretely.  Closes: #668224
+    + Fix crash when using the poppler PDF importer.  Closes: #816494
+    + Fix bug involving duplicating a text linked to a path.  Closes: #522532
+    + Fix bug where Bézier curves were drawn instead of arcs.  Closes: #598791
+    + Fix bug on parsing flags for arch path.  Closes: #740785
+  * gbp: switch packaging branch to experimental.
+  * Bump debhelper compat level to 10.
+    + Drop --parallel and '--with autotools_dev', now defaults.
+  * Drop patches applied upstream
+    - fix-FTBFS.patch
+    - reproducible-build.patch
+    - fix-FTBFS-with-gcc6.patch
+    - fix-cursor-color-in-BE.patch
+  * Move to the cmake build system.
+  * d/control:
+    + Build-dep on libpotrace-dev for the Trace Bitmap and Paintbucket tools.
+    + Build-dep on libdbus-1-dev and libdbus-glib-1-dev for dbus support.
+  * d/rules:
+    + Enable DBus support.
+    + Override override_dh_autoreconf, useless now that we're using cmake.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Wed, 04 Jan 2017 16:54:12 +0100
+
+inkscape (0.91-12) unstable; urgency=medium
+
+  [ Daniel Kahn Gillmor ]
+  * d/control: Use https for the Homepage field.  Closes: #837291
+
+  [ Mattia Rizzolo ]
+  * Add patch to fix cursor colors when running in a Big Endian systems.
+    Thanks to Steven Gawroriski <steven@multiphasicapps.net> for the patch.
+    Closes: #841853
+  * Mark the reproducible-builds patch as forwarded (and applied).
+
+ -- Mattia Rizzolo <mattia@debian.org>  Fri, 11 Nov 2016 16:57:07 +0000
+
+inkscape (0.91-11) unstable; urgency=medium
+
+  * Build with gnome-pkg-tools for automatic langpack support in Ubuntu.
+    This will allow to drop the last delta between Debian and Ubuntu.
+    Thanks to Jeremy Bicha <jbicha@ubuntu.com> for the patch.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Tue, 06 Sep 2016 08:50:37 +0000
+
+inkscape (0.91-10) unstable; urgency=medium
+
+  * Add patch to fix compilation with gcc-6 (with --std=c++14).  Closes: #835716
+
+ -- Mattia Rizzolo <mattia@debian.org>  Fri, 02 Sep 2016 15:04:34 +0000
+
+inkscape (0.91-9) unstable; urgency=medium
+
+  * Disable gnome-vfs support.  Closes: #822912
+  * debian/rules:
+    + Remove dh_auto_configure override: those are default options anyway.
+    + Remove useless variable definitions.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Fri, 29 Apr 2016 15:45:03 +0000
+
+inkscape (0.91-8) unstable; urgency=medium
+
+  * debian/control:
+    + Use my @debian.org email address.
+    + Bump Standards-Version to 3.9.8, no changes needed.
+    + Use HTTPS in Vcs-Git.
+    + Demote pstoedit to Suggests.
+    + Document suggested packages.  Closes: #771807
+  * debian/watch: rewrite, using format=4 and pgpmode=next/prev to allow gpg
+    verification of the tarball.
+    Thanks to Osamu Aoki <osamu@debian.org> for the help and for implementing
+    all this new stuff in devscripts.
+  * debian/inkscape.menu: remove, after CTTE's decision in #741573.
+  * debian/patches/fix-FTBFS.patch: backport patch from upstream to fix FTBFS
+    with a glibmm without Glib::ScopedPtr.  Closes: #822392
+
+ -- Mattia Rizzolo <mattia@debian.org>  Tue, 26 Apr 2016 22:06:31 +0000
+
+inkscape (0.91-7) unstable; urgency=medium
+
+  * debian/control: change build-dependency on libgsl0-dev to libgsl-dev.
+    Closes: #806833
+
+ -- Mattia Rizzolo <mattia@mapreri.org>  Wed, 02 Dec 2015 06:48:27 +0000
+
+inkscape (0.91-6) unstable; urgency=medium
+
+  * debian/rules: stop handling DEB_BUILD_OPTIONS=noopt on our own, nowadays
+    dpkg takes care of that.
+  * debian/watch: rewrite to point at launchpad.net and improve it.
+  * use dh_bash-completion to handle the bash completion. (This also fixes the
+    package-installs-into-obsolete-dir lintian warning when using
+    bash-completion >= 1:2.1-4.2).
+    + debian/inkscape.maintscript: also remove the bash completion from /etc.
+  * debian/upstream/signing-key.asc: add, with the key of the 3 inkscape
+    release managers. We can't currently automate the signature check in
+    debian/watch because they seems to do not use a costant suffix for the
+    signature (sometimes .asc, sometimes .sig).
+    Add the key anyway, so the tarball can easily be verified manually or by
+    other means.
+  * debian/inkscape.lintian-overrides: add to override a couple of
+    spelling-error-in-manpage due to French words.
+
+ -- Mattia Rizzolo <mattia@mapreri.org>  Tue, 27 Oct 2015 10:54:44 +0100
+
+inkscape (0.91-5) unstable; urgency=medium
+
+  [ Matteo F. Vescovi ]
+  * debian/control: dh-python b-dep added
+  * debian/README.source: file dropped (Closes: #696924)
+
+  [ Mattia Rizzolo ]
+  * debian/patches/reproducible-build.patch: add to allow reproducible build.
+  * debian/rules: enable hardening.
+  * debian/control: Replace recommends on perlmagick (which is a transitional
+    package) by libimage-magick-perl.
+    Thanks to Martin Michlmayr <tbm@hp.com> for reporting (Closes: #789232)
+
+ -- Mattia Rizzolo <mattia@mapreri.org>  Fri, 19 Jun 2015 08:05:18 +0000
+
+inkscape (0.91-4) unstable; urgency=medium
+
+  * Upload to unstable
+
+  [ Matteo F. Vescovi ]
+  * debian/control: set DMM Team as Maintainer
+  * debian/gbp.conf: git-dch -> dch parameter fixed
+
+  [ Mattia Rizzolo ]
+  * debian/control: add myself to Uploaders
+  * debian/control: update Vcs-* links to point
+    the repo in the pkg-multimedia namespace
+
+ -- Matteo F. Vescovi <mfv@debian.org>  Thu, 30 Apr 2015 08:39:35 +0200
+
+inkscape (0.91-3) experimental; urgency=medium
+
+  * Cherry-pick commit from unstable suite
+    - debian/control: build-dependencies updated [b4f5c6f]
+      - librevenge-dev added
+      - libwpd-dev (>= 0.9.0) dropped
+      - libwpg-dev (>= 0.2.0) bumped to libwpg-dev (>= 0.3.0)
+
+ -- Matteo F. Vescovi <mfv@debian.org>  Thu, 12 Feb 2015 15:04:45 +0100
+
+inkscape (0.91-2) experimental; urgency=medium
+
+  * debian/rules: override_dh_auto_test dropped (Closes: #776857)
+
+ -- Matteo F. Vescovi <mfv@debian.org>  Mon, 02 Feb 2015 17:58:28 +0100
+
+inkscape (0.91-1) experimental; urgency=medium
+
+  * New upstream release
+
+ -- Matteo F. Vescovi <mfv@debian.org>  Mon, 02 Feb 2015 12:10:35 +0100
+
+inkscape (0.91~pre4-1) experimental; urgency=medium
+
+  * New upstream pre-release
+
+ -- Matteo F. Vescovi <mfv@debian.org>  Mon, 19 Jan 2015 10:16:13 +0100
+
+inkscape (0.91~pre3-1) experimental; urgency=medium
+
+  * New upstream pre-release
+  * debian/control: Uploader e-mail address updated
+  * debian/control: S-V bump 3.9.5 => 3.9.6 (no changes needed)
+
+ -- Matteo F. Vescovi <mfv@debian.org>  Thu, 18 Dec 2014 09:30:56 +0100
+
+inkscape (0.48.5-3) unstable; urgency=medium
+
+  * debian/patches/: patchset updated
+    - 0006-Update_to_new_libwpg.patch refreshed
+    - 0007-Fix_API_mismatch.patch added (Closes: #754716)
+      Thanks to Pino Toscano (pino) for the patch.
+
+ -- Matteo F. Vescovi <mfvescovi@gmail.com>  Fri, 19 Sep 2014 11:11:07 +0200
+
+inkscape (0.91~pre2-1) experimental; urgency=medium
+
+  * New upstream pre-release
+
+ -- Matteo F. Vescovi <mfvescovi@gmail.com>  Thu, 21 Aug 2014 14:48:57 +0200
+
+inkscape (0.48.5-2) unstable; urgency=medium
+
+  * debian/patches/: patchset updated
+    - 0006-Update_to_new_libwpg.patch added (Closes: #753430)
+      Thanks to Rene Engelhard (rene) for the patch.
+  * debian/control: build-dependencies updated
+    - librevenge-dev added
+    - libwpd-dev (>= 0.9.0) dropped
+    - libwpg-dev (>= 0.2.0) bumped to libwpg-dev (>= 0.3.0)
+  * debian/: dh-autoreconf usage applied
+
+ -- Matteo F. Vescovi <mfvescovi@gmail.com>  Sat, 09 Aug 2014 14:22:26 +0200
+
+inkscape (0.48.5-1) unstable; urgency=medium
+
+  [ Luca Bruno ]
+  * debian/rules: fix FTBFS on alpha (Closes: #738155)
+
+  [ Mattia Rizzolo ]
+  * debian/patches/: patchset updated against v0.48.5
+    - 0004-Fix_FTBFS_on_gcc-4.8.patch refreshed
+    - 0005-Fix_FreeType_include.patch dropped (applied upstream)
+    - 0006-Fix_FTBFS_on_poppler-0.26.patch dropped (applied upstream)
+    - 0005-Fix_FTBFS_due_to_tests.patch added
+
+  [ Matteo F. Vescovi ]
+  * Imported Upstream version 0.48.5
+
+ -- Matteo F. Vescovi <mfvescovi@gmail.com>  Tue, 08 Jul 2014 15:49:42 +0200
+
+inkscape (0.91~pre1-1) experimental; urgency=medium
+
+  * New upstream pre-release
+    - debian/control: poppler versioning dropped
+    - debian/patches/: patchset updated
+      - 0002-Fix_FTBFS_on_poppler-0.26.patch dropped (applied upstream)
+  * debian/control: libcdr-dev and libvisio-dev b-deps added (Closes: #751090)
+
+ -- Matteo F. Vescovi <mfvescovi@gmail.com>  Mon, 23 Jun 2014 17:11:17 +0200
+
+inkscape (0.91~pre0-1) experimental; urgency=medium
+
+  * New upstream pre-release
+    - debian/control: python-lxml b-dep added
+    - debian/rules: dh_auto_test overridden for test purpose
+    - debian/patches/: patchset refreshed against v0.91~pre0
+      - 0001-Fix_Datamatrix_UI_issue.patch dropped (applied upstream)
+      - 0002-Drop_PS_and_PDF_support_in_MimeType.patch => #0001
+      - 0003-Fix_LP_-911146.patch dropped (applied upstream)
+      - 0004-Fix_FTBFS_on_gcc-4.8.patch dropped (applied upstream)
+      - 0005-Fix_FreeType_include.patch dropped (applied upstream)
+      - 0006-Fix_FTBFS_on_poppler-0.26.patch updated and => #0002
+  * debian/control: b-dep bump to use poppler (>= 0.26)
+
+ -- Matteo F. Vescovi <mfvescovi@gmail.com>  Thu, 05 Jun 2014 15:45:25 +0200
+
+inkscape (0.48.4-5) unstable; urgency=medium
+
+  * debian/patches/: patchset updated
+    - 0006-Fix_FTBFS_on_poppler-0.26.patch added
+
+ -- Matteo F. Vescovi <mfvescovi@gmail.com>  Thu, 05 Jun 2014 09:05:43 +0200
+
+inkscape (0.48.4-4) unstable; urgency=medium
+
+  * debian/: python dependency fixed
+  * debian/control: b-dep bump liblcms1-dev => liblcms2-dev (Closes: #745533)
+
+ -- Matteo F. Vescovi <mfvescovi@gmail.com>  Wed, 23 Apr 2014 09:22:50 +0200
+
+inkscape (0.48.4-3) unstable; urgency=medium
+
+  * debian/control: S-V bump 3.9.4 => 3.9.5 (no changes needed)
+  * debian/control: Uploader e-mail address updated
+  * debian/patches/: patchset updated
+    - 0005-Fix_FreeType_include.patch added (Closes: #733118)
+      Thanks to Adam Conrad for the patch.
+
+ -- Matteo F. Vescovi <mfvescovi@gmail.com>  Fri, 27 Dec 2013 09:45:37 +0100
+
+inkscape (0.48.4-2) unstable; urgency=low
+
+  * debian/control: fields update
+    - Duplicate Homepage field removed
+    - VCS-* fields repositioned
+  * debian/watch: path updated
+  * debian/: dh bump 7 => 9
+  * debian/source/format: 3.0 (quilt) file added
+  * debian/patches/: patchset re-worked using gbp-pq
+    - patches re-worked using gbp-pq (authorships kept)
+    - debian/control: quilt b-dep dropped
+    - debian/rules: quilt usage dropped
+  * debian/gbp.conf: file added
+  * debian/control: autotools-dev b-dep added
+  * debian/rules: drastic simplification
+  * debian/control: S-V bump 3.8.3 => 3.9.4 (no changes needed)
+  * debian/control: python-lxml Suggests => Recommends (Closes: #389540)
+  * debian/control: python-numpy Suggests => Recommends (Closes: #440566)
+  * debian/control: libgnomevfs2-extra Suggests => Recommends
+    (Closes: #602599)
+  * debian/control: skencil Suggests dropped.
+    The package has been removed from unstable
+    on 2010-09-03 and from testing on 2010-09-04. (Closes: #712192)
+  * debian/control: transfig added to Recommends (Closes: #601770)
+  * debian/control: python dropped from Suggests (Closes: #628009)
+  * debian/control: Package description updated.
+    Thanks to Phil Bull <philbull@gmail.com> for the new description.
+    (Closes: #635244) (LP: #811634)
+
+ -- Matteo F. Vescovi <mfv.debian@gmail.com>  Tue, 02 Jul 2013 17:25:52 +0200
+
+inkscape (0.48.4-1) unstable; urgency=low
+
+  * Upload to unstable
+  * debian/control: added myself to Uploaders
+  * debian/patches/: patchset updated
+    - 04-Fix_FTBFS_on_gcc-4.8.patch added (Closes: #701297)
+
+ -- Matteo F. Vescovi <mfv.debian@gmail.com>  Fri, 21 Jun 2013 15:13:32 +0200
+
+inkscape (0.48.4-0.1) experimental; urgency=low
+
+  * Non-maintainer upload.
+  * New upstream release (Closes: #696181)
+    - debian/patches/: patch #03 for CVE-2012-5656
+      was merged upstream, so dropped our copy
+    - libpng15 incompatibility fixed (Closes: #649975)
+    - fixes compatibility with poppler 0.20.x (Closes: #679890)
+  * debian/changelog: old NMU changelog entry added (Closes: #564022)
+
+ -- Matteo F. Vescovi <mfv.debian@gmail.com>  Thu, 24 Jan 2013 10:21:49 +0100
+
+inkscape (0.48.3.1-1.3) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * Add Debian patch to fix relative filename vulnerability (Closes: #654341).
+
+ -- John Paul Adrian Glaubitz <glaubitz@physik.fu-berlin.de>  Sat, 29 Dec 2012 19:15:46 +0100
+
+inkscape (0.48.3.1-1.2) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * Add Debian patch to fix vulnerability CVE-2012-5656 (Closes: #696485).
+
+ -- John Paul Adrian Glaubitz <glaubitz@physik.fu-berlin.de>  Mon, 24 Dec 2012 00:58:56 +0100
+
+inkscape (0.48.3.1-1.1) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * Switch the libpng12-dev build dependency to libpng-dev (closes: #662378)
+  * Add the libpoppler-private-dev build dependency (closes: #660987)
+
+ -- Pino Toscano <pino@debian.org>  Fri, 15 Jun 2012 16:40:22 +0200
+
+inkscape (0.48.3.1-1) unstable; urgency=low
+
+  * [cb1a6e2] delete 01-libwpg0.2.dpatch since proper patch appied upstream
+  * [041bdd7] delete 02-add-shebangs-and-fix-permissions.dpatch (applied upstream)
+  * [518e31b] delete 03-add-missing-mimetypes.dpatch (applied upstream)
+  * [df995c3] add datamatrix patch from ubuntu (closes: #618835)
+  * [169ca97] Imported Upstream version 0.48.3.1, this handles the following
+    debian bugs:
+    - closes: #665560: inkscape: Including individual glib headers no longer supported
+    - closes: #627637: JessyInk: Embedded Javascript Broken
+    - closes: #559332: inkscape: Cairo rendering broken for "use" elements with
+                                 scaling or a viewBox
+    - closes: #596836: clipart search spews messages in console
+    - closes: #628035: inkscape: in the pdf export dialog a wrong pdf version is
+                       reported
+    - closes: #651196: French manpage has accents replaced by some garbage
+    - closes: #633150: inkscape: New upstream version 0.48.3 is available
+  * [3f6e27a] use quilt instead of dpatch for patch handling
+  * [dd10775] Acknowledge NMU, inkscape doesn't register for handling of pdf
+    and ps anymore (closes: #613752)
+  * upload sponsored by Guido Guenther <agx@debian.org>
+    Thank you very much!
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Sun, 25 Mar 2012 13:51:37 +0200
+
+inkscape (0.48.1-2) unstable; urgency=low
+
+  * upload to unstable (closes: #611626)
+  * [d364fdc] link against libwpg0.2/libwpd0.9 (closes: 604825)
+    Thanks to Rene Engelhard <rene@debian.org> for his work and the patch!
+  * upload sponsored by Guido Guenther <agx@debian.org>
+    Thank you very much!
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Mon, 14 Feb 2011 13:48:21 +0100
+
+inkscape (0.48.1-1) experimental; urgency=low
+
+  * [f6250fa] Imported Upstream version 0.48.1
+  * [e5b9206] remove debian/patches/01-end-drag-fix.dpatch since applied
+    upstream
+  * [2b6fb5b] add patch to fix shebang lines in extensions scripts
+  * [f38e3e1] drop dependency upon ttf-bitstream-vera (closes: #597503)
+  * [0a91fb1] binary depends on ${misc:Depends} as indicated by lintian
+  * [02b4953] depend on libmagick++-dev instead of libmagick++9-dev
+  * [ea095c3] Add supported mime types (closes: #596982)
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Sun, 06 Feb 2011 12:05:13 +0100
+
+inkscape (0.48.0-1) experimental; urgency=low
+
+  * [cae07a3] New Upstream version 0.48.0
+  * [309c498] add patch to fix crash in node tool
+  * The highlights of this release are:
+      - multipath editing
+      - improved text tool: subscript, superscript, numerical input for text kerning, tracking and more
+      - new Airbrush tool
+      - LaTeX export with PDF/PS/EPS
+      - JessyInk extension to create presentations
+      - numerous bugfixes
+  * [56702cf] don't build-depend on libssl-dev (closes: #573338)
+  * [013b235] wrap lines in debian/control. patch by Benjamin Drung,
+    many thanks to him (closes: #576357)
+  * [747d3d1] add README.source adopted from nagios to make lintian a
+    bit happier
+  * [4df0df7] Remove all patches since they are applied upstream
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Mon, 16 Aug 2010 13:49:28 +0200
+
+inkscape (0.47.0-2) unstable; urgency=low
+
+  * Build depend on libaspell-dev, recommend aspell, add explanation to
+    package description (closes: #562060)
+  * update debian/watch patch by Kees Cook, many thanks to him
+    (closes: #562225)
+  * process DEB_BUILD_OPTIONS for "parallel=N" flag patch by Kees Cook,
+    many thanks to him. (Closes: #562226)
+  * Add patch to update man-page (closes:#570494)
+  * remove old unneeded patches
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Fri, 19 Feb 2010 19:21:33 +0100
+
+inkscape (0.47.0-1) unstable; urgency=low
+
+  * Imported Upstream version 0.47
+  * This is upstream version  0.47, I added the .0 because
+    I forget the ~ in the -pre versions.
+  * add proper Vcs-fields to debian/control
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Mon, 30 Nov 2009 17:23:20 +0100
+
+inkscape (0.47pre4-1) unstable; urgency=low
+
+  * Imported Upstream version 0.47pre4
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Fri, 06 Nov 2009 12:31:05 +0100
+
+inkscape (0.47pre2-2) unstable; urgency=low
+
+  * fix installation of usr/share/application-
+    registry/inkscape.applications
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Tue, 27 Oct 2009 08:16:59 +0100
+
+inkscape (0.47pre2-1) unstable; urgency=low
+
+  * new upstream release (closes: #532277)
+    Improvements and new features include:
+    - code cleanups and refractoring
+    - autosave feature, configurable via Inkscape preferences
+    - new and enhanced tools, extensions and filters
+    - new path effects
+    - enhanced import and export features
+    - improved svg support
+    - many other improvements and new features. For a better and more
+      comprehensive decription of enhancements see the online release notes at
+      http://wiki.inkscape.org/wiki/index.php/Release_notes/0.47
+  * remove 04-only-use-valid-font-families-in-text-tool.dpatch
+    since there is a better fix in the code now (closes: #496784)
+  * remove other patches which are no longer needed:
+    - 01_mips.dpatch
+    - 02-poppler-0.8.3.dpatch
+    - 03-chinese-inkscape.dpatch
+    - 05_fix_latex_patch.dpatch
+    - 06_gcc-4.4.dpatch
+    - 07_cdr2svg.dpatch
+    - 08_skip-bad-utf-on-pdf-import.dpatch
+    - 09_gtk-clist.dpatch
+    - 10_belarussian.dpatch
+    - 12_desktop.dpatch
+    fix patch permissions in clean target
+  * upload sponsored by Guido Guenther <agx@debian.org>
+  * build-depend on libgsl0-dev
+  * small adations to debian/rules
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Wed, 08 Jul 2009 22:37:10 +0200
+
+inkscape (0.46-9) unstable; urgency=low
+
+  * add 13_slider.dpatch by Marco Presi <marco.presi@sssup.it>
+    to allow the full range of values for r/g/b/alpha channels
+    (closes: #525100)
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Fri, 24 Apr 2009 18:35:32 +0200
+
+inkscape (0.46-8) unstable; urgency=low
+
+  * Try to workaround libpng-bug by 11_libpng.dpatch
+    (closes: #522477).
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Mon, 20 Apr 2009 19:26:39 +0200
+
+inkscape (0.46-7) unstable; urgency=low
+
+  * apply patch Arthur Loiret to fix GPREL16 relocation errors on
+    alpha (Closes: #521767).
+  * Acknowledge NMU for 0.46-5.1 by Josselin Mouette, which happened quite
+    parallel to the upload of 0.46-6
+  * raise Standards-Version to 3.8.1
+  * raise debhelper compat mode and dependency to 7
+  * add dh_desktop to install target in debian/rules
+    to fix lintian warning desktop-mimetype-without-update-call
+  * fix lintian warnings description-contains-homepage
+    and debian-rules-ignores-make-clean-error
+  * fix config changes in .diff.gz
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Thu, 02 Apr 2009 19:12:05 +0200
+
+inkscape (0.46-6) unstable; urgency=low
+
+  * fix typo: suggest python-uniconvertor instead of python-uniconverter
+    (Closes: #506217)
+  * add 09_gtk-clist.patch to work around a gtk bug (closes: #518633)
+    patch taken from https://bugs.launchpad.net/inkscape/+bug/238223
+  * upload sponsored by Guido Guenther <agx@debian.org>
+  * add 10_belarussian.dpatch by Hleb Valoshka
+    (closes: #514549)
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Sun, 08 Mar 2009 12:16:45 +0100
+
+inkscape (0.46-5.1) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * 03-gtk-includes.dpatch: patch from Ubuntu to fix FTBFS caused by
+    wrong GTK+ includes. Closes: #518633.
+
+ -- Josselin Mouette <joss@debian.org>  Mon, 23 Mar 2009 20:35:51 +0100
+
+inkscape (0.46-5) unstable; urgency=low
+
+  * Fix error in bash completion file introduced in the last upload.
+    Thanks to Salvatore Bonaccorso for spotting this.
+  * Include patch by Thomas Viehmann, which fixes a crash with pdf import in
+    some cases (Closes: #510234).
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Tue, 30 Dec 2008 23:40:25 +0100
+
+inkscape (0.46-4) unstable; urgency=low
+
+  * Fix lintian warning: menu-item-uses-apps-section (Closes: #508692).
+  * Add debian/watch file (Closes: #508690).
+  * Add support in bash completion file for jpeg, svgz, and pdf
+    (Closes: #428226).
+  * Add patch to give back LaTeX formula rendering option
+    (Closes: #464154, #506285).
+  * Thanks Salvatore Bonaccorso for his patches :-)
+  * Add patch by Martin Michlmayr <tbm@cyrius.com> to make inkscape compile
+    with gcc 4.4 (Closes: #505660)
+  * Suggest python-uniconvertor and add patch by Andreas Wenning to use it in
+    the .cdr input plugin instead of the old uniconv (Closes: #471109, #506217).
+  * Suggest libgnomevfs2-extra which is needed to make
+    "Import From Open Clip Art Library" work (Closes: #496785).
+  * Suggest libsvg-perl , as the txt2svg extension needs it (Closes: #504469).
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Sun, 28 Dec 2008 17:35:10 +0100
+
+inkscape (0.46-3) unstable; urgency=low
+
+  * suggest ttf-bitstream-vera (Closes: #496784)
+  * add a patch by Thomas Viehmann <tv@beamnet.de> to only use valid font
+    families in the text tool. Many thanks to him and Charles Plessy
+    <plessy@debian.org> for debugging this stuff.
+  * Acknowledge NMU by Thomas Viehmann <tv@beamnet.de>
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Tue, 28 Oct 2008 19:46:24 +0100
+
+inkscape (0.46-2.1) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * Add upstream patch fixing a crash in the open dialog
+    in the zh_CN.utf8 locale. Closes: #487623.
+    Thanks to Luca Bruno for the patch.
+
+ -- Thomas Viehmann <tv@beamnet.de>  Tue, 09 Sep 2008 23:29:02 +0200
+
+inkscape (0.46-2) unstable; urgency=low
+
+  * chmod a+x inkscape/extensions/xaml2svg/ during install in debian/rules
+  * change my email address in debian/control
+  * upload sponsored by Guido Guenther <agx@debian.org>
+  * add patch from gentoo to make inkscape build with libpoppler 0.8.3
+    http://sources.gentoo.org/viewcvs.py/gentoo-x86/media-gfx/inkscape/files/inkscape-0.46-poppler-0.8.3.patch?view=markup
+    (closes: #488170, #489083)
+
+
+ -- Wolfram Quester <wolfi@sigxcpu.org>  Tue, 22 Jul 2008 17:48:18 +0200
+
+inkscape (0.46-1) unstable; urgency=low
+
+  * acknowledge NMU by Aurelien Jarno, many thanks to him for making inkscape
+    build again
+  * new upstream release (Closes: #470832)
+    Improvements and new features include:
+    - speed and interactivity improvements
+    - better SVG compliance
+    - Open Clip Art Library integration
+    - Native PDF and AI import
+    - Dockable dialogs
+    For a more detailed description see /usr/share/doc/inkscape/NEWS.gz
+    The following bugs are fixed by this release:
+    - FTBFS: Global symbol "@INTLTOOL_ICONV" requires
+      explicit package name at ./intltool-merge line 94. (Closes: #436333)
+    - FTBFS: attributes.cpp:400: error: 'g_assert' was not declared in this
+      scope (Closes: #471622)
+    - Inkscape build requirements not met (Closes: #475071)
+    - translator credits in the about dialog is empty (Closes: #415940)
+  * remove 02_fix_ps2pdf_bashism.dpatch and
+    03_measure-add-english-units.dpatch since they are applied upstream
+  * add libboost-dev, libgtkspell-dev, libmagick++9-dev, libpoppler-glib-dev,
+    and libwpg-dev to build-deps in debian/control
+  * remove build-dependency on libperl-dev (Closes: #463130)
+  * change version dependencies to match those in configure script
+  * replace python-xml by python-lxml in Suggests: (Closes: #468598), add
+    ruby
+  * add python-numpy to Suggests:
+  * adopt package description to reflect the changes in Suggests: and Depends:
+  * raise Standards-Version to 3.7.3
+  * change executable bits on extension scripts as suggested by lintian
+    (quick'n'dirty fix)
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Tue, 15 Apr 2008 19:32:15 +0200
+
+inkscape (0.45.1-1.1) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * Fix autotools issues (closes: #436333):
+    - Remove all autotools change from the .diff.gz
+    - debian/patches/04_maintainer-mode.dpatch: new patch to enable
+      AM_MAINTAINER_MODE.
+    - debian/patches/05_autotools.dpatch: new patch containing the result
+      of reconfigure/relibtoolize/reintltoolize.
+  * Fix build with gcc-4.3 (closes: #467187):
+    - debian/patches/06_gcc-4.3.dpatch: new patch.
+
+ -- Aurelien Jarno <aurel32@debian.org>  Mon, 03 Mar 2008 16:58:31 +0100
+
+inkscape (0.45.1-1) unstable; urgency=low
+
+  * New upstream release, containing bugfixes
+  * fix bashism in ps2pdf.sh. (closes: #417245)
+    Thanks to Jérémy Bobbio <lunar@debian.org>
+  * add libssl-dev to enable SSL support in inkboard and
+    remove libloudmouth-dev since it is no longer used for inkboard, raise
+    required version of libgtk2.0-dev to >= 2.8.0-1 (closes: #410358)
+    Thanks to Kees Cook <kees@outflux.net> for pointing this out.
+  * add foot and yard units to inkscape's "measure path" extension
+    Thanks Daniel Kahn Gillmor <dkg-debian.org@fifthhorseman.net>
+    for the patch (closes: #417959)
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Wed, 25 Apr 2007 18:57:50 +0200
+
+inkscape (0.45-1) unstable; urgency=low
+
+  * new upstream version.
+    Improvements and new features include:
+    - Gaussian blur
+    - History dialog
+    - Several important tool features are added
+    - new extension effects
+    - Display speed and interactivity improved
+    - better bitmap tracing
+    - improved outline mode
+    - more commands in Help menu
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Mon,  5 Feb 2007 17:00:44 +0100
+
+inkscape (0.45~pre1-1) unstable; urgency=low
+
+  * new upstream version.
+    Debian bugs fixed by this version are:
+    - No tight-fitting bounding box in EPS output (closes: #396393)
+    - Effects->Render->LaTeX formula is unusable (closes: #376558)
+  * adopt 02_mips.dpatch to this new version (move to 01_mips.dpatch)
+  * remove 01_nb.po since applied upstream
+  * remove no longer needed --datarootdir option from configure call
+    in debian/rules
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Thu, 11 Jan 2007 11:36:22 +0100
+
+inkscape (0.44.1-1) unstable; urgency=low
+
+  * new upstream version. New features include:
+    - inkscape now compiles with gcc-4.2.x (Closes: #377013)
+    - added missing German version of the advanced tutorial and made
+      corrections to the calligraphy one; added missing Czech, German, and
+      Brazil-Portuguese tutorials to tarball; added missing German keytable to
+      tarball (Closes: #386616)
+    - applied changes to the German and Spanish translations of Inkscape
+      strings
+    For more changes and bug fixes not related to entries in debian's BTS see
+    the file /usr/share/doc/inkscape/NEWS.gz
+  * enable inkboard collaborative editing features (Closes: #343852)
+    added libloudmouth1-dev to Depends:
+  * update norwegian bookmål translation. (Thanks to Steinar H. Gunderson
+    <sesse@debian.org> for the update, closes: #387436)
+  * get rid of the xgot hack on mips (Thanks to Thiemo Seufer
+    <ths@networkno.de> for the patch, closes: #377082)
+  * move dia | dia-gnome and skencil from Recommends: to Suggests:
+    (Closes: #386360)
+  * Add --datarootdir=\$${prefix}/share --datadir=\$${prefix}/share
+    to configure options to repair datarootdir in config.h
+  * change debian/mime as suggested by James R. Van Zandt <jrvz@comcast.net>
+    Thanks for the patch. (Closes: #375249)
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Mon, 18 Sep 2006 18:05:08 +0200
+
+inkscape (0.44-1) unstable; urgency=low
+
+  * new upstream version (closes: #375497)
+    See /usr/share/doc/inkscape/NEWS.gz for new features, bugfixes and known
+    problems.
+  * add liblcms1-dev to build-depends and configure with --enable-lcms to
+    enable LittleCms color management.
+  * remove gcc-4.1.diff.dpatch and no-freetype-internals.diff since they are
+    applied upstream
+  * remove --with-perl and --with-python from configure options since they are
+    only stubs ATM.
+  * recommend skencil instead of sketch (closes: #370437)
+  * bump Standards-Version up to 3.7.2 (no changes)
+  * remove executable-bit from ps2pdf.cmd during install
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Tue, 13 Jun 2006 16:30:28 +0200
+
+inkscape (0.43-5) unstable; urgency=low
+
+  * move handling of debian-specific patches to dpatch (and build-depend on
+    it), little cleanup of debian/rules.
+  * remove "g++ (>= 4:4.0.2-2) [arm m68k hppa]" from build-dependencies
+  * added no-freetype-internals.diff submitted upstream by David Turner to
+    clean up inkscape's dealing with freetype. This patch also allows to build
+    inkscape using freetype 2.2.1. Thanks David!
+  * added gcc-4.1.diff submitted by Martin Michlmayr and Brian M. Carlson to fix
+    compilation with gcc-4.1. Thanks Martin and Brian!
+    (closes: #357112)
+  * upload sponsored by Martin Michlmayr <tbm@cyrius.com>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Mon, 29 May 2006 11:47:43 +0200
+
+inkscape (0.43-4) unstable; urgency=low
+
+  * In the last upload I removed gcc-3.4 in the build-depends but forgot to
+    adapt debian/rules. (Closes: #347682)
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Thu, 12 Jan 2006 11:40:19 +0100
+
+inkscape (0.43-3) unstable; urgency=low
+
+  * Acknowledge NMU, which in fact was an upload of my sponsor with my
+    knowledge (Closes: #341909, #342194, #342367)
+  * Build-Depend on g++ (>= 4:4.0.2-2) on arm/hppa/m68k to get rid of g++-3.4
+    on etch
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Sat, 24 Dec 2005 11:32:35 +0100
+
+inkscape (0.43-2) unstable; urgency=low
+
+  * Rebuild against newer libsigc++ (>= 2.0.16-2) to help the C++ transistion
+    (Closes: #341909)
+
+ -- Guido Guenther <agx@debian.org>  Fri,  9 Dec 2005 10:21:39 +0100
+
+inkscape (0.43-1) unstable; urgency=high
+
+  * New upstream version, new features include:
+    - Connectors: Objects can be connected using auto-routing lines
+    - calligraphy tool may now use a tablet pen with pressure and tilt
+      support
+    - better editing of Bezier curves
+    - new extensions, improved SVG compatibility
+  * Correct website for dia in extensions (Closes: #337353)
+  * urgency=high since this version fixes the buffer overflow discovered by
+    Joxean Koret (see CVE-2005-3737, debian bug 330894).
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Thu, 24 Nov 2005 11:54:49 +0100
+
+inkscape (0.42.2+0.43pre2-1) unstable; urgency=low
+
+  * New upstream version.
+  * Build with gcc-3.4 on arm m68k hppa (Closes: #336324).
+    Use the workaround provided in
+    http://lists.debian.org/debian-devel/2005/09/msg00020.html to escape from
+    Bug #323133.
+  * Just for the record: inkscape version 0.42+0.43pre1 and newer is not vulnerable to
+    the security bug mentioned in Bug #330894.
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Mon,  7 Nov 2005 17:27:35 +0100
+
+inkscape (0.42.2+0.43pre1-1) unstable; urgency=low
+
+  * New upstream version.
+  * Recommend dia | dia-gnome instead of dia only. Thanks to Olleg Samoylov
+    for spotting this (Closes: #328419).
+  * configure with python/perl extensions (Closes: #332825).
+    For that, build-depend on python-dev and libperl-dev.
+  * compile with -mieee on alpha to work around bug 330826 (closes: #330604).
+  * Bump Standards-Version up to 3.6.2 (no changes)
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Tue, 25 Oct 2005 14:18:56 +0200
+
+inkscape (0.42.2-1) unstable; urgency=low
+
+  * New upstream version.
+  * Just for the record: inkscape version 0.42 and newer is not vulnerable to
+    the security bug mentioned in Bug #321501.
+  * enable --with-gnome-vfs in debian/rules, add libgnomevfs2-dev to
+    Build-Depends
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Mon, 22 Aug 2005 12:06:23 +0200
+
+inkscape (0.42-1) unstable; urgency=low
+
+  * New upstream version.
+    New features include better flow text handling and text selection,
+    better PS/EPS Export and SVG/CSS Compliance, Colored Clones, new, powerful
+    ways to arrange objects. For more information please have a look into the
+    release notes.
+    This fixes the following bugs:
+    - Simple and reproducible crash sequence with color tool (Closes: #302159)
+    - inkscape: got frozen with 2 buttons (Closes: #296126)
+    - Cannot export _really_ large drawings (more than 10000px) (Closes:  #310864)
+    - updated german translation (Closes: #314041)
+    - fails to install (wrong dependencies) (Closes: #319958)
+    - new upstream version 0.42 available (Closes: #321015)
+  * Remove all patches from the debian package, since they were applied
+    upstream or backports.
+  * added Suggests: libxml-xql-perl, python-xml which are used by some
+    extensions in the new effect menu
+  * Fix typos in package description and add some info to copyright (thanks to Peter Moulder)
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Wed, 29 Jun 2005 11:13:02 +0200
+
+inkscape (0.41-5) unstable; urgency=low
+
+  * Backport Patch from upstream to allow correct handling of empty lines in
+    svg files when exporting to eps in certain cases (closes: #301984)
+  * Added note to debian/copyright that some code in inkscape is public domain
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Fri, 13 May 2005 12:04:30 +0200
+
+inkscape (0.41-4) unstable; urgency=high
+
+  * include a fix the segfault at startup on alpha. Since this makes inkscape
+    usable on alpha set urgency to high, to allow this fix to reach sarge.
+    (Closes: #261848)
+    Many thanks to Florian Hars <florian at hars.de> for the fix.
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Tue,  5 Apr 2005 14:01:10 +0200
+
+inkscape (0.41-3) unstable; urgency=low
+
+  * fix typo in package description (Closes: #297525)
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Wed,  2 Mar 2005 14:34:19 +0100
+
+inkscape (0.41-2) unstable; urgency=low
+
+  * grab patch from upstream to fix segfault on cmd-line export to png
+    (Closes: #295341)
+  * include file for bash-completion contributed by Julien Allali
+    <allali at univ-mlv.fr>. Many thanks to him!
+  * Move dia, libwmf-bin, pstoedit, sketch, imagemagick, and perlmagick
+    to Recommends: instead of Suggests: to avoid the warning about not
+    initialized extensions and get the functionality they provide into
+    a default install. Explain that these packages are needed in the package
+    description (Closes: #294930)
+  * Fix wording in the german translation of the "Could not load extensions"
+    dialogue (I really should use dpatch).
+  * add an additional hunk to inkscape-0.41_amd64.diff. This was sent in by
+    Andreas Jochens. Again thanks to him. I hope this is really fixed now.
+    (Closes: #288946)
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Thu, 24 Feb 2005 19:58:32 +0100
+
+inkscape (0.41-1) unstable; urgency=low
+
+  * New upstream version. changes to v. 0.40 include:
+    + Color tracing, as well as multi-level grayscale tracing, is now possible
+      with the built-in tracer.
+    + Clone tiler is an exciting new way to create patterns, tesselations,
+      scatterings, or just about any regular or chaotic arrangements with clones
+      of an original tile.
+    + Managing length units is cleaned up, extended, and centralized in the
+      document units preference stored with a document. The user unit (px) of
+      SVG is fully supported and made the default.
+    + It is possible to invert selections via the !-key.
+    + Icon theming is now possible.
+    + Revised translations, new translations of some tutorials.
+    + This upstream version closes: #293746, #292552
+  * remove export-orientation.diff since it was taken from upstream
+  * adopt the amd64 patch by Andreas Jochens to the new version
+  * set build-depends libgc >= 1:6.4-1, since inkscape will not build with
+    older versions. Some bugs inkscape suffered from had their reason in the
+    old libgc.
+  * added patch to fix lintian warnings executable-not-elf-or-script.
+  * suggest perlmagick to enable import files from Adobe Illustrator and
+    imagemagick since the blured shadows-script needs convert.
+  * add libxslt1-dev to build-depends
+  * upload sponsored by Guido Guenther <agx@debian.org>
+  * Guido Günther: fix typo in Build-Depends: that made the list look empty
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Thu, 10 Feb 2005 14:06:32 +0100
+
+inkscape (0.40-3) unstable; urgency=low
+
+  * Fixed typos and added link to wiki in man-page of inkview. Closes: #286310.
+  * Add patch by Andreas Jochens to allow compile on amd86/gcc-4.0.
+    Closes: #288946.
+  * Add patch by Philipp Hartmann as a workaround for people who want to
+    export as eps instead of printing. Closes: #292166.
+  * let the package synopsis start wit v instead of V to make lintian happy
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Sat, 29 Jan 2005 14:59:07 +0100
+
+inkscape (0.40-2) unstable; urgency=high
+
+  * High-urgency upload for sarge targetted RC bugfix.
+  * Build inkscape with -Wa,-xgot on mips, mipsel so that the linker can
+    handle the symbol tables correctly.  Closes: #283476.
+    This patch is from Steve Langasek. Many thanks to him.
+  * upload sponsored by Guido Guenther <agx@debian.org>
+  * GG: really set urgency to high
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Wed,  8 Dec 2004 18:54:45 +0100
+
+inkscape (0.40-1) unstable; urgency=low
+
+  * New upstream version. changes to v. 0.39 include:
+    + First version that supports layers.
+    + Text on path.
+    + Improved calligraphy pen, freehand pencil and star tool.
+    + Three new tutorials.
+    + More detail at http://www.inkscape.org/cgi-bin/wiki.pl?ReleaseNotes
+  * added hints="Vector" to debian/inkscape.menu
+  * cleanup debian/rules: remove comments remaining from dh_make, fix
+    intendation to meet the script from upstream
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Mon, 29 Nov 2004 15:06:27 +0100
+
+inkscape (0.39+0.40pre4-1) unstable; urgency=low
+
+  * This is upstream version 0.40pre4.
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Thu, 25 Nov 2004 13:42:32 +0100
+
+inkscape (0.39+0.40pre3-1) unstable; urgency=low
+
+  * This is upstream version 0.40pre3.
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Tue, 16 Nov 2004 10:59:39 +0100
+
+inkscape (0.39+0.40pre2-1) unstable; urgency=low
+
+  * This is upstream version 0.40pre2.
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Wed, 10 Nov 2004 17:42:40 +0100
+
+inkscape (0.39+0.40pre1-1) unstable; urgency=low
+
+  * new upstream version
+    New features include "Make bitmap copy", "Blurred shadows", "Randomized
+    Shapes", "Select Under/Drag Selected", better and easier handling of
+    default gradients, master opacity, node editing and the star tool as well
+    as a new tutorial on shapes.
+  * This is upstream version 0.40pre1. The versioning of debian is to make
+    sure the final version 0.40 is greater than this pre-Version
+  * remove PS-patch since it is applied upstream
+  * Adopt upstreams Depends: in control file
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Tue,  2 Nov 2004 15:21:06 +0100
+
+inkscape (0.39-7) unstable; urgency=low
+
+  * use %F instead of %U in inkscape.desktop.in (closes: #276785)
+  * rebuild against libpango1.0-0 from unstable (closes: #277063)
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Mon, 18 Oct 2004 15:50:01 +0200
+
+inkscape (0.39-6) unstable; urgency=medium
+
+  * urgency=medium to get proper printing into sarge.
+  * Thanks to Ross Burton for uncovering the hopefully last bug in my PS-patch
+    (closes: #270119).
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Wed, 13 Oct 2004 11:18:48 +0200
+
+inkscape (0.39-5) unstable; urgency=low
+
+  * change ADSC-patch so that printing in landscape mode is properly supported
+    when we print using PS-operators and as bitmap. Now ADSC-compliant PS is
+    generated in all cases. Thanks to Ross Burton for all his testing.
+    This finally closes: #270119.
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Tue, 14 Sep 2004 08:57:35 +0200
+
+inkscape (0.39-4) unstable; urgency=low
+
+  * change ADSC-patch to create ADSC-compliant PostScript even when using
+    "Print as bitmap".
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Mon, 13 Sep 2004 17:44:05 +0200
+
+inkscape (0.39-3) unstable; urgency=low
+
+  * create and apply patch to create ADSC-compliant PostScript and fix printing
+    in landscape mode when printing via "using postscript operators". The
+    landscape part of this patch is already applied upstream.
+    (closes: #270119)
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Thu,  9 Sep 2004 13:33:34 +0200
+
+inkscape (0.39-2) unstable; urgency=low
+
+  * sort and clean build-dependencies in control according to pjrm.
+  * removed libxml-parser-perl from build-debs and added intltool instead.
+    This means that we don't use the intltool included in orig.tar.gz anymore.
+  * Added dia, pstoedit, and libwmf-bin to suggests in order to get proper
+    ps/eps and wmf import.
+  * set CXXFLAGS="$(CFLAGS)" for configure. Thanks to Thimo Neubauer and Peter
+    Moulder for pointing this out (closes: #266014).
+  * don't use build-stamp anymore.
+  * trim some whitespace at the end of lines in this changelog.
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Tue, 17 Aug 2004 11:49:54 +0200
+
+inkscape (0.39-1) unstable; urgency=low
+
+  * New upstream version
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Fri, 16 Jul 2004 12:45:42 +0200
+
+inkscape (0.38.1+0.39pre4-1) unstable; urgency=low
+
+  * New upstream version
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Tue, 13 Jul 2004 17:32:39 +0200
+
+inkscape (0.38.1+0.39pre3-1) unstable; urgency=low
+
+  * New upstream version
+  * This is upstream version 0.39pre3. The versioning of debian is to make
+    sure the final version 0.39 is greater than this pre-Versions
+  * removed "Conflicts: inkscape-cvs" and "Provides: inkscape" from debian/control
+    because the regular inkscape package should be installable parallel to
+    inkscape-cvs (if I ever have time to create this one)
+  * added "Suggests: sketch" to debian/control because inkscape can use sketch
+    to export eps.
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Fri,  9 Jul 2004 00:24:02 +0200
+
+inkscape (0.38.1-4) unstable; urgency=low
+
+  * added link to the inkscape homepage to debian/control
+  * added "Conflicts: inkscape-cvs" and "Provides: inkscape" to debian/control
+    to ensure proper handling of the new inkscape-cvs package
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Thu, 10 Jun 2004 16:13:35 +0200
+
+inkscape (0.38.1-3) unstable; urgency=low
+
+  * move debian/menu to debian/inkscape.menu. This was needed because upstream
+    includes a slightly diffent inkscape.menu file. Thanks to Karsten Merker.
+  * upload sponsored by Karsten Merker
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Tue, 20 Apr 2004 18:44:45 +0200
+
+inkscape (0.38.1-2) unstable; urgency=low
+
+  * fixed wording of package description in debian/control
+    (thanks to Karsten Merker)
+  * upload sponsored by Karsten Merker
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Mon, 19 Apr 2004 15:50:48 +0200
+
+inkscape (0.38.1-1) unstable; urgency=low
+
+  * New upstream release to fix two bugs itroduced in the flurry of last-day
+    activity.
+  * added my fix to the KEYBINDINGS-section in inkscape.1.in again
+  * upload sponsored by Guido Guenther <agx@debian.org> and
+    Karsten Merker <merker@debian.org>
+
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Mon, 12 Apr 2004 21:11:01 +0200
+
+inkscape (0.38-1) unstable; urgency=low
+
+  * New upstream release:
+    Main goal for this release was to fix as many bugs as possible. Apart from
+    that, some new features and usability enhancements were included. Have a
+    look at /usr/share/doc/inkscape/NEWS for more information.
+  * remove debian/inkview.1 since it was included upstream.
+  * added my fix to the KEYBINDINGS-section in inkscape.1.in again
+  * don't remove po/*.gmo in debian/rules any longer
+  * remove debian/examples and dh_installexamples
+  * upload sponsored by Guido Guenther <agx@debian.org> and
+    Karsten Merker <merker@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Thu,  8 Apr 2004 12:24:13 +0200
+
+inkscape (0.37-5) unstable; urgency=low
+
+  * remove Guido Guenther <agx@debian.org> from Uploaders
+  * insert a pair of #ifdef DEBUG_MARKERS ... #endif in
+    src/dialogs/stroke-style.cpp, sp_stroke_style_set_marker_buttons()
+    as suggested by
+    http://cvs.sourceforge.net/viewcvs.py/inkscape/inkscape/src/dialogs/stroke-style.cpp?r1=1.23&r2=1.24&hideattic=0
+    (closes: #241668)
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Fri,  2 Apr 2004 19:09:03 +0200
+
+inkscape (0.37-4) unstable; urgency=low
+
+  * took updated po/es.po from upstream
+  * remove po/*.gmo in debian/rules
+  * added mime-type image/svg to debian/mime
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Tue, 30 Mar 2004 11:20:18 +0200
+
+inkscape (0.37-3) unstable; urgency=low
+
+  * converted inkscape.png to debian/inkscape.xpm and use this icon in the
+    menus (Trying to avoid lintians menu-icon-not-in-xpm-format)
+  * use dh_installexamples correctly. inkscape can display them even if
+    they are gzipped. (Closes: #232254)
+  * upload sponsored by Guido Guenther <agx@debian.org>
+  * added manpage for inkview
+  * fixed KEYBINDINGS-section in inkscape.1
+  * added inkscape.applications to have an entry in nautilus' "open with
+    another application" menu. I still don't know how I get an entry in "open
+    with"
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Fri, 13 Feb 2004 01:15:37 +0100
+
+inkscape (0.37-2) unstable; urgency=low
+
+  * the ./intltool-* scripts need libxml-parser-perl.
+
+ -- Guido Guenther <agx@debian.org>  Wed, 11 Feb 2004 15:36:31 +0100
+
+inkscape (0.37-1) unstable; urgency=low
+
+  * new upstream version
+  * added libsigc++-1.2-dev to Build-Depends
+  * removed no more existing TODO from debian/docs
+  * upload sponsored by Guido Guenther <agx@debian.org>
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Tue, 10 Feb 2004 14:02:10 +0100
+
+inkscape (0.36-3) unstable; urgency=low
+
+  * enable installation of debian menus
+  * install examples to /usr/share/doc/inkscape/
+  * added mime-support
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Tue, 13 Jan 2004 11:36:43 +0100
+
+inkscape (0.36-2) unstable; urgency=low
+
+  * fix versioning in debian/changelog
+  * remove CVS/ subdirs
+  * remove sodipodi changelog from debian/ directory
+  * add myself to uploaders
+
+ -- Guido Guenther <agx@debian.org>  Fri, 26 Dec 2003 23:01:02 +0100
+
+inkscape (0.36-1) unstable; urgency=low
+
+  * Initial Release. closes: #220795.
+  * adopted package description from Nathan Hurst
+
+ -- Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de>  Thu, 18 Dec 2003 12:36:30 +0100

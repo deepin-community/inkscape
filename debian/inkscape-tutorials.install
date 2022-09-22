@@ -1,0 +1,3 @@
+share/tutorials/*.jpg  usr/share/inkscape/tutorials
+share/tutorials/*.png  usr/share/inkscape/tutorials
+share/tutorials/*.svg  usr/share/inkscape/tutorials

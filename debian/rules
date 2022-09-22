@@ -1,0 +1,53 @@
+#!/usr/bin/make -f
+
+include /usr/share/dpkg/architecture.mk
+
+export DEB_BUILD_MAINT_OPTIONS=hardening=+all
+
+PARALLEL_OPTION = $(filter parallel=%,$(DEB_BUILD_OPTIONS))
+ifneq (,$(PARALLEL_OPTION))
+	NUMJOBS = $(patsubst parallel=%,%,$(PARALLEL_OPTION))
+else
+	NUMJOBS = 1
+endif
+
+ifeq ($(DEB_VENDOR)-$(DEB_HOST_ARCH),ubuntu-i386)
+# 2geom not available in ubuntu/i386 - let's embed the current one instead
+embed_2geom=y
+endif
+
+%:
+	dh $@ --buildsystem cmake+ninja
+
+override_dh_auto_configure-arch:
+	dh_auto_configure -- \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DWITH_DBUS=ON \
+		$(if $(embed_2geom),-D2GEOM_BUILD_SHARED=OFF)
+
+override_dh_auto_test-arch:
+	cd obj-$(DEB_HOST_GNU_TYPE) && LC_ALL=C.UTF-8 ninja -j$(NUMJOBS) -v tests
+	# some tests are not parallel-safe, since they try to look at the same file
+	dh_auto_test -a --no-parallel
+
+override_dh_auto_test:
+
+override_dh_auto_install-arch:
+	# The tutorials are manually installed, the rest goes here
+	dh_auto_install --destdir=debian/inkscape
+	rm -rv debian/inkscape/usr/share/inkscape/tutorials
+	rm -rv debian/inkscape/usr/share/inkscape/*/README
+ifeq ($(embed_2geom),y)
+	rm -rv debian/inkscape/usr/include/
+	rm -rv debian/inkscape/usr/lib/pkgconfig/
+	rm -rv debian/inkscape/usr/lib/$(DEB_HOST_MULTIARCH)/cmake/
+	rm -v debian/inkscape/usr/lib/$(DEB_HOST_MULTIARCH)/lib2geom.a
+endif
+
+override_dh_auto_configure-indep: nothing
+override_dh_auto_build-indep: nothing
+override_dh_auto_install-indep: nothing
+override_dh_auto_test-indep: nothing
+.PHONY: nothing
+nothing:
+	: Do nothing for the -indep build

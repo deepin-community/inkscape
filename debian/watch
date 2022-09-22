@@ -1,0 +1,18 @@
+version=4
+
+# ?pre=0 → only stable releases
+# ?pre=1 → only unstable releases
+# drop the ?pre for everything
+
+# main tarball
+opts=\
+pgpmode=next,\
+uversionmangle=s/(\d)[_\.\-\+]?((RC|rc|pre|dev|beta|alpha|b|a)[\-\.]?\d*)$/$1~$2/ \
+https://inkscape.org/release/all/source/archive/?pre=0 \
+(?:.*/)?@PACKAGE@@ANY_VERSION@(?:_.*)?@ARCHIVE_EXT@
+
+# find the signature
+opts=pgpmode=previous,\
+uversionmangle=s/(\d)[_\.\-\+]?((RC|rc|pre|dev|beta|alpha|b|a)[\-\.]?\d*)$/$1~$2/ \
+https://inkscape.org/release/all/source/archive/?pre=0 \
+(?:.*/)?@PACKAGE@@ANY_VERSION@(?:_.*)?@SIGNATURE_EXT@ previous
