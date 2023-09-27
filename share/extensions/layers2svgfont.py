@@ -65,9 +65,12 @@ class LayersToSvgFont(inkex.EffectExtension):
             label = group.label
             if "GlyphLayer-" in label:
                 unicode_char = label.split("GlyphLayer-")[1]
-                glyph = font.get_or_create(
-                    "svg:glyph[@unicode='{}']".format(unicode_char), Glyph
-                )
+                if unicode_char == "'":
+                    glyph = font.get_or_create("""svg:glyph[@unicode="'"]""", Glyph)
+                else:
+                    glyph = font.get_or_create(
+                        "svg:glyph[@unicode='{}']".format(unicode_char), Glyph
+                    )
                 glyph.set("unicode", unicode_char)
 
                 ############################

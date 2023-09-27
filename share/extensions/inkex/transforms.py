@@ -725,8 +725,8 @@ class BoundingInterval:  # pylint: disable=too-few-public-methods
             if isinstance(x, (int, float, Decimal)) and isinstance(
                 y, (int, float, Decimal)
             ):
-                self.minimum = x
-                self.maximum = y
+                self.minimum = float(x)
+                self.maximum = float(y)
             else:
                 raise ValueError(
                     f"Not a number for scaling: {str((x, y))} "
@@ -744,7 +744,7 @@ class BoundingInterval:  # pylint: disable=too-few-public-methods
             elif isinstance(value, (tuple, list)) and len(value) == 2:
                 self.minimum, self.maximum = min(value), max(value)
             elif isinstance(value, (int, float, Decimal)):
-                self.minimum = self.maximum = value
+                self.minimum = self.maximum = float(value)
             else:
                 raise ValueError(
                     f"Not a number for scaling: {str(value)} ({type(value).__name__})"
@@ -1045,7 +1045,7 @@ class BoundingBox:  # pylint: disable=too-few-public-methods
 
         return [y, -y, x, -x, rot, -rot][DIRECTION.index(direction)]
 
-    def resize(self, delta_x: float, delta_y: float = None) -> BoundingBox:
+    def resize(self, delta_x: float, delta_y: Optional[float] = None) -> BoundingBox:
         """Enlarges / shrinks a bounding box by a constant value. If only delta_x
         is given, each side is moved by the same amount; if delta_y is given,
         different deltas are applied to horizontal and vertical intervals.

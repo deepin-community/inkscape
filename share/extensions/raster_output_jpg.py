@@ -19,6 +19,7 @@ class JpegOutput(inkex.RasterOutputExtension):
             stream,
             format="jpeg",
             quality=self.options.quality,
+            dpi=self.img.info["dpi"],
             progressive=self.options.progressive,
         )
 

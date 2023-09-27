@@ -238,7 +238,7 @@ class BaseElement(IBaseElement):
 
     def set_random_id(
         self,
-        prefix: str = None,
+        prefix: Optional[str] = None,
         size: Optional[int] = None,
         backlinks: bool = False,
         blacklist: Optional[List[str]] = None,
@@ -270,7 +270,7 @@ class BaseElement(IBaseElement):
 
     def set_random_ids(
         self,
-        prefix: str = None,
+        prefix: Optional[str] = None,
         levels: int = -1,
         backlinks: bool = False,
         blacklist: Optional[List[str]] = None,

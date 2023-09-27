@@ -41,6 +41,7 @@ from .elements import (
     TextElement,
     FlowPara,
     FlowDiv,
+    Pattern,
 )
 from .elements._utils import CloningVat
 from .base import (
@@ -391,7 +392,7 @@ class ColorExtension(EffectExtension):
                 rgba_result = self._modify_color(name, col)
                 elem.style.set_color(rgba_result, name)
 
-            if isinstance(value, (LinearGradient, RadialGradient)):
+            if isinstance(value, (LinearGradient, RadialGradient, Pattern)):
                 gradients.track(value, elem, self._ref_cloned, style=style, name=name)
                 if value.href is not None:
                     gradients.track(value.href, elem, self._xlink_cloned, linker=value)

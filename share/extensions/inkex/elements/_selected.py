@@ -23,7 +23,7 @@ When elements are selected, these structures provide an advanced API.
 """
 
 from collections import OrderedDict
-from typing import Any, overload, Union
+from typing import Any, overload, Union, Optional
 
 from ..interfaces.IElement import IBaseElement
 from ._utils import natural_sort_key
@@ -162,7 +162,7 @@ class ElementList(OrderedDict):
             self.svg, [e for e in self if not types or isinstance(e, types)]
         )
 
-    def filter_nonzero(self, *types, error_msg: str = None):
+    def filter_nonzero(self, *types, error_msg: Optional[str] = None):
         """Filter selected elements of the given type, returns a new SelectedElements
         object. If the selection is empty, abort the extension.
 

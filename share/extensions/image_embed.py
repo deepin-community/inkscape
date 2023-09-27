@@ -76,9 +76,13 @@ class EmbedImage(inkex.EffectExtension):
         href = urllib.url2pathname(url.path)
 
         # Look relative to the *temporary* filename instead of the original filename.
-        path = self.absolute_href(
-            href or "", cwd=os.path.dirname(self.options.input_file)
-        )
+        try:
+            cwd = os.path.dirname(self.options.input_file)
+        except TypeError:
+            # input_file was actually stdin, fall back.
+            cwd = None
+
+        path = self.absolute_href(href or "", cwd=cwd)
 
         # Backup directory where we can find the image
         if not os.path.isfile(path):

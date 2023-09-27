@@ -7,9 +7,10 @@ import sys
 
 from io import BytesIO
 
-from inkex import AbortExtension
+from inkex import AbortExtension, SvgDocumentElement
 from inkex.base import InkscapeExtension, SvgThroughMixin
 from inkex.tester import TestCase
+from inkex.tester.mock import Capture
 
 
 class ModExtension(InkscapeExtension):
@@ -186,3 +187,24 @@ class SvgInputOutputTest(TestCase):
         ret = BytesIO()
         obj.save(ret)
         self.assertEqual(ret.getvalue(), b"foo")
+
+
+class ParserTests(TestCase):
+    """Test special parsing cases"""
+
+    def test_bad_namespace(self):
+        """Ignore bad namespaces, https://gitlab.com/inkscape/extensions/-/issues/465"""
+        svg = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="no"?>'
+            '<svg xmlns:ns="&amp;#38;#38;ns_ai;"></svg>'
+        )
+        filename = self.temp_file(suffix=".svg")
+        with open(filename, "w") as file:
+            file.write(svg)
+        with Capture("stderr") as stderr:
+            obj = NoModSvgExtension()
+            obj.run([filename])
+            # Test that the extension runs completely, and the document gets loaded
+            self.assertTrue(isinstance(obj.svg, SvgDocumentElement))
+            # Test that the error is presented to the user
+            self.assertIn("is not a valid URI", stderr.getvalue())

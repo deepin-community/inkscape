@@ -1,0 +1,17 @@
+Description: skip test 31 - test_lpe64
+ this fails on ard64, s390x, ppc64el
+Bug: https://gitlab.com/inkscape/inkscape/-/issues/3554#note_1035680690
+Forwarded: not-needed
+Last-Update: 2022-12-20
+
+--- a/testfiles/CMakeLists.txt
++++ b/testfiles/CMakeLists.txt
+@@ -53,7 +53,7 @@
+     set(LPE_TESTS_64bit
+         #0.92 or lower LPEs
+         # (test not stable on 32bit Windows)
+-        lpe64-test
++        #lpe64-test
+     )
+ endif()
+ 

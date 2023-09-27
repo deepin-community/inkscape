@@ -43,7 +43,7 @@ set(PROJECT_NAME inkscape)
 # see https://gitlab.com/inkscape/inkscape/-/issues/551 for versioning suffixes
 set(INKSCAPE_VERSION_MAJOR  1)
 set(INKSCAPE_VERSION_MINOR  2)
-set(INKSCAPE_VERSION_PATCH  1)
+set(INKSCAPE_VERSION_PATCH  2)
 set(INKSCAPE_VERSION_SUFFIX "")
 
 set(INKSCAPE_VERSION ${INKSCAPE_VERSION_MAJOR}.${INKSCAPE_VERSION_MINOR})
@@ -58,8 +58,8 @@ set(CMAKE_INCLUDE_CURRENT_DIR TRUE)
 
 file(RELATIVE_PATH
     INKSCAPE_INSTALL_LIBDIR_RELATIVE_TO_BINDIR
-    "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}"
-    "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/inkscape")
+    "${CMAKE_INSTALL_FULL_BINDIR}"
+    "${CMAKE_INSTALL_FULL_LIBDIR}/inkscape")
 
 if(APPLE)
     SET(CMAKE_MACOSX_RPATH TRUE)
@@ -298,7 +298,6 @@ message("")
 message("HAVE_MINGW64:            ${HAVE_MINGW64}")
 message("MINGW_PATH:              ${MINGW_PATH}")
 message("MINGW_ARCH:              ${MINGW_ARCH}")
-message("MINGW_ARCH_PATH:         ${MINGW_ARCH_PATH}")
 endif()
 
 message("------------------------------------------------------------------------")

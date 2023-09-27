@@ -24,7 +24,7 @@ def parseTransform(transf, mat=None):
     """Transform(str).matrix"""
     t = Transform(transf)
     if mat is not None:
-        t = Transform(mat) * t
+        t = Transform(mat) @ t
     return _lists(t.matrix)
 
 

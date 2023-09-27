@@ -1,10 +1,13 @@
 # coding=utf-8
+from io import BytesIO
 from dxf_outlines import DxfOutlines
 from inkex.tester import ComparisonMixin, InkscapeExtensionTestMixin, TestCase
 from inkex.tester.filters import WindowsTextCompat
 from inkex.elements._parser import load_svg
 
 from inkex.utils import AbortExtension
+from inkex.base import SvgOutputMixin
+from inkex.elements import Rectangle
 
 
 class DFXOutlineBasicTest(ComparisonMixin, InkscapeExtensionTestMixin, TestCase):
@@ -16,6 +19,18 @@ class DFXOutlineBasicTest(ComparisonMixin, InkscapeExtensionTestMixin, TestCase)
         ("--ROBO=true",),
     ]
     compare_filters = [WindowsTextCompat()]
+
+
+def run_extension(document, *args) -> str:
+    output = BytesIO()
+    ext = DxfOutlines()
+    ext.parse_arguments([*args])
+    ext.svg = document.getroot()
+    ext.document = document
+    ext.effect()
+    ext.save(output)
+    output.seek(0)
+    return output.read()
 
 
 class DXFDeeplyNestedTest(TestCase):
@@ -32,9 +47,30 @@ class DXFDeeplyNestedTest(TestCase):
 
     def test_deeply_nested(self):
         "Run test"
-        ext = DxfOutlines()
-        ext.parse_arguments([])
-        ext.document = self.create_deep_svg(1500)
-        ext.svg = ext.document.getroot()
         with self.assertRaisesRegex(AbortExtension, "Deep Ungroup"):
-            ext.effect()
+            run_extension(self.create_deep_svg(1500))
+
+
+class TestDxfUnits(TestCase):
+    """Test ensuring that units work properly"""
+
+    def test_mm(self):
+        """Test that the documents created with/without scaling and base units are
+        identical."""
+        document = SvgOutputMixin.get_template(width=210, height=297, unit="mm")
+        document.getroot().namedview.set("inkscape:document-units", "mm")
+        document.getroot().add(Rectangle.new(200, 0, 10, 16))
+        out1 = run_extension(document)
+
+        document = SvgOutputMixin.get_template(width=210, height=297, unit="mm")
+        document.getroot().add(Rectangle.new(200, 0, 10, 16))
+        out2 = run_extension(document, "--unit_from_document=False", "--units=mm")
+
+        self.assertEqual(out1, out2)
+        # Now with scaling - should result in the same document
+        document = SvgOutputMixin.get_template(width=210, height=297, unit="mm")
+        document.getroot().set("viewBox", "0 0 105 148.5")
+        document.getroot().add(Rectangle.new(100, 0, 5, 8))
+        out3 = run_extension(document, "--unit_from_document=False", "--units=mm")
+
+        self.assertEqual(out1, out3)

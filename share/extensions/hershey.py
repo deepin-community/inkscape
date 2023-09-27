@@ -18,9 +18,9 @@
 #
 
 """
-Hershey Text 3.0.5, 2021-05-17
+Hershey Text 3.0.6, 2022-07-21
 
-Copyright 2021, Windell H. Oskay, www.evilmadscientist.com
+Copyright 2022, Windell H. Oskay, www.evilmadscientist.com
 
 Major revisions in Hershey Text 3.0:
 
@@ -138,6 +138,7 @@ class Hershey(inkex.Effect):
         self.output_generated = False
 
         self.warn_unflow = False
+        self.warn_unkern = False
         self.warn_textpath = (
             False  # For future use: Give warning about text attached to path.
         )
@@ -351,7 +352,7 @@ Evil Mad Scientist Laboratories
         return units.convert_unit(input_string, "")
 
     def vb_scale(self, viewbox, p_a_r, doc_width, doc_height):
-        """ "
+        """
         Parse SVG viewbox and generate scaling parameters.
         Reference documentation: https://www.w3.org/TR/SVG11/coords.html
 
@@ -1856,9 +1857,12 @@ Evil Mad Scientist Laboratories
                     i = 0
                     while i < str_len:  # Loop through the entire text of the string.
 
-                        x_start_line = float(
-                            self.text_x[i]
-                        )  # We are starting a new line here.
+                        try:
+                            x_start_line = float(self.text_x[i])  # Start new line here.
+                        except ValueError:
+                            self.warn_unkern = True
+                            return
+
                         y_start_line = float(self.text_y[i])
 
                         while i < str_len:
@@ -2012,6 +2016,14 @@ Evil Mad Scientist Laboratories
 
         if self.font_load_fail:
             inkex.errormsg(_("Warning: unable to load SVG stroke fonts."))
+
+        if self.warn_unkern:
+            inkex.errormsg(
+                _(
+                    "Warning: unable to render text.\n"
+                    + "Please use Text > Remove Manual Kerns to convert it prior to use ."
+                )
+            )
 
         if self.warn_unflow:
             inkex.errormsg(

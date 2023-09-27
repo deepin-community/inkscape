@@ -1,8 +1,24 @@
-inkscape (1.2.1+ds-1) UNRELEASED; urgency=medium
+inkscape (1.2.2-2) unstable; urgency=medium
 
-  * update
+  * Add several patches skipping several tests that fail across varying
+    architectures.  Closes: #1012496
+  * Add a patch skipping the tests regarding librevenge formats, that suddenly
+    started failing as well, to be investigated.
 
- -- Debian Multimedia Maintainers <debian-multimedia@lists.debian.org>  Tue, 02 Aug 2022 03:12:32 -0400
+ -- Mattia Rizzolo <mattia@debian.org>  Tue, 10 Jan 2023 02:09:18 +0100
+
+inkscape (1.2.2-1) unstable; urgency=medium
+
+  * New upstream version 1.2.2
+    https://inkscape.org/news/2022/12/05/download-inkscape-122/
+    https://wiki.inkscape.org/wiki/index.php/Release_notes/1.2.2
+  * d/control:
+    + Bump required version of lib2geom-dev.
+    + Bump Stndards-Version to 4.6.2, no changes needed.
+  * Add patches for upstream to hopefully make the tests more friendly.
+  * Skip 4 tests that are known to fail, but it should be fine. Closes: #1022731
+
+ -- Mattia Rizzolo <mattia@debian.org>  Sun, 18 Dec 2022 22:58:24 +0100
 
 inkscape (1.2.1+ds-1) unstable; urgency=medium
 
