@@ -88,7 +88,7 @@
       <param name="symbolid" type="string" gui-description="The ID of the selected symbol. Open the XML editor to find it as the value for 'xlink:href' for a selected instance of the symbol." gui-text="Symbol ID:"></param>
     </page>
   </param>
-  <param name="smoothval" type="float" min="0.01" max="1.0" precision="2" gui-text="Smooth square value (0-1):">0.2</param>
+  <param name="smoothval" type="float" min="0.0" max="1.0" precision="2" gui-text="Smooth square value (0-1):">0.2</param>
   <label>Manually define the group ID of the generated QR code. Leave blank to have it auto-generated.</label>
   <param name="groupid" type="string" gui-text="Group ID:"></param>
   <label>For details about QR codes, see:</label>

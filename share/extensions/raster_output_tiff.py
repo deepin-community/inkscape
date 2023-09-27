@@ -15,10 +15,11 @@ class TiffOutput(inkex.RasterOutputExtension):
 
     def save(self, stream):
         tempstream = io.BytesIO()
-        self.img.convert("RGB").save(
+        self.img.save(
             tempstream,
             format="tiff",
             compression=(self.options.compression or None),
+            dpi=self.img.info["dpi"],
             quality=100,
         )
         stream.write(tempstream.getvalue())

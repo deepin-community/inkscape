@@ -1,0 +1,18 @@
+Description: skip test-use
+ According to upstream, this is a false positive
+Bug: https://gitlab.com/inkscape/inkscape/-/issues/3554#note_1035539888
+Author: Mattia Rizzolo <mattia@debian.org>
+Forwarded: not-needed
+Last-Update: 2023-01-10
+
+--- a/testfiles/rendering_tests/CMakeLists.txt
++++ b/testfiles/rendering_tests/CMakeLists.txt
+@@ -21,7 +21,7 @@
+     # -- Generic tests --
+     test-empty
+     test-dont-crash
+-    test-use
++    #test-use
+ 
+     # -- Selector tests --
+     selector-important-002

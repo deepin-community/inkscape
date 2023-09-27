@@ -2,6 +2,7 @@
 from color_replace import ReplaceColor
 from .test_inkex_extensions import ColorBaseCase
 from inkex import Color
+from inkex.tester import ComparisonMixin, TestCase
 
 
 class ColorReplaceTest(ColorBaseCase):
@@ -30,3 +31,9 @@ class ColorReplaceTest(ColorBaseCase):
             ["-f169090611", "-t4278190100"],
         ),
     ]
+
+
+class ColorReplacePatternTest(ComparisonMixin, TestCase):
+    effect_class = ReplaceColor
+    compare_file = "svg/simple_patterns.svg"
+    comparisons = [("--id=rect184",), ("--id=rect184", "--id=rect184-8")]

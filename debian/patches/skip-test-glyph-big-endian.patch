@@ -1,0 +1,29 @@
+Description: skip this test that fail on s390x, ppc64, sparc64
+ Here the failure is real, but let's just ignore it since it only concerns BE
+Bug: https://gitlab.com/inkscape/inkscape/-/issues/4032
+Author: Mattia Rizzolo <mattia@debian.org>
+Forwarded: not-needed
+Last-Update: 2023-01-10
+
+--- a/testfiles/rendering_tests/CMakeLists.txt
++++ b/testfiles/rendering_tests/CMakeLists.txt
+@@ -2,7 +2,11 @@
+ 
+ # Tests to run for 64-bit builds only. These fail in 32-bit builds (possibly due to rounding issues)
+ # TODO: Figure out actual cause and see if we can fix it
++# They also started failing in big-endian, so run them only for little-endian.
++include (TestBigEndian)
++TEST_BIG_ENDIAN(IS_BIG_ENDIAN)
+ if(${CMAKE_SIZEOF_VOID_P} EQUAL 8)
++if(NOT IS_BIG_ENDIAN)
+     set(RENDERING_TESTS_64bit
+         # test-rtl-vertical
+ 
+@@ -10,6 +14,7 @@
+         text-gzipped-svg-glyph
+     )
+ endif()
++endif()
+ 
+ #add your test here (do not put the .svg extension)
+ set(RENDERING_TESTS

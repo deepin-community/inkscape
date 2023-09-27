@@ -30,8 +30,6 @@ override_dh_auto_test-arch:
 	# some tests are not parallel-safe, since they try to look at the same file
 	dh_auto_test -a --no-parallel
 
-override_dh_auto_test:
-
 override_dh_auto_install-arch:
 	# The tutorials are manually installed, the rest goes here
 	dh_auto_install --destdir=debian/inkscape

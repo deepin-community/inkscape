@@ -1,1 +1,10 @@
 python3.patch
+skip-tests.patch
+test-output-page.patch
+fuzzy_tests.patch
+skip-test-lpe.patch
+skip-test-8_png_check_output.patch
+timeout-test-lpe.patch
+skip-test-librevenge.patch
+skip-test-glyph-big-endian.patch
+skip-test-use.patch

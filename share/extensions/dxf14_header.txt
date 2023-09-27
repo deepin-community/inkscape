@@ -11,6 +11,10 @@ $HANDSEED
   5
 FFFF
   9
+$INSUNITS
+ 70
+     <unit specifier>
+  9
 $MEASUREMENT
  70
      1

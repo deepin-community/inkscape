@@ -22,8 +22,8 @@
 """
 Element interface for patterns, filters, gradients and path effects.
 """
-
-from typing import List, Tuple, TYPE_CHECKING
+from __future__ import annotations
+from typing import List, Tuple, TYPE_CHECKING, Optional
 
 from lxml import etree
 
@@ -215,8 +215,11 @@ class Gradient(BaseElement):
             self.pop(attr)
 
     def interpolate(
-        self, other, fraction, svg=None
-    ):  # type: (LinearGradient, float, SvgDocumentElement) -> LinearGradient
+        self,
+        other: LinearGradient,
+        fraction: float,
+        svg: Optional[SvgDocumentElement] = None,
+    ):
         """Interpolate with another gradient.
 
         .. versionadded:: 1.1"""

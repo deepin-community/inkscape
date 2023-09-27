@@ -11,7 +11,6 @@ if(WIN32)
     ${MINGW_BIN}/SSLEAY32.dll
     ${MINGW_BIN}/imagequant.dll
     ${MINGW_BIN}/libLerc.dll
-    ${MINGW_BIN}/libMagick*.dll
     ${MINGW_BIN}/libaom.dll
     ${MINGW_BIN}/libaspell-[0-9]*.dll
     ${MINGW_BIN}/libatk-1.0-[0-9]*.dll
@@ -84,7 +83,7 @@ if(WIN32)
     ${MINGW_BIN}/libpangoft2-1.0-[0-9]*.dll
     ${MINGW_BIN}/libpangomm-1.4-[0-9]*.dll
     ${MINGW_BIN}/libpangowin32-1.0-[0-9]*.dll
-    ${MINGW_BIN}/libpcre-[0-9]*.dll
+    ${MINGW_BIN}/libpcre2-8-[0-9]*.dll
     ${MINGW_BIN}/libpixman-1-[0-9]*.dll
     ${MINGW_BIN}/libplc[0-9]*.dll
     ${MINGW_BIN}/libplds[0-9]*.dll
@@ -103,7 +102,6 @@ if(WIN32)
     ${MINGW_BIN}/libsqlite3-[0-9]*.dll
     ${MINGW_BIN}/libssh2-[0-9]*.dll
     ${MINGW_BIN}/libssl-1_[0-9]*.dll
-    ${MINGW_BIN}/libssp-[0-9]*.dll
     ${MINGW_BIN}/libstdc++-[0-9]*.dll
     ${MINGW_BIN}/libtermcap-[0-9]*.dll
     ${MINGW_BIN}/libthai-[0-9]*.dll
@@ -139,6 +137,30 @@ if(WIN32)
     install(FILES
       ${MINGW_BIN}/libgcc_s_dw2-1.dll
       DESTINATION bin)
+  endif()
+
+  # Install graphics-magick dlls
+  if(WITH_GRAPHICS_MAGICK)
+    install (DIRECTORY ${MINGW_LIB}/GraphicsMagick-1.3.38
+      DESTINATION lib
+      FILES_MATCHING
+      PATTERN "*.dll"
+      PATTERN "*.la"
+      PATTERN "filters" EXCLUDE)
+    file(GLOB MAGICK_LIBS
+      ${MINGW_BIN}/libGraphicsMagick[+-]*.dll
+      ${MINGW_BIN}/libjasper.dll
+      ${MINGW_BIN}/libjxl.dll
+      ${MINGW_BIN}/libjxl_threads.dll
+      ${MINGW_BIN}/libltdl-[0-9]*.dll
+      ${MINGW_BIN}/libhwy.dll
+      ${MINGW_BIN}/libbrotlienc.dll)
+    install(FILES ${MAGICK_LIBS} DESTINATION bin)
+  endif()
+
+  if(WITH_IMAGE_MAGICK)
+    file(GLOB MAGICK_LIBS ${MINGW_BIN}/libMagick*.dll)
+    install(FILES ${MAGICK_LIBS} DESTINATION bin)
   endif()
 
   # Install hicolor/index.theme to avoid bug 1635207
@@ -224,6 +246,7 @@ if(WIN32)
     ${MINGW_LIB}/girepository-1.0/HarfBuzz-0.0.typelib
     ${MINGW_LIB}/girepository-1.0/Pango-1.0.typelib
     ${MINGW_LIB}/girepository-1.0/PangoCairo-1.0.typelib
+    ${MINGW_LIB}/girepository-1.0/freetype2-2.0.typelib
     DESTINATION lib/girepository-1.0)
 
   # Aspell dictionaries
@@ -306,7 +329,7 @@ if(WIN32)
   # Python packages for the extensions manager, and clipart importer extensions
   set(packages
       "python-appdirs" "python-msgpack" "python-lockfile" "python-cachecontrol"
-      "python-idna" "python-urllib3" "python-chardet" "python-certifi" "python-requests")
+      "python-idna" "python-urllib3" "python-chardet" "python-certifi" "python-requests" "python-beautifulsoup4" "python-filelock")
   foreach(package ${packages})
     list_files_pacman(${package} paths)
     install_list(FILES ${paths}

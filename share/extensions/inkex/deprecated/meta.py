@@ -23,6 +23,7 @@ Deprecation functionality which does not require imports from Inkex.
 import os
 import traceback
 import warnings
+from typing import Optional
 
 try:
     DEPRECATION_LEVEL = int(os.environ.get("INKEX_DEPRECATION_LEVEL", 1))
@@ -38,7 +39,7 @@ def _deprecated(msg, stack=2, level=DEPRECATION_LEVEL):
         warnings.warn(msg, category=DeprecationWarning, stacklevel=stack + 1)
 
 
-def deprecate(func, version: str = None):
+def deprecate(func, version: Optional[str] = None):
     r"""Function decorator for deprecation functions which have a one-liner
     equivalent in the new API. The one-liner has to passed as a string
     to the decorator.

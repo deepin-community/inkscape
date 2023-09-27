@@ -32,6 +32,8 @@ from lxml import etree
 from ..interfaces.IElement import IBaseElement
 
 from ._utils import splitNS
+from ..utils import errormsg
+from ..localization import inkex_gettext as _
 
 
 class NodeBasedLookup(etree.PythonElementClassLookup):
@@ -82,7 +84,7 @@ class NodeBasedLookup(etree.PythonElementClassLookup):
         return NodeBasedLookup.default
 
 
-SVG_PARSER = etree.XMLParser(huge_tree=True, strip_cdata=False)
+SVG_PARSER = etree.XMLParser(huge_tree=True, strip_cdata=False, recover=True)
 SVG_PARSER.set_element_class_lookup(NodeBasedLookup())
 
 
@@ -91,5 +93,26 @@ def load_svg(stream):
     if (isinstance(stream, str) and stream.lstrip().startswith("<")) or (
         isinstance(stream, bytes) and stream.lstrip().startswith(b"<")
     ):
-        return etree.ElementTree(etree.fromstring(stream, parser=SVG_PARSER))
-    return etree.parse(stream, parser=SVG_PARSER)
+        parsed = etree.ElementTree(etree.fromstring(stream, parser=SVG_PARSER))
+    else:
+        parsed = etree.parse(stream, parser=SVG_PARSER)
+    if len(SVG_PARSER.error_log) > 0:
+        errormsg(
+            _(
+                "A parsing error occured, which means you are likely working with "
+                "a non-conformant SVG file. The following errors were found:\n"
+            )
+        )
+        for __, element in enumerate(SVG_PARSER.error_log):
+            errormsg(
+                _("{}. Line {}, column {}").format(
+                    element.message, element.line, element.column
+                )
+            )
+        errormsg(
+            _(
+                "\nProcessing will continue; however we encourage you to fix your"
+                " file manually."
+            )
+        )
+    return parsed

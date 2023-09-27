@@ -90,7 +90,10 @@ class DxfOutlines(inkex.OutputExtension):
         pars.add_argument("--tab")
         pars.add_argument("-R", "--ROBO", type=inkex.Boolean, default=False)
         pars.add_argument("-P", "--POLY", type=inkex.Boolean, default=False)
-        pars.add_argument("--units", default="72./96")  # Points
+        pars.add_argument(
+            "--unit_from_document", type=inkex.Boolean, default=True
+        )  # px
+        pars.add_argument("--units", default="px")  # px
         pars.add_argument("--encoding", dest="char_encode", default="latin_1")
         pars.add_argument("--layer_option", default="all")
         pars.add_argument("--layer_name")
@@ -344,7 +347,6 @@ class DxfOutlines(inkex.OutputExtension):
             try:
                 if isinstance(node, Group):
                     self.process_group(node)
-                    inkex.errormsg(node.get_id())
                 elif isinstance(node, Use):
                     self.process_clone(node)
                 else:
@@ -380,8 +382,15 @@ class DxfOutlines(inkex.OutputExtension):
         #              NURB Curves: A Guide for the Uninitiated By Philip J. Schneider
         #              The NURBS Book By Les Piegl and Wayne Tiller (Springer, 1995)
         # self.dxf_add("999\nDXF created by Inkscape\n")  # Some programs do not take comments in DXF files (KLayout 0.21.12 for example)
+        if self.options.unit_from_document:
+            unit = self.svg.document_unit
+        else:
+            unit = self.options.units
         with open(self.get_resource("dxf14_header.txt"), "r") as fhl:
-            self.dxf_add(fhl.read())
+            header = fhl.read()
+            unit_map = {"px": 0, "in": 1, "ft": 2, "mm": 4, "cm": 5, "m": 6}
+            header = header.replace("<unit specifier>", str(unit_map[unit]))
+            self.dxf_add(header)
         for node in self.svg.xpath("//svg:g"):
             if isinstance(node, Layer):
                 layer = node.label
@@ -407,21 +416,12 @@ class DxfOutlines(inkex.OutputExtension):
         with open(self.get_resource("dxf14_style.txt"), "r") as fhl:
             self.dxf_add(fhl.read())
 
-        scale = eval(self.options.units)
-        if not scale:
-            scale = 25.4 / 96  # if no scale is specified, assume inch as baseunit
-        scale /= self.svg.unittouu("1px")
-        h = self.svg.viewbox_height
-        doc = self.document.getroot()
-        # process viewBox height attribute to correct page scaling
-        viewBox = doc.get("viewBox")
-        if viewBox:
-            viewBox2 = viewBox.split(",")
-            if len(viewBox2) < 4:
-                viewBox2 = viewBox.split(" ")
-            scale *= h / self.svg.unittouu(self.svg.add_unit(viewBox2[3]))
-        self.groupmat = [[[scale, 0.0, 0.0], [0.0, -scale, h * scale]]]
-        self.process_group(doc)
+        # Set toplevel transform
+        scale = self.svg.inkscape_scale
+        self.groupmat = [
+            [[scale, 0.0, 0.0], [0.0, -scale, self.svg.viewbox_height * scale]]
+        ]
+        self.process_group(self.svg)
         if self.options.ROBO:
             self.ROBO_output()
         if self.options.POLY:

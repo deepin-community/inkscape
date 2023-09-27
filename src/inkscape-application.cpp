@@ -64,6 +64,7 @@
 #include "file.h"                   // sp_file_convert_dpi
 #include "inkscape.h"               // Inkscape::Application
 #include "path-prefix.h"            // Data directory
+#include "event-log.h"
 
 #include "include/glibmm_version.h"
 
@@ -104,6 +105,7 @@
 #include "actions/actions-transform.h"              // Actions
 #include "actions/actions-text.h"                   // Actions
 #include "actions/actions-window.h"                 // Actions
+#include "actions/actions-undo-document.h"
 
 // With GUI
 #include "actions/actions-tutorial.h"               // Actions
@@ -661,6 +663,7 @@ InkscapeApplication::InkscapeApplication()
     add_actions_tutorial(this);             // actions for opening tutorials (with GUI only)
     add_actions_transform(this);            // actions for transforming selected objects
     add_actions_window(this);               // actions for windows
+    add_actions_undo_app(this);             // Actions to undo/redo from the application level
 
     // ====================== Command Line ======================
 
@@ -1129,6 +1132,9 @@ InkscapeApplication::parse_actions(const Glib::ustring& input, action_vector_t& 
         std::string value;
         if (tokens2.size() > 0) {
             action = tokens2[0];
+        }
+        if (action.find_first_not_of(" \f\n\r\t\v") == std::string::npos) {
+            continue;
         }
         if (tokens2.size() > 1) {
             value = tokens2[1];
@@ -1639,7 +1645,7 @@ InkscapeApplication::on_handle_local_options(const Glib::RefPtr<Glib::VariantDic
         if (val == "true") _file_export.export_png_use_dithering = true;
         else if (val == "false") _file_export.export_png_use_dithering = false;
         else std::cerr << "invalid value for export-png-use-dithering. Ignoring." << std::endl;
-    } else _file_export.export_png_use_dithering = prefs->getBool("/options/dithering/value", true);
+    } else _file_export.export_png_use_dithering = prefs->getBool("/options/dithering/render", false);
 
 
     GVariantDict *options_copy = options->gobj_copy();
@@ -1707,6 +1713,15 @@ int InkscapeApplication::get_number_of_windows() const {
           [&](int sum, auto& v){ return sum + static_cast<int>(v.second.size()); });
     }
     return 0;
+}
+
+void InkscapeApplication::set_active_document(SPDocument* document)
+{
+    _active_document = document;
+    if (document) {
+        // Keep macOS undo menu items upto date.
+        document->get_event_log()->updateUndoVerbs();
+    }
 }
 
 /*
