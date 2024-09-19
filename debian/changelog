@@ -1,3 +1,9 @@
+inkscape (1.2.2-2deepin0) unstable; urgency=medium
+
+  * No source change upload against GCC 12.
+
+ -- Tianyu Chen <sweetyfish@deepin.org>  Thu, 19 Sep 2024 22:49:57 +0800
+
 inkscape (1.2.2-2) unstable; urgency=medium
 
   * Add several patches skipping several tests that fail across varying
