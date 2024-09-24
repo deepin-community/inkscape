@@ -1,0 +1,29 @@
+From 877fc26483f74f951eab516f1b57b136780a8c78 Mon Sep 17 00:00:00 2001
+From: Daniel Boles <dboles.src+inkscape@gmail.com>
+Date: Mon, 4 Sep 2023 10:02:09 +0100
+Subject: [PATCH] FilterEffectsDial: rm <T> on own ctor breaks C++20
+
+The `<T>` on our constructor here is redundant anyway, but _somehow_ in
+C++20 it confuses the compiler and makes the file not build. Remove it!
+---
+ src/ui/dialog/filter-effects-dialog.cpp | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/ui/dialog/filter-effects-dialog.cpp b/src/ui/dialog/filter-effects-dialog.cpp
+index 2c1b69dbcb6..f1be9c682f5 100644
+--- a/src/ui/dialog/filter-effects-dialog.cpp
++++ b/src/ui/dialog/filter-effects-dialog.cpp
+@@ -174,7 +174,9 @@ public:
+ template< typename T> class ComboWithTooltip : public Gtk::EventBox
+ {
+ public:
+-    ComboWithTooltip<T>(T default_value, const Util::EnumDataConverter<T>& c, const SPAttr a = SPAttr::INVALID, char* tip_text = nullptr)
++    ComboWithTooltip(T const default_value, Util::EnumDataConverter<T> const &c,
++                     SPAttr const a = SPAttr::INVALID,
++                     char* const tip_text = nullptr)
+     {
+         if (tip_text) {
+             set_tooltip_text(tip_text);
+-- 
+GitLab
+
