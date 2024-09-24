@@ -8,3 +8,8 @@ timeout-test-lpe.patch
 skip-test-librevenge.patch
 skip-test-glyph-big-endian.patch
 skip-test-use.patch
+Fix-LPE-test-sensitivity-to-system-fonts-list.patch
+f7e944575ea5247952d23f85dfa905cfa13f7b28.patch
+1798e9c13b786f3d077ba0132592c4d5c1d1fb9b.patch
+694d8ae43d06efff21adebf377ce614d660b24cd.patch
+877fc26483f74f951eab516f1b57b136780a8c78.patch

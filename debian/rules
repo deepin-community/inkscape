@@ -16,6 +16,11 @@ ifeq ($(DEB_VENDOR)-$(DEB_HOST_ARCH),ubuntu-i386)
 embed_2geom=y
 endif
 
+ifeq (${DEB_HOST_ARCH},i386)
+export DEB_CFLAGS_MAINT_APPEND=-fexcess-precision=fast -ffloat-store
+export DEB_CXXFLAGS_MAINT_APPEND=-fexcess-precision=fast -ffloat-store
+endif
+
 %:
 	dh $@ --buildsystem cmake+ninja
 
