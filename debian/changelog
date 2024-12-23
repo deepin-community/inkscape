@@ -1,3 +1,11 @@
+inkscape (1.2.2-6) unstable; urgency=medium
+
+  * Team upload
+  * Don't use ragel or lib2geom on i386
+  * Remove unused Build-Depends: libgdl-3-dev
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Mon, 09 Dec 2024 10:46:14 -0500
+
 inkscape (1.2.2-4) unstable; urgency=medium
 
   * Team upload
