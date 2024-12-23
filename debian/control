@@ -14,7 +14,7 @@ Build-Depends:
  python3,
 Build-Depends-Arch:
  imagemagick (>= 0) <!nocheck>,
- lib2geom-dev (>= 1.2.2-2),
+ lib2geom-dev (>= 1.2.2-2) [!i386],
  libaspell-dev,
  libboost-dev,
  libboost-filesystem-dev,
@@ -24,7 +24,6 @@ Build-Depends-Arch:
  libdouble-conversion-dev,
  libfontconfig-dev,
  libgc-dev (>= 1:6.8),
- libgdl-3-dev,
  libgmock-dev,
  libgsl-dev,
  libgspell-1-dev,
@@ -52,12 +51,12 @@ Build-Depends-Arch:
  libxslt1-dev,
  pkg-config,
  python3-lxml <!nocheck>,
- ragel,
+ ragel [!i386],
  zlib1g-dev,
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
 Homepage: https://inkscape.org
-Vcs-Git: https://salsa.debian.org/multimedia-team/inkscape.git
+Vcs-Git: https://salsa.debian.org/multimedia-team/inkscape.git -b trixie
 Vcs-Browser: https://salsa.debian.org/multimedia-team/inkscape
 
 Package: inkscape
