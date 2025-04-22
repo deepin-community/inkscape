@@ -3,60 +3,60 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <gtkmm.h>
+#include "lpe-simplify.h"
 
-#include "live_effects/lpe-simplify.h"
+#include <2geom/svg-path-parser.h>
+#include <glibmm/i18n.h>
+#include <gtkmm/box.h>
+#include <gtkmm/entry.h>
 
 #include "display/curve.h"
 #include "helper/geom.h"
+#include "object/sp-lpe-item.h"
 #include "path/path-util.h"
 #include "svg/svg.h"
 #include "ui/icon-names.h"
+#include "ui/pack.h"
 #include "ui/tools/node-tool.h"
+#include "ui/util.h"
 
-#include <2geom/svg-path-parser.h>
-
-// TODO due to internal breakage in glibmm headers, this must be last:
-#include <glibmm/i18n.h>
-
-namespace Inkscape {
-namespace LivePathEffect {
+namespace Inkscape::LivePathEffect {
 
 LPESimplify::LPESimplify(LivePathEffectObject *lpeobject)
     : Effect(lpeobject)
-    , steps(_("Steps:"), _("Change number of simplify steps "), "steps", &wr, this, 1)
-    , threshold(_("Roughly threshold:"), _("Roughly threshold:"), "threshold", &wr, this, 0.002)
-    , smooth_angles(_("Smooth angles:"), _("Max degree difference on handles to perform a smooth"), "smooth_angles",
-                    &wr, this, 0.)
-    , helper_size(_("Helper size:"), _("Helper size"), "helper_size", &wr, this, 5)
-    , simplify_individual_paths(_("Paths separately"), _("Simplifying paths (separately)"), "simplify_individual_paths",
+    , steps(_("Repeat"), _("Change number of repeats of simplifying operation. Useful for complex paths that need to be significantly simplified. "), "steps", &wr, this, 1)
+    , threshold(_("Complexity"), _("Drag slider to set the amount of simplification"), "threshold", &wr, this, 5)
+    , smooth_angles(_("Smoothness"), _("Max degree difference on handles to perform smoothing"), "smooth_angles",
+                    &wr, this, 360.)
+    , helper_size(_("Handle size"), _("Size of the handles in the effect visualization (not editable)"), "helper_size", &wr, this, 10)
+    , simplify_individual_paths(_("Paths separately"), _("When there are multiple paths in the selection, simplify each one separately."), "simplify_individual_paths",
                                 &wr, this, false, "", INKSCAPE_ICON("on-outline"), INKSCAPE_ICON("off-outline"))
     , simplify_just_coalesce(_("Just coalesce"), _("Simplify just coalesce"), "simplify_just_coalesce", &wr, this,
                              false, "", INKSCAPE_ICON("on-outline"), INKSCAPE_ICON("off-outline"))
 {
-    registerParameter(&steps);
     registerParameter(&threshold);
+    registerParameter(&steps);
     registerParameter(&smooth_angles);
     registerParameter(&helper_size);
     registerParameter(&simplify_individual_paths);
     registerParameter(&simplify_just_coalesce);
 
-    threshold.param_set_range(0.0001, Geom::infinity());
-    threshold.param_set_increments(0.0001, 0.0001);
-    threshold.param_set_digits(6);
-
-    steps.param_set_range(0, 100);
+    threshold.addSlider(true);
+    spinbutton_width_chars = 5;
+    steps.addSlider(true);
+    steps.param_set_range(1, 50);
     steps.param_set_increments(1, 1);
     steps.param_set_digits(0);
 
+    smooth_angles.addSlider(true);
     smooth_angles.param_set_range(0.0, 360.0);
-    smooth_angles.param_set_increments(10, 10);
-    smooth_angles.param_set_digits(2);
+    smooth_angles.param_set_increments(1, 1);
 
-    helper_size.param_set_range(0.0, 999.0);
-    helper_size.param_set_increments(5, 5);
+    helper_size.addSlider(true);
+    helper_size.param_set_range(0.0, 30);
+    helper_size.param_set_increments(1, 1);
     helper_size.param_set_digits(2);
-
+    setVersioningData();
     radius_helper_nodes = 6.0;
     apply_to_clippath_and_mask = true;
 }
@@ -73,80 +73,102 @@ LPESimplify::doBeforeEffect (SPLPEItem const* lpeitem)
     radius_helper_nodes = helper_size;
 }
 
+void
+LPESimplify::setVersioningData()
+{
+    Glib::ustring version = lpeversion.param_getSVGValue();
+    if (version < "1.3") {
+        threshold.param_set_range(0.0001, Geom::infinity());
+        threshold.param_set_increments(0.0001, 0.0001);
+        threshold.param_set_digits(6);
+        smooth_angles.param_set_digits(2);
+    } else {
+        threshold.param_set_range(0.01, 100.00);
+        threshold.param_set_increments(0.1, 0.1);
+        threshold.param_set_digits(2);
+        smooth_angles.param_set_digits(0);
+       
+        threshold.param_set_no_leading_zeros();
+        helper_size.param_set_no_leading_zeros();
+        smooth_angles.param_set_no_leading_zeros();
+    }
+}
+
+void
+LPESimplify::doOnApply(SPLPEItem const* lpeitem)
+{
+    lpeversion.param_setValue("1.3", true);
+    setVersioningData();
+}
+
 Gtk::Widget *
 LPESimplify::newWidget()
 {
     // use manage here, because after deletion of Effect object, others might still be pointing to this widget.
-    Gtk::Box *vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
-    
-    vbox->set_border_width(5);
-    vbox->set_homogeneous(false);
-    vbox->set_spacing(2);
-    std::vector<Parameter *>::iterator it = param_vector.begin();
-    Gtk::Box * buttons = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
-    while (it != param_vector.end()) {
-        if ((*it)->widget_is_visible) {
-            Parameter * param = *it;
-            Gtk::Widget * widg = dynamic_cast<Gtk::Widget *>(param->param_newWidget());
-            if (param->param_key == "simplify_individual_paths" ||
-                    param->param_key == "simplify_just_coalesce") {
-                Glib::ustring * tip = param->param_getTooltip();
-                if (widg) {
-                    buttons->pack_start(*widg, true, true, 2);
-                    if (tip) {
-                        widg->set_tooltip_text(*tip);
-                    } else {
-                        widg->set_tooltip_text("");
-                        widg->set_has_tooltip(false);
-                    }
-                }
-            } else {
-                Glib::ustring * tip = param->param_getTooltip();
-                if (widg) {
-                    Gtk::Box * horizontal_box = dynamic_cast<Gtk::Box *>(widg);
-                    std::vector< Gtk::Widget* > child_list = horizontal_box->get_children();
-                    Gtk::Entry* entry_widg = dynamic_cast<Gtk::Entry *>(child_list[1]);
-                    entry_widg->set_width_chars(8);
-                    vbox->pack_start(*widg, true, true, 2);
-                    if (tip) {
-                        widg->set_tooltip_text(*tip);
-                    } else {
-                        widg->set_tooltip_text("");
-                        widg->set_has_tooltip(false);
-                    }
-                }
-            }
+    auto const vbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL, 2);
+    vbox->property_margin().set_value(5);
+
+    auto const buttons = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL,0);
+
+    for (auto const param: param_vector) {
+        if (!param->widget_is_visible) continue;
+
+        auto const widg = param->param_newWidget();
+        if (!widg) continue;
+
+        if (param->param_key == "simplify_just_coalesce") {
+            continue;
         }
 
-        ++it;
+        if (param->param_key == "simplify_individual_paths") {
+            UI::pack_start(*buttons, *widg, true, true, 2);
+        } else {
+            auto &horizontal_box = dynamic_cast<Gtk::Box &>(*widg);
+            auto const child_list = UI::get_children(horizontal_box);
+            auto &entry = dynamic_cast<Gtk::Entry &>(*child_list.at(1));
+            entry.set_width_chars(8);
+
+            UI::pack_start(*vbox, *widg, true, true, 2);
+        }
+
+        if (auto const tip = param->param_getTooltip()) {
+            widg->set_tooltip_markup(*tip);
+        } else {
+            widg->set_tooltip_text({});
+            widg->set_has_tooltip(false);
+        }
     }
-    vbox->pack_start(*buttons,true, true, 2);
-    if(Gtk::Widget* widg = defaultParamSet()) {
-        vbox->pack_start(*widg, true, true, 2);
-    }
-    return dynamic_cast<Gtk::Widget *>(vbox);
+
+    buttons->set_halign(Gtk::ALIGN_START);
+    UI::pack_start(*vbox, *buttons, true, true, 2);
+    return vbox;
 }
 
 void
 LPESimplify::doEffect(SPCurve *curve)
 {
     Geom::PathVector const original_pathv = pathv_to_linear_and_cubic_beziers(curve->get_pathvector());
-    gdouble size  = Geom::L2(bbox->dimensions());
-    //size /= Geom::Affine(0,0,0,0,0,0).descrim();
-    Path* pathliv = Path_for_pathvector(original_pathv);
-    if(simplify_individual_paths) {
+    auto pathliv = Path_for_pathvector(original_pathv);
+
+    double size = Geom::L2(bbox->dimensions());
+    if (simplify_individual_paths) {
         size = Geom::L2(Geom::bounds_fast(original_pathv)->dimensions());
     }
     size /= sp_lpe_item->i2doc_affine().descrim();
-    for (int unsigned i = 0; i < steps; i++) {
-        if ( simplify_just_coalesce ) {
-            pathliv->Coalesce(threshold * size);
+
+    auto const &version = lpeversion.param_getSVGValue();
+    int const factor = version < "1.3" ? 1 : 10000;
+
+    for (auto i = 0u; i < steps; ++i) {
+        if (simplify_just_coalesce) {
+            pathliv->Coalesce((threshold / factor) * size);
         } else {
-            pathliv->ConvertEvenLines(threshold * size);
-            pathliv->Simplify(threshold * size);
+            pathliv->ConvertEvenLines((threshold / factor) * size);
+            pathliv->Simplify((threshold / factor) * size);
         }
     }
-    Geom::PathVector result = Geom::parse_svg_path(pathliv->svg_dump_path());
+
+    auto result = pathliv->MakePathVector();
     generateHelperPathAndSmooth(result);
     curve->set_pathvector(result);
     update_helperpath();
@@ -278,7 +300,6 @@ LPESimplify::drawHandle(Geom::Point p)
     hp.push_back(pathv[0]);
 }
 
-
 void
 LPESimplify::drawHandleLine(Geom::Point p,Geom::Point p2)
 {
@@ -299,9 +320,7 @@ LPESimplify::addCanvasIndicators(SPLPEItem const */*lpeitem*/, std::vector<Geom:
     hp_vec.push_back(hp);
 }
 
-
-}; //namespace LivePathEffect
-}; /* namespace Inkscape */
+} // namespace Inkscape::LivePathEffect
 
 /*
   Local Variables:

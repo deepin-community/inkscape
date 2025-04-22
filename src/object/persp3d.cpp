@@ -30,35 +30,29 @@
 #include "ui/icon-names.h"
 #include "ui/tools/box3d-tool.h"
 #include "util/units.h"
-#include "xml/node-event-vector.h"
+#include "xml/node.h"
+#include "xml/node-observer.h"
+
+void Persp3DNodeObserver::notifyAttributeChanged(Inkscape::XML::Node &, GQuark, Inkscape::Util::ptr_shared, Inkscape::Util::ptr_shared)
+{
+    auto persp = static_cast<Persp3D*>(this);
+    persp->update_box_displays();
+}
 
 using Inkscape::DocumentUndo;
-
-static void persp3d_on_repr_attr_changed (Inkscape::XML::Node * repr, const gchar *key, const gchar *oldval, const gchar *newval, bool is_interactive, void * data);
 
 static int global_counter = 0;
 
 /* Constructor/destructor for the internal class */
 
-Persp3DImpl::Persp3DImpl() :
-    tmat (Proj::TransfMat3x4 ()),
-    document (nullptr)
+Persp3DImpl::Persp3DImpl()
 {
     my_counter = global_counter++;
 }
 
-static Inkscape::XML::NodeEventVector const persp3d_repr_events = {
-    nullptr, /* child_added */
-    nullptr, /* child_removed */
-    persp3d_on_repr_attr_changed,
-    nullptr, /* content_changed */
-    nullptr  /* order_changed */
-};
-
-
-Persp3D::Persp3D() : SPObject() {
-    this->perspective_impl = new Persp3DImpl();
-}
+Persp3D::Persp3D()
+    : perspective_impl(std::make_unique<Persp3DImpl>())
+{}
 
 Persp3D::~Persp3D() = default;
 
@@ -75,16 +69,19 @@ void Persp3D::build(SPDocument *document, Inkscape::XML::Node *repr) {
     this->readAttr(SPAttr::INKSCAPE_PERSP3D_ORIGIN);
 
     if (repr) {
-        repr->addListener (&persp3d_repr_events, this);
+        repr->addObserver(nodeObserver());
     }
 }
 
 /**
  * Virtual release of Persp3D members before destruction.
  */
-void Persp3D::release() {
-    delete this->perspective_impl;
-    this->getRepr()->removeListenerByData(this);
+void Persp3D::release()
+{
+    getRepr()->removeObserver(nodeObserver());
+    perspective_impl.reset();
+
+    SPObject::release();
 }
 
 /**
@@ -183,9 +180,8 @@ void Persp3D::set(SPAttr key, gchar const *value) {
         return;
     }
 
-    Inkscape::UI::Tools::ToolBase *ec = SP_ACTIVE_DESKTOP->getEventContext();
-    if (SP_IS_BOX3D_CONTEXT(ec)) {
-        Inkscape::UI::Tools::Box3dTool *bc = SP_BOX3D_CONTEXT(ec);
+    auto const tool = Inkscape::Application::instance().active_desktop()->getTool();
+    if (auto bc = dynamic_cast<Inkscape::UI::Tools::Box3dTool*>(tool)) {
         bc->_vpdrag->updateDraggers();
         bc->_vpdrag->updateLines();
         bc->_vpdrag->updateBoxHandles();
@@ -253,8 +249,8 @@ Persp3D::document_first_persp(SPDocument *document)
 {
     Persp3D *first = nullptr;
     for (auto& child: document->getDefs()->children) {
-        if (SP_IS_PERSP3D(&child)) {
-            first = SP_PERSP3D(&child);
+        if (is<Persp3D>(&child)) {
+            first = cast<Persp3D>(&child);
             break;
         }
     }
@@ -311,7 +307,7 @@ Inkscape::XML::Node* Persp3D::write(Inkscape::XML::Document *xml_doc, Inkscape::
 /* convenience wrapper around Persp3D::get_finite_dir() and Persp3D::get_infinite_dir() */
 Geom::Point
 Persp3D::get_PL_dir_from_pt (Geom::Point const &pt, Proj::Axis axis) const {
-    if (Persp3D::VP_is_finite(this->perspective_impl, axis)) {
+    if (Persp3D::VP_is_finite(this->perspective_impl.get(), axis)) {
         return this->get_finite_dir(pt, axis);
     } else {
         return this->get_infinite_dir(axis);
@@ -328,7 +324,7 @@ Geom::Point
 Persp3D::get_infinite_dir (Proj::Axis axis) const {
     Proj::Pt2 vp(this->get_VP(axis));
     if (vp[2] != 0.0) {
-        g_print ("VP should be infinite but is (%f : %f : %f)\n", vp[0], vp[1], vp[2]);
+        g_warning ("VP should be infinite but is (%f : %f : %f)", vp[0], vp[1], vp[2]);
         g_return_val_if_fail(vp[2] != 0.0, Geom::Point(0.0, 0.0));
     }
     return Geom::Point(vp[0], vp[1]);
@@ -368,7 +364,7 @@ Persp3D::toggle_VPs (std::list<Persp3D *> list, Proj::Axis axis) {
 
 void
 Persp3D::set_VP_state (Proj::Axis axis, Proj::VPState state) {
-    if (Persp3D::VP_is_finite(this->perspective_impl, axis) != (state == Proj::VP_FINITE)) {
+    if (Persp3D::VP_is_finite(this->perspective_impl.get(), axis) != (state == Proj::VP_FINITE)) {
         this->toggle_VP(axis);
     }
 }
@@ -399,7 +395,7 @@ Persp3D::apply_affine_transformation (Geom::Affine const &xform) {
 
 void
 Persp3D::add_box (SPBox3D *box) {
-    Persp3DImpl *persp_impl = this->perspective_impl;
+    auto persp_impl = perspective_impl.get();
 
     if (!box) {
         return;
@@ -412,7 +408,7 @@ Persp3D::add_box (SPBox3D *box) {
 
 void
 Persp3D::remove_box (SPBox3D *box) {
-    Persp3DImpl *persp_impl = this->perspective_impl;
+    auto persp_impl = perspective_impl.get();
 
     std::vector<SPBox3D *>::iterator i = std::find (persp_impl->boxes.begin(), persp_impl->boxes.end(), box);
     if (i != persp_impl->boxes.end())
@@ -421,7 +417,7 @@ Persp3D::remove_box (SPBox3D *box) {
 
 bool
 Persp3D::has_box (SPBox3D *box) const {
-    Persp3DImpl *persp_impl = this->perspective_impl;
+    auto persp_impl = perspective_impl.get();
 
     // FIXME: For some reason, std::find() does not seem to compare pointers "correctly" (or do we need to
     //        provide a proper comparison function?), so we manually traverse the list.
@@ -435,7 +431,7 @@ Persp3D::has_box (SPBox3D *box) const {
 
 void
 Persp3D::update_box_displays () {
-    Persp3DImpl *persp_impl = this->perspective_impl;
+    auto persp_impl = perspective_impl.get();
 
     if (persp_impl->boxes.empty())
         return;
@@ -446,7 +442,7 @@ Persp3D::update_box_displays () {
 
 void
 Persp3D::update_box_reprs () {
-    Persp3DImpl *persp_impl = this->perspective_impl;
+    auto persp_impl = perspective_impl.get();
 
     if (!persp_impl || persp_impl->boxes.empty())
         return;
@@ -458,7 +454,7 @@ Persp3D::update_box_reprs () {
 
 void
 Persp3D::update_z_orders () {
-    Persp3DImpl *persp_impl = this->perspective_impl;
+    auto persp_impl = perspective_impl.get();
 
     if (!persp_impl || persp_impl->boxes.empty())
         return;
@@ -472,7 +468,7 @@ Persp3D::update_z_orders () {
 //        obsolete. We should do this.
 std::list<SPBox3D *>
 Persp3D::list_of_boxes() const {
-    Persp3DImpl *persp_impl = this->perspective_impl;
+    auto persp_impl = perspective_impl.get();
 
     std::list<SPBox3D *> bx_lst;
     for (auto & boxe : persp_impl->boxes) {
@@ -502,25 +498,10 @@ Persp3D::absorb(Persp3D *other) {
     }
 }
 
-static void
-persp3d_on_repr_attr_changed ( Inkscape::XML::Node * /*repr*/,
-                               const gchar */*key*/,
-                               const gchar */*oldval*/,
-                               const gchar */*newval*/,
-                               bool /*is_interactive*/,
-                               void * data )
-{
-    if (!data)
-        return;
-
-    Persp3D *persp = (Persp3D*) data;
-    persp->update_box_displays ();
-}
-
 /* checks whether all boxes linked to this perspective are currently selected */
 bool
 Persp3D::has_all_boxes_in_selection (Inkscape::ObjectSet *set) const {
-    Persp3DImpl *persp_impl = this->perspective_impl;
+    auto persp_impl = perspective_impl.get();
 
     std::list<SPBox3D *> selboxes = set->box3DList();
 
@@ -537,7 +518,7 @@ Persp3D::has_all_boxes_in_selection (Inkscape::ObjectSet *set) const {
 
 void
 Persp3D::print_debugging_info () const {
-    Persp3DImpl *persp_impl = this->perspective_impl;
+    auto persp_impl = perspective_impl.get();
     g_print ("=== Info for Persp3D %d ===\n", persp_impl->my_counter);
     gchar * cstr;
     for (auto & axe : Proj::axes) {
@@ -561,8 +542,8 @@ void
 Persp3D::print_debugging_info_all(SPDocument *document)
 {
     for (auto& child: document->getDefs()->children) {
-        if (SP_IS_PERSP3D(&child)) {
-            SP_PERSP3D(&child)->print_debugging_info();
+        if (is<Persp3D>(&child)) {
+            cast<Persp3D>(&child)->print_debugging_info();
         }
     }
     Persp3D::print_all_selected();
@@ -576,8 +557,8 @@ Persp3D::print_all_selected() {
     std::list<Persp3D *> sel_persps = SP_ACTIVE_DESKTOP->getSelection()->perspList();
 
     for (auto & sel_persp : sel_persps) {
-        Persp3D *persp = SP_PERSP3D(sel_persp);
-        Persp3DImpl *persp_impl = persp->perspective_impl;
+        auto persp = sel_persp;
+        auto persp_impl = persp->perspective_impl.get();
         g_print ("  %s (%d):  ", persp->getRepr()->attribute("id"), persp->perspective_impl->my_counter);
         for (auto & boxe : persp_impl->boxes) {
             g_print ("%d ", boxe->my_counter);

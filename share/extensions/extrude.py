@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 #
 # Copyright (C) 2022 Jonathan Neuhauser, jonathan.neuhauser@outlook.com
@@ -18,7 +18,6 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
 """Join paths with lines or polygons"""
-
 
 import itertools
 from typing import List, Union

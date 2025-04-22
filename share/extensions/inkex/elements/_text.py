@@ -24,6 +24,7 @@ Provide text based element classes interface.
 Because text is not rendered at all, no information about a text's path
 size or actual location can be generated yet.
 """
+
 from __future__ import annotations
 
 from tempfile import TemporaryDirectory
@@ -123,9 +124,55 @@ class TextElement(ShapeElement, TextBBMixin):
         return self.findall("svg:tspan")
 
     def get_text(self, sep="\n"):
-        """Return the text content including tspans"""
-        nodes = [self] + list(self.tspans())
-        return sep.join([elem.text for elem in nodes if elem.text is not None])
+        """Return the text content including tspans and their tail"""
+        # Stack of node and depth
+        stack = [(self, 0)]
+        result = []
+
+        def poptail():
+            """Pop the tail from the tail stack and add it if necessary to results"""
+            tail = tail_stack.pop()
+            if tail is not None:
+                result.append(tail)
+
+        # Stack of the tail of nodes
+        tail_stack = []
+        previous_depth = -1
+        while stack:
+            # Get current node and depth
+            node, depth = stack.pop()
+
+            # Pop the previous tail if the depth do not increase
+            if previous_depth >= depth:
+                poptail()
+
+            # Pop as many times as the depth is reduced
+            for _ in range(previous_depth - depth):
+                poptail()
+
+            # Add a node text to the result, if any if node is text or tspan
+            if node.text and node.TAG in ["text", "tspan"]:
+                result.append(node.text)
+
+            # Add child elements
+            stack.extend(
+                map(
+                    lambda tspan: (tspan, depth + 1),
+                    node.iterchildren(reversed=True),
+                )
+            )
+
+            # Add the tail from node to the stack
+            tail_stack.append(node.tail)
+
+            previous_depth = depth
+
+        # Pop remaining tail elements
+        # Tail of the main text element should not be included
+        while len(tail_stack) > 1:
+            poptail()
+
+        return sep.join(result)
 
     def shape_box(self, transform=None):
         """

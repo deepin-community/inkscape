@@ -24,9 +24,7 @@
  * obsolete versions the user might have. */
 static char const preferences_skeleton[] =
     R"=====(
-<inkscape version="1"
-  xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
-  xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
+<inkscape version="1">
   <group id="window">
     <group id="menu"        state="1"/>
     <group id="commands"    state="1"/>
@@ -62,9 +60,10 @@ static char const preferences_skeleton[] =
   </group>
 
   <group id="template">
-    <sodipodi:namedview
+    <group
        id="base"
        pagecolor="#ffffff"
+       deskcolor="#d1d1d1"
        pageopacity="0.0"
        pagecheckerboard="0"
        bordercolor="#000000"
@@ -127,7 +126,7 @@ static char const preferences_skeleton[] =
 
     <eventcontext id="nodes" selcue="1" gradientdrag="1"
       pathflash_enabled="1" pathflash_unselected="0" pathflash_timeout="500" show_handles="1" show_outline="0"
-      sculpting_profile="1" single_node_transform_handles="0" show_transform_handles="0" live_outline="1" live_objects="1" show_helperpath="0" x="0" y="0" edit_clipping_paths="0" edit_masks="0" />
+      sculpting_profile="1" single_node_transform_handles="0" show_transform_handles="0" live_outline="1" live_objects="1" show_helperpath="0" edit_clipping_paths="0" edit_masks="0" />
     <eventcontext id="marker" selcue="1" gradientdrag="1" />
     <eventcontext id="tweak" selcue="0" gradientdrag="0" show_handles="0" width="0.2" force="0.2" fidelity="0.5" usepressure="1" style="fill:red;stroke:none;" usecurrent="1"/>
     <eventcontext id="spray" selcue="1" gradientdrag="0" usepressure="1" width="15" population="70" mode="1" rotation_variation="0" scale_variation="0" standard_deviation="70" mean="0"/>
@@ -135,7 +134,7 @@ static char const preferences_skeleton[] =
     <eventcontext id="mesh" selcue="1"/>
     <eventcontext id="zoom" selcue="1" gradientdrag="0"/>
     <eventcontext id="dropper" selcue="1" gradientdrag="1" pick="1" setalpha="1"/>
-    <eventcontext id="select" selcue="1" gradientdrag="0"/>
+    <eventcontext id="select" selcue="1" gradientdrag="0" changelayer="1" changepage="1" />
     <eventcontext id="connector" style="fill:none;fill-rule:evenodd;stroke:black;stroke-opacity:1;stroke-linejoin:miter;stroke-width:1px;stroke-linecap:butt;" selcue="1"/>
     <eventcontext id="paintbucket" style="fill:#a0a0a0;stroke:none;" usecurrent="1"/>
     <group
@@ -185,7 +184,22 @@ static char const preferences_skeleton[] =
     </group>
   </group>
 
-  <group id="colorselector" page="0" switcher="1" />
+  <group id="colorselector" page="1" switcher="1">
+    <group id="RGB"
+      visible="1" />
+    <group id="HSL"
+      visible="1" />
+    <group id="CMYK"
+      visible="1" />
+    <group id="HSV"
+      visible="1" />
+    <group id="HSLuv"
+      visible="1" />
+    <group id="OKLAB"
+      visible="1" />
+    <group id="CMS"
+      visible="1" />
+  </group>
 
   <group id="embedded">
     <group id="swatches"
@@ -193,7 +207,13 @@ static char const preferences_skeleton[] =
       panel_mode="1"
       panel_ratio="100"
       panel_wrap="0"
-      palette="Inkscape default" />
+      palette="Inkscape default">
+      <group id="pinned"
+         none="1"
+         rgb000000="1" black="1"
+         rgb808080="1" gray-50="1"
+         rgbffffff="1" white="1" />
+    </group>
   </group>
 
   <group id="dialogs">
@@ -218,13 +238,12 @@ static char const preferences_skeleton[] =
     <group id="save_copy" default="" append_extension="1" enable_preview="1" path=""/>
     <group id="open" enable_preview="1" path=""/>
     <group id="import" enable_preview="1" path="" ask="1" ask_svg="1" link="link" scale="optimizeSpeed"/>
-    <group id="debug" redirect="0"/>
     <group id="clonetiler" dotrace="0" />
     <group id="gridtiler" />
     <group id="extension-error" show-on-startup="0"/>
     <group id="memory" />
     <group id="messages" />
-    <group id="swatches" />
+    <group id="swatches" palette="Auto"/>
     <group id="iconpreview" />
     <group id="aboutextensions" />
     <group id="treeeditor" />
@@ -268,7 +287,6 @@ static char const preferences_skeleton[] =
        gamutcolor="#808080"
        gamutwarn="0"
        bpc="0"
-       preserveblack="0"
        uri="" />
     <group id="savewindowgeometry" value="1"/>
     <group id="defaultoffsetwidth" value="2px"/>
@@ -310,7 +328,6 @@ static char const preferences_skeleton[] =
     <group id="maskobject" topmost="1" remove="1"/>
     <group id="blurquality" value="0"/>
     <group id="filterquality" value="1"/>
-    <group id="showfiltersinfobox" value="1" />
     <group id="startmode" outline="0"/>
     <group id="outlinemode" value="0"/>
 
@@ -344,12 +361,10 @@ static char const preferences_skeleton[] =
            allow_net_access="0"/>
     </group>
     <group id="forkgradientvectors" value="1"/>
-    <group id="iconrender" named_nodelay="0"/>
     <group id="autosave" enable="1" interval="10" path="" max="50"/>
     <group id="grids"
       no_emphasize_when_zoomedout="0">
       <group id="xy"
-             units="px"
              origin_x="0.0"
              origin_y="0.0"
              spacing_x="1.0"
@@ -364,9 +379,19 @@ static char const preferences_skeleton[] =
              angle_x="30.0"
              angle_z="30.0"
              empspacing="5"/>
+      <group id="modular"
+             units="mm"
+             origin_x="0.0"
+             origin_y="0.0"
+             spacing_x="40.0"
+             spacing_y="40.0"
+             gapx="10"
+             gapy="10"
+             marginx="0"
+             marginy="0"
+             />
     </group>
     <group id="workarounds"
-           colorsontop="0"
            partialdynamic="0"/>
     <group
        id="font"
@@ -497,7 +522,6 @@ static char const preferences_skeleton[] =
     </group>
   </group>
   <group id="debug">
-    <group id="latency" skew="1"/>
   </group>
   <group id="ui"
     language=""/>

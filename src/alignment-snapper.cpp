@@ -10,36 +10,24 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <memory>
+
 #include <2geom/circle.h>
 #include <2geom/line.h>
 #include <2geom/path-intersection.h>
 #include <2geom/path-sink.h>
-#include <memory>
 
 #include "desktop.h"
 #include "display/curve.h"
 #include "document.h"
-#include "inkscape.h"
-#include "live_effects/effect-enum.h"
-#include "object/sp-clippath.h"
-#include "object/sp-flowtext.h"
-#include "object/sp-image.h"
-#include "object/sp-item-group.h"
-#include "object/sp-mask.h"
-#include "object/sp-namedview.h"
+#include "page-manager.h"
+#include "preferences.h"
+#include "snap-enums.h"
+
 #include "object/sp-page.h"
 #include "object/sp-path.h"
 #include "object/sp-root.h"
-#include "object/sp-shape.h"
-#include "object/sp-text.h"
 #include "object/sp-use.h"
-#include "path/path-util.h" // curve_for_item
-#include "preferences.h"
-#include "snap-enums.h"
-#include "style.h"
-#include "svg/svg.h"
-#include "text-editing.h"
-#include "page-manager.h"
 
 Inkscape::AlignmentSnapper::AlignmentSnapper(SnapManager *sm, Geom::Coord const d)
     : Snapper(sm, d)
@@ -66,21 +54,33 @@ void Inkscape::AlignmentSnapper::_collectBBoxPoints(bool const &first_point) con
         SPItem::VISUAL_BBOX : SPItem::GEOMETRIC_BBOX;
 
     // collect page corners and center
-    if (_snapmanager->snapprefs.isTargetSnappable(SNAPTARGET_PAGE_CORNER)) {
-        if (auto document = _snapmanager->getDocument()) {
-            auto ignore_page = _snapmanager->getPageToIgnore();
-            for (auto page : document->getPageManager().getPages()) {
-                if (ignore_page == page)
-                    continue;
+    if (auto document = _snapmanager->getDocument()) {
+        auto ignore_page = _snapmanager->getPageToIgnore();
+        for (auto page : document->getPageManager().getPages()) {
+            if (ignore_page == page)
+                continue;
+            if (_snapmanager->snapprefs.isTargetSnappable(SNAPTARGET_PAGE_EDGE_CORNER)) {
                 getBBoxPoints(page->getDesktopRect(), _points_to_snap_to.get(), true,
-                    SNAPSOURCE_ALIGNMENT_PAGE_CORNER, SNAPTARGET_ALIGNMENT_PAGE_CORNER,
+                    SNAPSOURCE_ALIGNMENT_PAGE_CORNER, SNAPTARGET_ALIGNMENT_PAGE_EDGE_CORNER,
                     SNAPSOURCE_UNDEFINED, SNAPTARGET_UNDEFINED, // No edges
-                    SNAPSOURCE_ALIGNMENT_PAGE_CENTER, SNAPTARGET_ALIGNMENT_PAGE_CENTER);
+                    SNAPSOURCE_ALIGNMENT_PAGE_CENTER, SNAPTARGET_ALIGNMENT_PAGE_EDGE_CENTER);
             }
+            if (_snapmanager->snapprefs.isTargetSnappable(SNAPTARGET_PAGE_MARGIN_CORNER)) {
+                getBBoxPoints(page->getDesktopMargin(), _points_to_snap_to.get(), true,
+                    SNAPSOURCE_UNDEFINED, SNAPTARGET_ALIGNMENT_PAGE_MARGIN_CORNER,
+                    SNAPSOURCE_UNDEFINED, SNAPTARGET_UNDEFINED, // No edges
+                    SNAPSOURCE_UNDEFINED, SNAPTARGET_ALIGNMENT_PAGE_MARGIN_CENTER);
+                getBBoxPoints(page->getDesktopBleed(), _points_to_snap_to.get(), true,
+                    SNAPSOURCE_UNDEFINED, SNAPTARGET_ALIGNMENT_PAGE_BLEED_CORNER,
+                    SNAPSOURCE_UNDEFINED, SNAPTARGET_UNDEFINED, // No edges
+                    SNAPSOURCE_UNDEFINED, SNAPTARGET_UNDEFINED);
+            }
+        }
+        if (_snapmanager->snapprefs.isTargetSnappable(SNAPTARGET_PAGE_EDGE_CORNER)) {
             getBBoxPoints(document->preferredBounds(), _points_to_snap_to.get(), true,
-                SNAPSOURCE_ALIGNMENT_PAGE_CORNER, SNAPTARGET_ALIGNMENT_PAGE_CORNER,
+                SNAPSOURCE_ALIGNMENT_PAGE_CORNER, SNAPTARGET_ALIGNMENT_PAGE_EDGE_CORNER,
                 SNAPSOURCE_UNDEFINED, SNAPTARGET_UNDEFINED, // No edges
-                SNAPSOURCE_ALIGNMENT_PAGE_CENTER, SNAPTARGET_ALIGNMENT_PAGE_CENTER);
+                SNAPSOURCE_ALIGNMENT_PAGE_CENTER, SNAPTARGET_ALIGNMENT_PAGE_EDGE_CENTER);
         }
     }
 
@@ -91,7 +91,7 @@ void Inkscape::AlignmentSnapper::_collectBBoxPoints(bool const &first_point) con
         SPItem *root_item = candidate.item; 
 
         // get the root item in case we have a duplicate at hand
-        SPUse *use = dynamic_cast<SPUse *>(candidate.item);
+        auto use = cast<SPUse>(candidate.item);
         if (use) {
             root_item = use->root();
         }
@@ -139,6 +139,7 @@ void Inkscape::AlignmentSnapper::_snapBBoxPoints(IntermSnapResults &isr,
     bool success_y = false;
     bool intersection = false;
     bool strict_snapping = _snapmanager->snapprefs.getStrictSnapping();
+    bool always = getSnapperAlwaysSnap(p.getSourceType());
 
     for (const auto & k : *_points_to_snap_to) {
         if (_allowSourceToSnapToTarget(p.getSourceType(), k.getTargetType(), strict_snapping)) {
@@ -167,7 +168,7 @@ void Inkscape::AlignmentSnapper::_snapBBoxPoints(IntermSnapResults &isr,
                                  is_target_node ? SNAPTARGET_ALIGNMENT_HANDLE : k.getTargetType(),
                                  distX,
                                  getSnapperTolerance(),
-                                 getSnapperAlwaysSnap(),
+                                 always,
                                  false,
                                  true,
                                  k.getTargetBBox());
@@ -182,7 +183,7 @@ void Inkscape::AlignmentSnapper::_snapBBoxPoints(IntermSnapResults &isr,
                                  is_target_node ? SNAPTARGET_ALIGNMENT_HANDLE : k.getTargetType(),
                                  distY,
                                  getSnapperTolerance(),
-                                 getSnapperAlwaysSnap(),
+                                 always,
                                  false,
                                  true,
                                  k.getTargetBBox());
@@ -202,7 +203,7 @@ void Inkscape::AlignmentSnapper::_snapBBoxPoints(IntermSnapResults &isr,
                                      SNAPTARGET_ALIGNMENT_INTERSECTION,
                                      d,
                                      getSnapperTolerance(),
-                                     getSnapperAlwaysSnap(),
+                                     always,
                                      false,
                                      true,
                                      k.getTargetBBox());
@@ -231,8 +232,8 @@ bool Inkscape::AlignmentSnapper::_allowSourceToSnapToTarget(SnapSourceType sourc
 {
     if (strict_snapping && (source == SNAPSOURCE_PAGE_CENTER || source == SNAPSOURCE_PAGE_CORNER)) {
         // Restrict page alignment snapping to just other pages (no objects please!)
-        return target == SNAPTARGET_PAGE_CENTER || target == SNAPTARGET_PAGE_CORNER 
-            || target == SNAPTARGET_ALIGNMENT_PAGE_CENTER || target == SNAPTARGET_ALIGNMENT_PAGE_CORNER;
+        return target == SNAPTARGET_PAGE_EDGE_CENTER || target == SNAPTARGET_PAGE_EDGE_CORNER 
+            || target == SNAPTARGET_ALIGNMENT_PAGE_EDGE_CENTER || target == SNAPTARGET_ALIGNMENT_PAGE_EDGE_CORNER;
     }   
     return true;
 }
@@ -301,9 +302,9 @@ bool Inkscape::AlignmentSnapper::ThisSnapperMightSnap() const
     return true;
 }
 
-bool Inkscape::AlignmentSnapper::getSnapperAlwaysSnap() const
+bool Inkscape::AlignmentSnapper::getSnapperAlwaysSnap(SnapSourceType const &/*source*/) const
 {
-    return _snapmanager->snapprefs.getAlignmentTolerance() == 10000; //TODO: Replace this threshold of 10000 by a constant; see also tolerance-slider.cpp
+    return Preferences::get()->getBool("/options/snap/alignment/always", false);
 }
 
 Geom::Coord Inkscape::AlignmentSnapper::getSnapperTolerance() const

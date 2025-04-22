@@ -13,87 +13,57 @@
 #ifndef INKSCAPE_UI_DIALOG_UNDO_HISTORY_H
 #define INKSCAPE_UI_DIALOG_UNDO_HISTORY_H
 
-#include <functional>
+#include <string>
+#include <utility>
 #include <glibmm/property.h>
-#include <gtkmm/cellrendererpixbuf.h>
+#include <glibmm/propertyproxy.h>
+#include <glibmm/refptr.h>
+#include <gtkmm/cellrenderertext.h>
 #include <gtkmm/scrolledwindow.h>
 #include <gtkmm/treemodel.h>
 #include <gtkmm/treeselection.h>
-#include <sstream>
 
 #include "event-log.h"
 #include "ui/dialog/dialog-base.h"
 
-
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
-
+namespace Inkscape::UI::Dialog {
 
 /* Custom cell renderers */
 
-class CellRendererSPIcon : public Gtk::CellRendererPixbuf {
-public:
-
-    CellRendererSPIcon()
-        : Glib::ObjectBase(typeid(CellRendererPixbuf))
-        , Gtk::CellRendererPixbuf()
-        , _property_icon(*this, "icon", Glib::RefPtr<Gdk::Pixbuf>(nullptr))
-        , _property_icon_name(*this, "our-icon-name", "inkscape-logo") // icon-name/icon_name used by Gtk
-    { }
-
-    Glib::PropertyProxy<Glib::ustring>
-    property_icon_name() { return _property_icon_name.get_proxy(); }
-
-protected:
-    void render_vfunc(const Cairo::RefPtr<Cairo::Context>& cr,
-                              Gtk::Widget& widget,
-                              const Gdk::Rectangle& background_area,
-                              const Gdk::Rectangle& cell_area,
-                              Gtk::CellRendererState flags) override;
-private:
-
-    Glib::Property<Glib::RefPtr<Gdk::Pixbuf> > _property_icon;
-    Glib::Property<Glib::ustring> _property_icon_name;
-    std::map<Glib::ustring, Glib::RefPtr<Gdk::Pixbuf> > _icon_cache;
-
-};
-
-
 class CellRendererInt : public Gtk::CellRendererText {
 public:
-
-    struct Filter : std::unary_function<int, bool> {
-        virtual ~Filter() = default;
-        virtual bool operator() (const int&) const =0;
+    struct Filter
+    {
+        virtual bool operator()(const int&) const = 0;
     };
 
-    CellRendererInt(const Filter& filter=no_filter) :
-        Glib::ObjectBase(typeid(CellRendererText)),
+    CellRendererInt(const Filter &filter = no_filter) :
+        Glib::ObjectBase{"CellRendererInt"},
         Gtk::CellRendererText(),
         _property_number(*this, "number", 0),
         _filter (filter)
-    { }
-
+    {
+        auto const set_text = [this]{
+            Glib::ustring text;
+            if (auto const value = _property_number.get_value(); _filter(value)) {
+                text = std::to_string(value);
+            }
+            property_text().set_value(std::move(text));
+        };
+        set_text();
+        property_number().signal_changed().connect(set_text);
+    }
 
     Glib::PropertyProxy<int>
     property_number() { return _property_number.get_proxy(); }
 
-    static const Filter& no_filter;
-
-protected:
-    void render_vfunc(const Cairo::RefPtr<Cairo::Context>& cr,
-                              Gtk::Widget& widget,
-                              const Gdk::Rectangle& background_area,
-                              const Gdk::Rectangle& cell_area,
-                              Gtk::CellRendererState flags) override;
+    static const Filter &no_filter;
 
 private:
-
     Glib::Property<int> _property_number;
-    const Filter& _filter;
+    const Filter &_filter;
 
-    struct NoFilter : Filter { bool operator() (const int& /*x*/) const override { return true; } };
+    struct NoFilter : Filter { bool operator()(const int &/*x*/) const override { return true; } };
 };
 
 /**
@@ -105,13 +75,13 @@ private:
 class UndoHistory : public DialogBase
 {
 public:
+    UndoHistory();
     ~UndoHistory() override;
 
-    static UndoHistory &getInstance();
     void documentReplaced() override;
 
-protected:
-    EventLog *_event_log;
+private:
+    EventLog *_event_log = nullptr;
 
     Gtk::ScrolledWindow _scrolled_window;
 
@@ -131,25 +101,17 @@ protected:
     void _onExpandEvent(const Gtk::TreeModel::iterator &iter, const Gtk::TreeModel::Path &path);
     void _onCollapseEvent(const Gtk::TreeModel::iterator &iter, const Gtk::TreeModel::Path &path);
 
-private:
-    UndoHistory();
-
-    // no default constructor, noncopyable, nonassignable
-    UndoHistory(UndoHistory const &d) = delete;
-    UndoHistory operator=(UndoHistory const &d) = delete;
-
-    struct GreaterThan : CellRendererInt::Filter {
+    struct GreaterThan : CellRendererInt::Filter
+    {
         GreaterThan(int _i) : i (_i) {}
-        bool operator() (const int& x) const override { return x > i; }
+        bool operator()(const int &x) const override { return x > i; }
         int i;
     };
 
-    static const CellRendererInt::Filter& greater_than_1;
+    static const CellRendererInt::Filter &greater_than_1;
 };
 
-} // namespace Dialog
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Dialog
 
 #endif //INKSCAPE_UI_DIALOG_UNDO_HISTORY_H
 

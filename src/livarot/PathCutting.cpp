@@ -14,24 +14,22 @@
  *  Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <cstring>
-#include <string>
+#include <cmath>
 #include <cstdio>
-#include <typeinfo>
-#include "Path.h"
-#include "style.h"
-#include "livarot/path-description.h"
+#include <vector>
+
 #include <2geom/pathvector.h>
 #include <2geom/point.h>
 #include <2geom/affine.h>
 #include <2geom/sbasis-to-bezier.h>
 #include <2geom/curves.h>
+
+#include "Path.h"
+#include "style.h"
+#include "livarot/path-description.h"
 #include "helper/geom-curves.h"
-#include "helper/geom.h"
 
-#include "svg/svg.h"
-
-void  Path::DashPolyline(float head,float tail,float body,int nbD,float *dashs,bool stPlain,float stOffset)
+void  Path::DashPolyline(float head,float tail,float body,int nbD, const float dashs[],bool stPlain,float stOffset)
 {
   if ( nbD <= 0 || body <= 0.0001 ) return; // pas de tirets, en fait
 
@@ -59,42 +57,40 @@ void  Path::DashPolyline(float head,float tail,float body,int nbD,float *dashs,b
 
 void  Path::DashPolylineFromStyle(SPStyle *style, float scale, float min_len)
 {
-    if (!style->stroke_dasharray.values.empty()) {
+    if (style->stroke_dasharray.values.empty() || !style->stroke_dasharray.is_valid()) return;
 
-        double dlen = 0.0;
-        // Find total length
-        for (auto & value : style->stroke_dasharray.values) {
-            dlen += value.value * scale;
+    double dlen = 0.0;
+    // Find total length
+    for (auto & value : style->stroke_dasharray.values) {
+        dlen += value.value * scale;
+    }
+    if (dlen >= min_len) {
+        // Extract out dash pattern (relative positions)
+        double dash_offset = style->stroke_dashoffset.value * scale;
+        size_t n_dash = style->stroke_dasharray.values.size();
+        std::vector<double> dash(n_dash);
+        for (unsigned i = 0; i < n_dash; i++) {
+            dash[i] = style->stroke_dasharray.values[i].value * scale;
         }
-        if (dlen >= min_len) {
-            // Extract out dash pattern (relative positions)
-            double dash_offset = style->stroke_dashoffset.value * scale;
-            size_t n_dash = style->stroke_dasharray.values.size();
-            double *dash = g_new(double, n_dash);
-            for (unsigned i = 0; i < n_dash; i++) {
-                dash[i] = style->stroke_dasharray.values[i].value * scale;
-            }
 
-            // Convert relative positions to absolute positions
-            int    nbD = n_dash;
-            float  *dashs=(float*)malloc((nbD+1)*sizeof(float));
-            while ( dash_offset >= dlen ) dash_offset-=dlen;
-            dashs[0]=dash[0];
-            for (int i=1; i<nbD; i++) {
-                dashs[i]=dashs[i-1]+dash[i];
-            }
-
-            // modulo dlen
-            this->DashPolyline(0.0, 0.0, dlen, nbD, dashs, true, dash_offset);
-
-            free(dashs);
-            g_free(dash);
+        // Convert relative positions to absolute positions
+        int nbD = n_dash;
+        std::vector<float> dashes(n_dash);
+        if (dlen > 0) {
+            while (dash_offset >= dlen) dash_offset -= dlen;
         }
+        dashes[0] = dash[0];
+        for (int i = 1; i < nbD; ++i) {
+            dashes[i] = dashes[i-1] + dash[i];
+        }
+
+        // modulo dlen
+        DashPolyline(0.0, 0.0, dlen, nbD, dashes.data(), true, dash_offset);
     }
 }
 
 
-void Path::DashSubPath(int spL, int spP, std::vector<path_lineto> const &orig_pts, float head,float tail,float body,int nbD,float *dashs,bool stPlain,float stOffset)
+void Path::DashSubPath(int spL, int spP, std::vector<path_lineto> const &orig_pts, float head,float tail,float body,int nbD, const float dashs[],bool stPlain,float stOffset)
 {
   if ( spL <= 0 || spP == -1 ) return;
   
@@ -275,114 +271,47 @@ void Path::DashSubPath(int spL, int spP, std::vector<path_lineto> const &orig_pt
  *
  * \return A PathVector copy of the path description
  */
-Geom::PathVector
-Path::MakePathVector()
+Geom::PathVector Path::MakePathVector() const
 {
     Geom::PathVector pv;
-    Geom::Path * currentpath = nullptr;
 
-    Geom::Point   lastP,bezSt,bezEn;
-    int         bezNb=0;
-    for (int i=0;i<int(descr_cmd.size());i++) {
-        int const typ = descr_cmd[i]->getType();
-        switch ( typ ) {
-            case descr_close:
-            {
+    Geom::Path *currentpath = nullptr;
+    Geom::Point lastP;
+
+    for (auto c : descr_cmd) {
+        switch (c->getType()) {
+            case descr_close: {
                 currentpath->close(true);
+                break;
             }
-            break;
-
-            case descr_lineto:
-            {
-                PathDescrLineTo *nData = dynamic_cast<PathDescrLineTo *>(descr_cmd[i]);
-                currentpath->appendNew<Geom::LineSegment>(Geom::Point(nData->p[0], nData->p[1]));
-                lastP = nData->p;
+            case descr_lineto: {
+                auto data = static_cast<PathDescrLineTo const *>(c);
+                currentpath->appendNew<Geom::LineSegment>(data->p);
+                lastP = data->p;
+                break;
             }
-            break;
-
-            case descr_moveto:
-            {
-                PathDescrMoveTo *nData = dynamic_cast<PathDescrMoveTo *>(descr_cmd[i]);
+            case descr_moveto: {
+                auto data = static_cast<PathDescrMoveTo const *>(c);
                 pv.push_back(Geom::Path());
                 currentpath = &pv.back();
-                currentpath->start(Geom::Point(nData->p[0], nData->p[1]));
-                lastP = nData->p;
+                currentpath->start(data->p);
+                lastP = data->p;
+                break;
             }
-            break;
-
-            case descr_arcto:
-            {
-                /* TODO: add testcase for this descr_arcto case */
-                PathDescrArcTo *nData = dynamic_cast<PathDescrArcTo *>(descr_cmd[i]);
-                currentpath->appendNew<Geom::EllipticalArc>( nData->rx, nData->ry, nData->angle*M_PI/180.0, nData->large, !nData->clockwise, nData->p );
-                lastP = nData->p;
+            case descr_arcto: {
+                auto data = static_cast<PathDescrArcTo const *>(c);
+                currentpath->appendNew<Geom::EllipticalArc>(data->rx, data->ry, Geom::rad_from_deg(data->angle), data->large, !data->clockwise, data->p);
+                lastP = data->p;
+                break;
             }
-            break;
-
-            case descr_cubicto:
-            {
-                PathDescrCubicTo *nData = dynamic_cast<PathDescrCubicTo *>(descr_cmd[i]);
-                gdouble x1=lastP[0]+0.333333*nData->start[0];
-                gdouble y1=lastP[1]+0.333333*nData->start[1];
-                gdouble x2=nData->p[0]-0.333333*nData->end[0];
-                gdouble y2=nData->p[1]-0.333333*nData->end[1];
-                gdouble x3=nData->p[0];
-                gdouble y3=nData->p[1];
-                currentpath->appendNew<Geom::CubicBezier>( Geom::Point(x1,y1) , Geom::Point(x2,y2) , Geom::Point(x3,y3) );
-                lastP = nData->p;
+            case descr_cubicto: {
+                auto data = static_cast<PathDescrCubicTo const *>(c);
+                currentpath->appendNew<Geom::CubicBezier>(lastP + data->start / 3, data->p - data->end / 3, data->p);
+                lastP = data->p;
+                break;
             }
-            break;
-
-            case descr_bezierto:
-            {
-                PathDescrBezierTo *nData = dynamic_cast<PathDescrBezierTo *>(descr_cmd[i]);
-                if ( nData->nb <= 0 ) {
-                    currentpath->appendNew<Geom::LineSegment>( Geom::Point(nData->p[0], nData->p[1]) );
-                    bezNb=0;
-                } else if ( nData->nb == 1 ){
-                    PathDescrIntermBezierTo *iData = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[i+1]);
-                    gdouble x1=0.333333*(lastP[0]+2*iData->p[0]);
-                    gdouble y1=0.333333*(lastP[1]+2*iData->p[1]);
-                    gdouble x2=0.333333*(nData->p[0]+2*iData->p[0]);
-                    gdouble y2=0.333333*(nData->p[1]+2*iData->p[1]);
-                    gdouble x3=nData->p[0];
-                    gdouble y3=nData->p[1];
-                    currentpath->appendNew<Geom::CubicBezier>( Geom::Point(x1,y1) , Geom::Point(x2,y2) , Geom::Point(x3,y3) );
-                    bezNb=0;
-                } else {
-                    bezSt = 2*lastP-nData->p;
-                    bezEn = nData->p;
-                    bezNb = nData->nb;
-                }
-                lastP = nData->p;
-            }
-            break;
-
-            case descr_interm_bezier:
-            {
-                if ( bezNb > 0 ) {
-                    PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[i]);
-                    Geom::Point p_m=nData->p,p_s=0.5*(bezSt+p_m),p_e;
-                    if ( bezNb > 1 ) {
-                        PathDescrIntermBezierTo *iData = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[i+1]);
-                        p_e=0.5*(p_m+iData->p);
-                    } else {
-                        p_e=bezEn;
-                    }
-
-                    Geom::Point  cp1=0.333333*(p_s+2*p_m),cp2=0.333333*(2*p_m+p_e);
-                    gdouble x1=cp1[0];
-                    gdouble y1=cp1[1];
-                    gdouble x2=cp2[0];
-                    gdouble y2=cp2[1];
-                    gdouble x3=p_e[0];
-                    gdouble y3=p_e[1];
-                    currentpath->appendNew<Geom::CubicBezier>( Geom::Point(x1,y1) , Geom::Point(x2,y2) , Geom::Point(x3,y3) );
-
-                    bezNb--;
-                }
-            }
-            break;
+            default:
+                break;
         }
     }
 
@@ -459,18 +388,8 @@ void  Path::LoadPathVector(Geom::PathVector const &pv, Geom::Affine const &tr, b
     SetBackData (false);
     Reset();
 
-    // FIXME: 2geom is currently unable to maintain SVGElliptical arcs through transformation, and
-    // sometimes it crashes on a continuity error during conversions, therefore convert to beziers here.
-    // (the fix is of course to fix 2geom and then remove this if-statement, and just execute the 'else'-clause)
-    if (doTransformation) {
-        Geom::PathVector pvbezier = pathv_to_linear_and_cubic_beziers(pv);
-        for(const auto & it : pvbezier) {
-            LoadPath(it, tr, doTransformation, true);
-        }
-    } else {
-        for(const auto & it : pv) {
-            LoadPath(it, tr, doTransformation, true);
-        }
+    for(const auto & it : pv) {
+        LoadPath(it, tr, doTransformation, true);
     }
 }
 
@@ -581,18 +500,6 @@ Path**      Path::SubPaths(int &outNb,bool killNoSurf)
         curAdd->ArcTo(nData->p,nData->rx,nData->ry,nData->angle,nData->large,nData->clockwise);
       }
         break;
-      case descr_bezierto:
-      {
-        PathDescrBezierTo *nData = dynamic_cast<PathDescrBezierTo *>(i);
-        curAdd->BezierTo(nData->p);
-      }
-        break;
-      case descr_interm_bezier:
-      {
-        PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo *>(i);
-        curAdd->IntermBezierTo(nData->p);
-      }
-        break;
       default:
         break;
     }
@@ -695,18 +602,6 @@ Path**      Path::SubPathsWithNesting(int &outNb,bool killNoSurf,int nbNest,int*
         curAdd->ArcTo(nData->p,nData->rx,nData->ry,nData->angle,nData->large,nData->clockwise);
       }
         break;
-      case descr_bezierto:
-      {
-        PathDescrBezierTo *nData = dynamic_cast<PathDescrBezierTo *>(descr_cmd[i]);
-        curAdd->BezierTo(nData->p);
-      }
-        break;
-      case descr_interm_bezier:
-      {
-        PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[i]);
-        curAdd->IntermBezierTo(nData->p);
-      }
-        break;
       default:
         break;
     }
@@ -789,18 +684,6 @@ void Path::ConvertForcedToMoveTo()
                 lastPos = d->p;
                 break;
             }
-            case descr_bezierto:
-            {
-                PathDescrBezierTo *d = dynamic_cast<PathDescrBezierTo *>(descr_cmd[i]);
-                lastPos = d->p;
-                break;
-            }
-            case descr_interm_bezier:
-            {
-                PathDescrIntermBezierTo *d = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[i]);
-                lastPos = d->p;
-                break;
-            }
             default:
                 break;
             }
@@ -848,18 +731,6 @@ void Path::ConvertForcedToMoveTo()
       case descr_arcto:
       {
         PathDescrArcTo *nData = dynamic_cast<PathDescrArcTo *>(descr_cmd[i]);
-        lastSeen=nData->p;
-      }
-        break;
-      case descr_bezierto:
-      {
-        PathDescrBezierTo *nData = dynamic_cast<PathDescrBezierTo *>(descr_cmd[i]);
-        lastSeen=nData->p;
-     }
-        break;
-      case descr_interm_bezier:
-      {
-        PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[i]);
         lastSeen=nData->p;
       }
         break;
@@ -1086,16 +957,6 @@ void Path::ConvertPositionsToForced(int nbPos, cut_position *poss)
             }
             break;
             
-            case descr_bezierto:
-            {
-                PathDescrBezierTo *nData = dynamic_cast<PathDescrBezierTo *>(descr_cmd[i]);
-                Geom::Point theP = nData->p;
-                if ( nData->nb == 0 ) {
-                    lastPos = theP;
-                }
-            }
-            break;
-            
         case descr_moveto:
         {
             PathDescrMoveTo *d = dynamic_cast<PathDescrMoveTo *>(descr_cmd[i]);
@@ -1117,12 +978,6 @@ void Path::ConvertPositionsToForced(int nbPos, cut_position *poss)
         case descr_cubicto:
         {
             PathDescrCubicTo *d = dynamic_cast<PathDescrCubicTo *>(descr_cmd[i]);
-            lastPos = d->p;
-            break;
-        }
-        case descr_interm_bezier:
-        {
-            PathDescrIntermBezierTo *d = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[i]);
             lastPos = d->p;
             break;
         }
@@ -1261,111 +1116,6 @@ void Path::ConvertPositionsToForced(int nbPos, cut_position *poss)
           }
         }
       }
-    } else if ( typ == descr_bezierto || typ == descr_interm_bezier ) {
-      // dur
-      int theBDI=cp;
-      while ( theBDI >= 0 && (descr_cmd[theBDI]->getType()) != descr_bezierto ) theBDI--;
-      if ( (descr_cmd[theBDI]->getType()) == descr_bezierto ) {
-        PathDescrBezierTo theBD=*(dynamic_cast<PathDescrBezierTo *>(descr_cmd[theBDI]));
-        if ( cp >= theBDI && cp < theBDI+theBD.nb ) {
-          if ( theBD.nb == 1 ) {
-            Geom::Point        endP=theBD.p;
-            Geom::Point        midP;
-            Geom::Point        startP;
-            startP=PrevPoint(theBDI-1);
-            {
-              PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[theBDI+1]);
-              midP=nData->p;
-            }
-            Geom::Point       aP=ct*midP+(1-ct)*startP;
-            Geom::Point       bP=ct*endP+(1-ct)*midP;
-            Geom::Point       knotP=ct*bP+(1-ct)*aP;
-                        
-            InsertIntermBezierTo(bP,theBDI+2);
-            InsertBezierTo(knotP,1,theBDI+2);
-            InsertForcePoint(theBDI+2);
-            {
-              PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[theBDI+1]);
-              nData->p=aP;
-            }
-            {
-              PathDescrBezierTo *nData = dynamic_cast<PathDescrBezierTo *>(descr_cmd[theBDI]);
-              nData->p=knotP;
-            }
-            // decalages dans le tableau des positions de coupe
-            for (int j=curP+1;j<nbPos;j++) {
-              if ( poss[j].piece == cp ) {
-                poss[j].piece+=3;
-                poss[j].t=(poss[j].t-ct)/(1-ct);
-              } else {
-                poss[j].piece+=3;
-              }
-            }
-            
-          } else {
-            // decouper puis repasser
-            if ( cp > theBDI ) {
-              Geom::Point   pcP,ncP;
-              {
-                PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[cp]);
-                pcP=nData->p;
-              }
-              {
-                PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[cp+1]);
-                ncP=nData->p;
-              }
-              Geom::Point knotP=0.5*(pcP+ncP);
-              
-              InsertBezierTo(knotP,theBD.nb-(cp-theBDI),cp+1);
-              {
-                PathDescrBezierTo *nData = dynamic_cast<PathDescrBezierTo *>(descr_cmd[theBDI]);
-                nData->nb=cp-theBDI;
-              }
-              
-              // decalages dans le tableau des positions de coupe
-              for (int j=curP;j<nbPos;j++) {
-                if ( poss[j].piece == cp ) {
-                  poss[j].piece+=1;
-                } else {
-                  poss[j].piece+=1;
-                }
-              }
-              curP--;
-            } else {
-              Geom::Point   pcP,ncP;
-              {
-                PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[cp+1]);
-                pcP=nData->p;
-              }
-              {
-                PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[cp+2]);
-                ncP=nData->p;
-              }
-              Geom::Point knotP=0.5*(pcP+ncP);
-              
-              InsertBezierTo(knotP,theBD.nb-1,cp+2);
-              {
-                PathDescrBezierTo *nData = dynamic_cast<PathDescrBezierTo *>(descr_cmd[theBDI]);
-                nData->nb=1;
-              }
-              
-              // decalages dans le tableau des positions de coupe
-              for (int j=curP;j<nbPos;j++) {
-                if ( poss[j].piece == cp ) {
-//                  poss[j].piece+=1;
-                } else {
-                  poss[j].piece+=1;
-                }
-              }
-              curP--;
-            }
-          }
-        } else {
-          // on laisse aussi tomber
-        }
-      } else {
-        // on laisse tomber
-      }
     }
   }
 }
@@ -1411,10 +1161,6 @@ void        Path::ConvertPositionsToMoveTo(int nbPos,cut_position* poss)
         } else if ( ntyp == descr_cubicto ) {
           PathDescrCubicTo *nData = dynamic_cast<PathDescrCubicTo *>(descr_cmd[j]);
           endP=nData->p;
-        } else if ( ntyp == descr_bezierto ) {
-          PathDescrBezierTo *nData = dynamic_cast<PathDescrBezierTo *>(descr_cmd[j]);
-          endP=nData->p;
-        } else {
         }
       }
       if ( Geom::LInfty(endP-np) < 0.00001 ) {
@@ -1446,14 +1192,6 @@ void        Path::ConvertPositionsToMoveTo(int nbPos,cut_position* poss)
             PathDescrCubicTo *nData = dynamic_cast<PathDescrCubicTo *>(descr_cmd[k]);
             res->CubicTo(nData->p,nData->start,nData->end);
             nLastP=nData->p;
-          } else if ( ntyp == descr_bezierto ) {
-            PathDescrBezierTo *nData = dynamic_cast<PathDescrBezierTo *>(descr_cmd[k]);
-            res->BezierTo(nData->p);
-            nLastP=nData->p;
-          } else if ( ntyp == descr_interm_bezier ) {
-            PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[k]);
-            res->IntermBezierTo(nData->p);
-          } else {
           }
         }
         if ( doesClose == false ) res->LineTo(np);
@@ -1478,14 +1216,6 @@ void        Path::ConvertPositionsToMoveTo(int nbPos,cut_position* poss)
             PathDescrCubicTo *nData = dynamic_cast<PathDescrCubicTo *>(descr_cmd[k]);
             res->CubicTo(nData->p,nData->start,nData->end);
             nLastP=nData->p;
-          } else if ( ntyp == descr_bezierto ) {
-            PathDescrBezierTo *nData = dynamic_cast<PathDescrBezierTo *>(descr_cmd[k]);
-            res->BezierTo(nData->p);
-            nLastP=nData->p;
-          } else if ( ntyp == descr_interm_bezier ) {
-            PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[k]);
-            res->IntermBezierTo(nData->p);
-          } else {
           }
         }
         lastP=nMvtP;
@@ -1511,13 +1241,6 @@ void        Path::ConvertPositionsToMoveTo(int nbPos,cut_position* poss)
       PathDescrCubicTo *nData = dynamic_cast<PathDescrCubicTo *>(descr_cmd[i]);
       res->CubicTo(nData->p,nData->start,nData->end);
       lastP=nData->p;
-    } else if ( typ == descr_bezierto ) {
-      PathDescrBezierTo *nData = dynamic_cast<PathDescrBezierTo *>(descr_cmd[i]);
-      res->BezierTo(nData->p);
-      lastP=nData->p;
-    } else if ( typ == descr_interm_bezier ) {
-      PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo *>(descr_cmd[i]);
-      res->IntermBezierTo(nData->p);
     } else {
     }
   }

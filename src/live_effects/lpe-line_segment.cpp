@@ -12,10 +12,12 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "live_effects/lpe-line_segment.h"
-#include "ui/tools/lpe-tool.h"
-// TODO due to internal breakage in glibmm headers, this must be last:
+#include "lpe-line_segment.h"
+
 #include <glibmm/i18n.h>
+
+#include "object/sp-lpe-item.h"
+#include "ui/tools/lpe-tool.h"
 
 namespace Inkscape {
 namespace LivePathEffect {
@@ -36,13 +38,11 @@ LPELineSegment::LPELineSegment(LivePathEffectObject *lpeobject) :
     registerParameter(&end_type);
 }
 
-LPELineSegment::~LPELineSegment()
-= default;
+LPELineSegment::~LPELineSegment() = default;
 
-void
-LPELineSegment::doBeforeEffect (SPLPEItem const* lpeitem)
+void LPELineSegment::doBeforeEffect(SPLPEItem const *lpeitem)
 {
-    Inkscape::UI::Tools::lpetool_get_limiting_bbox_corners(lpeitem->document, bboxA, bboxB);
+    std::tie(bboxA, bboxB) = UI::Tools::lpetool_get_limiting_bbox_corners(lpeitem->document);
 }
 
 Geom::PathVector
@@ -57,7 +57,7 @@ LPELineSegment::doEffect_path (Geom::PathVector const & path_in)
     std::optional<Geom::LineSegment> intersection_segment = Geom::Line(A, B).clip(dummyRect);
 
     if (!intersection_segment) {
-        g_print ("Possible error - no intersection with limiting bounding box.\n");
+        g_warning ("Possible error - no intersection with limiting bounding box.");
         return path_in;
     }
 

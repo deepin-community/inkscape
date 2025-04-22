@@ -1,11 +1,11 @@
 # coding=utf-8
-from interp import Interp
+from interp import Interpolate
 from inkex.tester import ComparisonMixin, TestCase
 from inkex.tester.filters import CompareNumericFuzzy
 
 
 class InterpBasicTest(ComparisonMixin, TestCase):
-    effect_class = Interp
+    effect_class = Interpolate
     comparisons = [
         (
             "--id=path1",

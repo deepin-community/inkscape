@@ -23,32 +23,29 @@
  *      http://msdn.microsoft.com/library/en-us/gdi/metafile_5hkj.asp
  */
 
-//#include <png.h>   //This must precede text_reassemble.h or it blows up in pngconf.h when compiling
+#include "wmf-inout.h"
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstdint>
 #include <3rdparty/libuemf/symbol_convert.h>
 
+#include "clear-n_.h"
 #include "document.h"
-#include "object/sp-root.h" // even though it is included indirectly by wmf-inout.h
-#include "object/sp-path.h"
 #include "print.h"
-#include "extension/system.h"
-#include "extension/print.h"
+#include "wmf-print.h"
+
+#include "display/drawing.h"
 #include "extension/db.h"
 #include "extension/input.h"
 #include "extension/output.h"
-#include "display/drawing.h"
-#include "display/drawing-item.h"
-#include "clear-n_.h"
+#include "extension/print.h"
+#include "extension/system.h"
+#include "object/sp-root.h"
 #include "path/path-boolop.h"
 #include "svg/svg.h"
-#include "util/units.h" // even though it is included indirectly by wmf-inout.h
-#include "inkscape.h" // even though it is included indirectly by wmf-inout.h
-
-
-#include "wmf-inout.h"
-#include "wmf-print.h"
+#include "util/safe-printf.h"
+#include "util/units.h"
 
 #define PRINT_WMF "org.inkscape.print.wmf"
 
@@ -254,14 +251,14 @@ uint32_t Wmf::add_hatch(PWMF_CALLBACK_DATA d, uint32_t hatchType, U_COLORREF hat
     switch(hatchType){
         case U_HS_SOLIDTEXTCLR:
         case U_HS_DITHEREDTEXTCLR:
-            sprintf(tmpcolor,"%6.6X",sethexcolor(d->dc[d->level].textColor));
+            safeprintf(tmpcolor,"%6.6X",sethexcolor(d->dc[d->level].textColor));
             break;
         case U_HS_SOLIDBKCLR:
         case U_HS_DITHEREDBKCLR:
-            sprintf(tmpcolor,"%6.6X",sethexcolor(d->dc[d->level].bkColor));
+            safeprintf(tmpcolor,"%6.6X",sethexcolor(d->dc[d->level].bkColor));
             break;
         default:
-            sprintf(tmpcolor,"%6.6X",sethexcolor(hatchColor));
+            safeprintf(tmpcolor,"%6.6X",sethexcolor(hatchColor));
             break;
     }
     auto & defs = d->defs;
@@ -271,7 +268,7 @@ uint32_t Wmf::add_hatch(PWMF_CALLBACK_DATA d, uint32_t hatchType, U_COLORREF hat
         This will be used late to compose, or recompose  the transparent or opaque final hatch.*/
 
     std::string refpath; // used to reference later the path pieces which are about to be created
-    sprintf(hpathname,"WMFhpath%d_%s",hatchType,tmpcolor);
+    safeprintf(hpathname,"WMFhpath%d_%s",hatchType,tmpcolor);
     idx = in_hatches(d,hpathname);
     if(!idx){  // add path/color if not already present
         if(d->hatches.count == d->hatches.size){  enlarge_hatches(d); }
@@ -369,8 +366,8 @@ uint32_t Wmf::add_hatch(PWMF_CALLBACK_DATA d, uint32_t hatchType, U_COLORREF hat
     }
 
     if(d->dc[d->level].bkMode == U_TRANSPARENT || hatchType >= U_HS_SOLIDCLR){
-        sprintf(hatchname,"WMFhatch%d_%s",hatchType,tmpcolor);
-        sprintf(hpathname,"WMFhpath%d_%s",hatchType,tmpcolor);
+        safeprintf(hatchname,"WMFhatch%d_%s",hatchType,tmpcolor);
+        safeprintf(hpathname,"WMFhpath%d_%s",hatchType,tmpcolor);
         idx = in_hatches(d,hatchname);
         if(!idx){  // add it if not already present
             if(d->hatches.count == d->hatches.size){  enlarge_hatches(d); }
@@ -386,8 +383,8 @@ uint32_t Wmf::add_hatch(PWMF_CALLBACK_DATA d, uint32_t hatchType, U_COLORREF hat
     }
     else { //  bkMode==U_OPAQUE
         /* Set up an object in the defs for this background, if there is not one already there */
-        sprintf(bkcolor,"%6.6X",sethexcolor(d->dc[d->level].bkColor));
-        sprintf(hbkname,"WMFhbkclr_%s",bkcolor);
+        safeprintf(bkcolor,"%6.6X",sethexcolor(d->dc[d->level].bkColor));
+        safeprintf(hbkname,"WMFhbkclr_%s",bkcolor);
         idx = in_hatches(d,hbkname);
         if(!idx){  // add path/color if not already present.  Hatchtype is not needed in the name.
             if(d->hatches.count == d->hatches.size){  enlarge_hatches(d); }
@@ -402,7 +399,7 @@ uint32_t Wmf::add_hatch(PWMF_CALLBACK_DATA d, uint32_t hatchType, U_COLORREF hat
         }
 
         // this is the pattern, its name will show up in Inkscape's pattern selector
-        sprintf(hatchname,"WMFhatch%d_%s_%s",hatchType,tmpcolor,bkcolor);
+        safeprintf(hatchname,"WMFhatch%d_%s_%s",hatchType,tmpcolor,bkcolor);
         idx = in_hatches(d,hatchname);
         if(!idx){  // add it if not already present
             if(d->hatches.count == d->hatches.size){  enlarge_hatches(d); }
@@ -503,8 +500,8 @@ uint32_t Wmf::add_dib_image(PWMF_CALLBACK_DATA d, const char *dib, uint32_t iUsa
         idx = d->images.count;
         d->images.strings[d->images.count++]=strdup(base64String);
 
-        sprintf(imagename,"WMFimage%d",idx++);
-        sprintf(xywh," x=\"0\" y=\"0\" width=\"%d\" height=\"%d\" ",width,height); // reuse this buffer
+        safeprintf(imagename,"WMFimage%d",idx++);
+        safeprintf(xywh," x=\"0\" y=\"0\" width=\"%d\" height=\"%d\" ",width,height); // reuse this buffer
 
         defs += "\n";
         defs += "   <image id=\"";
@@ -600,8 +597,8 @@ uint32_t Wmf::add_bm16_image(PWMF_CALLBACK_DATA d, U_BITMAP16 Bm16, const char *
         idx = d->images.count;
         d->images.strings[d->images.count++]=g_strdup(base64String);
 
-        sprintf(imagename,"WMFimage%d",idx++);
-        sprintf(xywh," x=\"0\" y=\"0\" width=\"%d\" height=\"%d\" ",width,height); // reuse this buffer
+        safeprintf(imagename,"WMFimage%d",idx++);
+        safeprintf(xywh," x=\"0\" y=\"0\" width=\"%d\" height=\"%d\" ",width,height); // reuse this buffer
 
         defs += "\n";
         defs += "   <image id=\"";
@@ -664,7 +661,7 @@ void Wmf::add_clips(PWMF_CALLBACK_DATA d, const char *clippath, unsigned int log
         unsigned int real_idx = d->dc[d->level].clip_id - 1;
         Geom::PathVector old_vect = sp_svg_read_pathv(d->clips.strings[real_idx]);
         Geom::PathVector new_vect = sp_svg_read_pathv(clippath);
-        combined_vect = sp_pathvector_boolop(new_vect, old_vect, (bool_op) op , (FillRule) fill_oddEven, (FillRule) fill_oddEven);
+        combined_vect = sp_pathvector_boolop(new_vect, old_vect, (BooleanOp) op , (FillRule) fill_oddEven, (FillRule) fill_oddEven);
         combined = sp_svg_write_path(combined_vect);
     }
     else {
@@ -1740,8 +1737,10 @@ int Wmf::myMetaFileProc(const char *contents, unsigned int length, PWMF_CALLBACK
         }
         TR_layout_2_svg(d->tri);
         SVGOStringStream ts;
-        ts << d->tri->out;
-        d->outsvg += ts.str().c_str();
+        if (d->tri->out) {
+            ts << d->tri->out;
+            d->outsvg += ts.str().c_str();
+        }
         d->tri = trinfo_clear(d->tri);
         if (d->dc[d->level].clip_id){
            d->outsvg += "\n</g>\n";
@@ -3105,7 +3104,7 @@ void Wmf::free_wmf_strings(WMF_STRINGS name){
 }
 
 SPDocument *
-Wmf::open( Inkscape::Extension::Input * /*mod*/, const gchar *uri )
+Wmf::open( Inkscape::Extension::Input * /*mod*/, const gchar *uri, bool /*is_importing*/)
 {
 
     if (uri == nullptr) {
@@ -3219,7 +3218,7 @@ Wmf::init ()
                 "<filetypename>" N_("Windows Metafiles (*.wmf)") "</filetypename>\n"
                 "<filetypetooltip>" N_("Windows Metafiles") "</filetypetooltip>\n"
             "</input>\n"
-        "</inkscape-extension>", new Wmf());
+        "</inkscape-extension>", std::make_unique<Wmf>());
 
     /* WMF out */
     Inkscape::Extension::build_from_mem(
@@ -3241,7 +3240,7 @@ Wmf::init ()
                 "<filetypename>" N_("Windows Metafile (*.wmf)") "</filetypename>\n"
                 "<filetypetooltip>" N_("Windows Metafile") "</filetypetooltip>\n"
             "</output>\n"
-        "</inkscape-extension>", new Wmf());
+        "</inkscape-extension>", std::make_unique<Wmf>());
     // clang-format on
 
     return;

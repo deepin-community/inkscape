@@ -81,7 +81,7 @@ static std::map<SnapTargetType, Glib::ustring> target2string = {
     {SNAPTARGET_PATH_MASK, _("mask-path")},
     {SNAPTARGET_ELLIPSE_QUADRANT_POINT, _("quadrant point")},
     {SNAPTARGET_RECT_CORNER, _("corner")},
-    {SNAPTARGET_GRID, _("grid line")},
+    {SNAPTARGET_GRID_LINE, _("grid line")},
     {SNAPTARGET_GRID_INTERSECTION, _("grid intersection")},
     {SNAPTARGET_GRID_PERPENDICULAR, _("grid line (perpendicular)")},
     {SNAPTARGET_GUIDE, _("guide")},
@@ -89,9 +89,14 @@ static std::map<SnapTargetType, Glib::ustring> target2string = {
     {SNAPTARGET_GUIDE_ORIGIN, _("guide origin")},
     {SNAPTARGET_GUIDE_PERPENDICULAR, _("guide (perpendicular)")},
     {SNAPTARGET_GRID_GUIDE_INTERSECTION, _("grid-guide intersection")},
-    {SNAPTARGET_PAGE_BORDER, _("page border")},
-    {SNAPTARGET_PAGE_CORNER, _("page corner")},
-    {SNAPTARGET_PAGE_CENTER, _("page center")},
+    {SNAPTARGET_PAGE_EDGE_BORDER, _("page border")},
+    {SNAPTARGET_PAGE_EDGE_CORNER, _("page corner")},
+    {SNAPTARGET_PAGE_EDGE_CENTER, _("page center")},
+    {SNAPTARGET_PAGE_MARGIN_BORDER, _("page margin border")},
+    {SNAPTARGET_PAGE_MARGIN_CORNER, _("page margin corner")},
+    {SNAPTARGET_PAGE_MARGIN_CENTER, _("page margin center")},
+    {SNAPTARGET_PAGE_BLEED_BORDER, _("page bleed border")},
+    {SNAPTARGET_PAGE_BLEED_CORNER, _("page bleed corner")},
     {SNAPTARGET_OBJECT_MIDPOINT, _("object midpoint")},
     {SNAPTARGET_IMG_CORNER, _("corner")},
     {SNAPTARGET_ROTATION_CENTER, _("object rotation center")},
@@ -192,10 +197,8 @@ SnapIndicator::set_new_snaptarget(Inkscape::SnappedPoint const &p, bool pre_snap
 
         if (!is_alignment && !is_distribution) {
             // Display snap indicator at snap target
-            ctrl = new Inkscape::CanvasItemCtrl(_desktop->getCanvasTemp(), Inkscape::CANVAS_ITEM_CTRL_SHAPE_CROSS);
-            ctrl->set_size(11);
-            ctrl->set_stroke( pre_snap ? 0x7f7f7fff : 0xff0000ff);
-            ctrl->set_position(p.getPoint());
+            ctrl = new Inkscape::CanvasItemCtrl(_desktop->getCanvasTemp(), Inkscape::CANVAS_ITEM_CTRL_TYPE_MARKER, p.getPoint());
+            ctrl->set_selected(!pre_snap);
 
             _snaptarget = _desktop->add_temporary_canvasitem(ctrl, timeout_val*1000.0);
             // The snap indicator will be deleted after some time-out, and sp_canvas_item_dispose
@@ -222,7 +225,7 @@ SnapIndicator::set_new_snaptarget(Inkscape::SnappedPoint const &p, bool pre_snap
 
             if (!tooltip_str.empty()) {
                 Geom::Point tooltip_pos = p.getPoint();
-                if (dynamic_cast<Inkscape::UI::Tools::MeasureTool *>(_desktop->event_context)) {
+                if (dynamic_cast<Inkscape::UI::Tools::MeasureTool *>(_desktop->getTool())) {
                     // Make sure that the snap tooltips do not overlap the ones from the measure tool
                     tooltip_pos += _desktop->w2d(Geom::Point(0, -3*fontsize));
                 } else {
@@ -244,7 +247,7 @@ SnapIndicator::set_new_snaptarget(Inkscape::SnappedPoint const &p, bool pre_snap
                 box->set_stroke(pre_snap ? 0x7f7f7fff : 0xff0000ff);
                 box->set_dashed(true);
                 box->set_pickable(false); // Is false by default.
-                box->set_z_position(0);
+                box->lower_to_bottom();
                 _snaptarget_bbox = _desktop->add_temporary_canvasitem(box, timeout_val*1000.0);
             }
         }
@@ -296,9 +299,7 @@ SnapIndicator::set_new_snapsource(Inkscape::SnapCandidatePoint const &p)
     bool value = prefs->getBool("/options/snapindicator/value", true);
 
     if (value) {
-        auto ctrl = new Inkscape::CanvasItemCtrl(_desktop->getCanvasTemp(), Inkscape::CANVAS_ITEM_CTRL_SHAPE_CIRCLE);
-        ctrl->set_size(7);
-        ctrl->set_stroke(0xff0000ff);
+        auto ctrl = new Inkscape::CanvasItemCtrl(_desktop->getCanvasTemp(), Inkscape::CANVAS_ITEM_CTRL_TYPE_POINT);
         ctrl->set_position(p.getPoint());
         _snapsource = _desktop->add_temporary_canvasitem(ctrl, 1000);
     }
@@ -308,10 +309,8 @@ void
 SnapIndicator::set_new_debugging_point(Geom::Point const &p)
 {
     g_assert(_desktop != nullptr);
-    auto ctrl = new Inkscape::CanvasItemCtrl(_desktop->getCanvasTemp(), Inkscape::CANVAS_ITEM_CTRL_SHAPE_DIAMOND);
-    ctrl->set_size(11);
-    ctrl->set_stroke(0x00ff00ff);
-    ctrl->set_position(p);
+    auto ctrl = new Inkscape::CanvasItemCtrl(_desktop->getCanvasTemp(), Inkscape::CANVAS_ITEM_CTRL_TYPE_SHAPER, p);
+    ctrl->set_size(Inkscape::HandleSize::LARGE);
     _debugging_points.push_back(_desktop->add_temporary_canvasitem(ctrl, 5000));
 }
 
@@ -340,8 +339,11 @@ guint32 SnapIndicator::get_guide_color(SnapTargetType t)
         case SNAPTARGET_ALIGNMENT_BBOX_MIDPOINT:
         case SNAPTARGET_ALIGNMENT_BBOX_EDGE_MIDPOINT:
             return 0xff0000ff;
-        case SNAPTARGET_ALIGNMENT_PAGE_CENTER:
-        case SNAPTARGET_ALIGNMENT_PAGE_CORNER:
+        case SNAPTARGET_ALIGNMENT_PAGE_EDGE_CENTER:
+        case SNAPTARGET_ALIGNMENT_PAGE_EDGE_CORNER:
+        case SNAPTARGET_ALIGNMENT_PAGE_MARGIN_CENTER:
+        case SNAPTARGET_ALIGNMENT_PAGE_MARGIN_CORNER:
+        case SNAPTARGET_ALIGNMENT_PAGE_BLEED_CORNER:
             return 0x00ff00ff;
         case SNAPTARGET_ALIGNMENT_HANDLE:
             return 0x0000ffff;
@@ -399,27 +401,19 @@ void SnapIndicator::make_alignment_indicator(Geom::Point const &p1, Geom::Point 
 
     Inkscape::CanvasItemCurve *line;
 
-    auto ctrl = new Inkscape::CanvasItemCtrl(_desktop->getCanvasTemp(), Inkscape::CANVAS_ITEM_CTRL_SHAPE_CIRCLE);
-    ctrl->set_size(7);
-    ctrl->set_mode(Inkscape::CanvasItemCtrlMode::CANVAS_ITEM_CTRL_MODE_COLOR);
-    ctrl->set_stroke(0xffffffff);
-    ctrl->set_fill(color);
+    auto ctrl = new Inkscape::CanvasItemCtrl(_desktop->getCanvasTemp(), Inkscape::CANVAS_ITEM_CTRL_TYPE_POINT);
     ctrl->set_position(p1);
     ctrl->set_pickable(false);
     _alignment_snap_indicators.push_back(_desktop->add_temporary_canvasitem(ctrl, 0));
 
-    ctrl = new Inkscape::CanvasItemCtrl(_desktop->getCanvasTemp(), Inkscape::CANVAS_ITEM_CTRL_SHAPE_CIRCLE);
-    ctrl->set_size(7);
-    ctrl->set_mode(Inkscape::CanvasItemCtrlMode::CANVAS_ITEM_CTRL_MODE_COLOR);
-    ctrl->set_stroke(0xffffffff);
-    ctrl->set_fill(color);
+    ctrl = new Inkscape::CanvasItemCtrl(_desktop->getCanvasTemp(), Inkscape::CANVAS_ITEM_CTRL_TYPE_POINT);
     ctrl->set_position(p2);
     ctrl->set_pickable(false);
     _alignment_snap_indicators.push_back(_desktop->add_temporary_canvasitem(ctrl, 0));
 
-    if (show_distance) {
-        auto dist = Geom::L2(p2 - p1);
-        double offset = (fontsize + 5)/_desktop->current_zoom();
+    auto dist = Geom::L2(p2 - p1);
+    double offset = (fontsize + 5) / _desktop->current_zoom();
+    if (show_distance && dist > 2 * offset) {
         auto direction = Geom::unit_vector(p1 - p2);
         auto text_pos = (p1 + p2)/2;
 

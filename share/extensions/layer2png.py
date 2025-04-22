@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 #
 # Copyright (C) 2007-2019 Matt Harrison, matthewharrison [at] gmail.com
@@ -48,6 +48,7 @@ the Object Properties found in the right click contextual menu (the
 saved images name will be based on that value, so name them something
 like "header" instead of the default/non-useful "rect4312").
 """
+
 import os
 import tempfile
 

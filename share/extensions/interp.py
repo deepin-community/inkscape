@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 #
 # Copyright (C) 2005 Aaron Spike, aaron@ekips.org
@@ -18,7 +18,8 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
-""" Interpolate between two paths, respecting their style """
+"""Interpolate between two paths, respecting their style"""
+
 import copy
 
 import inkex
@@ -33,7 +34,7 @@ from inkex.tween import (
 from inkex.localization import inkex_gettext as _
 
 
-class Interp(inkex.EffectExtension):
+class Interpolate(inkex.EffectExtension):
     """Interpolate extension"""
 
     def add_arguments(self, pars):
@@ -77,8 +78,7 @@ class Interp(inkex.EffectExtension):
         if not objectpairs:
             raise inkex.AbortExtension(_("At least two paths need to be selected"))
 
-        for (elem1, elem2) in objectpairs:
-
+        for elem1, elem2 in objectpairs:
             method = EqualSubsegmentsInterpolator
             if self.options.method == "firstNodes":
                 method = FirstNodesInterpolator
@@ -102,7 +102,8 @@ class Interp(inkex.EffectExtension):
 
     def get_steps(self):
         """Returns the interpolation steps as a monotonous array with elements between 0 and 1.
-        0 and 1 are added as first and last elements if the source paths should be duplicated"""
+        0 and 1 are added as first and last elements if the source paths should be duplicated
+        """
         exponent = self.options.exponent
         # if exponent >= 0:
         #    exponent += 1.0
@@ -139,4 +140,4 @@ class Interp(inkex.EffectExtension):
 
 
 if __name__ == "__main__":
-    Interp().run()
+    Interpolate().run()

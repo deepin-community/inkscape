@@ -4,97 +4,140 @@
  */
 /* Authors:
  *   Jon A. Cruz
+ *   PBS <pbs3141@gmail.com>
  *
- * Copyright (C) 2005 Jon A. Cruz
+ * Copyright (C) 2022 Authors
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
-#ifndef SEEN_DIALOGS_SWATCHES_H
-#define SEEN_DIALOGS_SWATCHES_H
 
+#ifndef UI_DIALOG_SWATCHES_H
+#define UI_DIALOG_SWATCHES_H
+
+#include <array>
+#include <utility>
+#include <variant>
+#include <vector>
+#include <boost/unordered_map.hpp>
+
+#include <glibmm/refptr.h>
+#include <glibmm/ustring.h>
+#include <gtkmm/widget.h>
+
+#include "preferences.h"  // PrefObserver
 #include "ui/dialog/dialog-base.h"
+#include "ui/dialog/global-palettes.h"
+#include "ui/widget/palette_t.h"
 
 namespace Gtk {
-    class Menu;
-    class MenuItem;
-    class CheckMenuItem;
-}
+class Builder;
+class Button;
+class Label;
+class MenuButton;
+class RadioButton;
+} // namespace Gtk
 
-namespace Inkscape {
-namespace UI {
+class SPGradient;
 
-class PreviewHolder;
+namespace Inkscape::UI {
 
 namespace Widget {
-    class ColorPalette;
-}
+class ColorPalette;
+class PopoverMenu;
+} // namespace Widget
 
 namespace Dialog {
 
 class ColorItem;
-class SwatchPage;
-class DocTrack;
 
 /**
- * A panel that displays paint swatches.
+ * A dialog that displays paint swatches.
  *
  * It comes in two flavors, depending on the prefsPath argument passed to
- * the constructor: the default "/dialog/swatches" is just a regular panel;
- * the "/embedded/swatches/" is the horizontal color swatches at the bottom
- * of window.
+ * the constructor: the default "/dialog/swatches" is just a regular dialog;
+ * the "/embedded/swatches" is the horizontal color palette at the bottom
+ * of the window.
  */
-class SwatchesPanel : public DialogBase
+class SwatchesPanel final : public DialogBase
 {
 public:
-    SwatchesPanel(gchar const* prefsPath = "/dialogs/swatches");
-    ~SwatchesPanel() override;
-
-    void updatePalettes();
-    void documentReplaced() override;
-    static SwatchesPanel& getInstance();
-    virtual int getSelectedIndex() {return _currentIndex;} // temporary
-
-protected:
-    static void handleGradientsChange(SPDocument *document);
-
-    virtual void _rebuild();
-
-    virtual std::vector<SwatchPage*> _getSwatchSets() const;
+    SwatchesPanel(bool compact, char const *prefsPath = "/dialogs/swatches");
+    ~SwatchesPanel() final;
 
 private:
-    SwatchesPanel(SwatchesPanel const &) = delete; // no copy
-    SwatchesPanel &operator=(SwatchesPanel const &) = delete; // no assign
+    void documentReplaced() final;
+    void desktopReplaced() final;
+    void selectionChanged(Selection *selection) final;
+    void selectionModified(Selection *selection, guint flags) final;
 
-    void _build_menu();
+    void on_size_allocate(Gtk::Allocation &) final;
 
-    void selectionChanged(Selection *selection) override;
-    static void _rebuildDocumentSwatch(SwatchPage *docPalette, SPDocument *document);
-    static void _trackDocument( SwatchesPanel *panel, SPDocument *document );
-    static void handleDefsModified(SPDocument *document);
+    void update_palettes(bool compact);
+    void rebuild();
+    bool load_swatches();
+    bool load_swatches(std::string const &path);
+    void update_loaded_palette_entry();
+    void setup_selector_menu();
+    gboolean on_selector_key_pressed(GtkEventControllerKey const * controller,
+                                 unsigned keyval, unsigned keycode, GdkModifierType state);
+    void update_selector_menu();
+    void update_selector_label(Glib::ustring const &active_id);
+    void clear_filter();
+    void filter_colors(const Glib::ustring& text);
+    bool filter_callback(const Dialog::ColorItem& color) const;
 
-    PreviewHolder* _holder;
-    ColorItem* _clear;
-    ColorItem* _remove;
-    int _currentIndex;
-    Inkscape::UI::Widget::ColorPalette* _palette;
+    Inkscape::UI::Widget::ColorPalette *_palette;
 
-    void _regItem(Gtk::MenuItem* item, int id);
+    Glib::ustring _current_palette_id;
+    void set_palette(const Glib::ustring& id);
+    void select_palette(const Glib::ustring& id);
+    const PaletteFileData* get_palette(const Glib::ustring& id);
 
-    void _updateSettings(int settings, int value);
+    // Asynchronous update mechanism.
+    sigc::connection conn_gradients;
+    sigc::connection conn_defs;
+    bool gradients_changed = false;
+    bool defs_changed = false;
+    bool selection_changed = false;
+    void track_gradients();
+    void untrack_gradients();
 
-    void _wrapToggled(Gtk::CheckMenuItem *toggler);
+    // For each gradient, whether or not it is a swatch. Used to track when isSwatch() changes.
+    std::vector<bool> isswatch;
+    void rebuild_isswatch();
+    bool update_isswatch();
 
-    Gtk::Menu       *_menu;
+    // A map from colors to their respective widgets. Used to quickly find the widgets corresponding
+    // to the current fill/stroke color, in order to update their fill/stroke indicators.
+    using ColorKey = std::variant<std::monostate, std::array<unsigned, 3>, SPGradient *>;
+    boost::unordered_multimap<ColorKey, ColorItem*> widgetmap; // need boost for array hash
+    std::vector<ColorItem*> current_fill;
+    std::vector<ColorItem*> current_stroke;
+    void update_fillstroke_indicators();
 
-    friend class DocTrack;
+    Inkscape::PrefObserver _pinned_observer;
+    Glib::RefPtr<Gtk::Builder> _builder;
+    Gtk::RadioButton& _list_btn;
+    Gtk::RadioButton& _grid_btn;
+    PaletteFileData _loaded_palette;
+
+    Gtk::MenuButton &_selector;
+    std::unique_ptr<UI::Widget::PopoverMenu> _selector_menu;
+    Gtk::Label &_selector_label;
+
+    using PaletteLoaded = std::pair<UI::Widget::palette_t, bool>;
+    std::vector<PaletteLoaded> _palettes;
+
+    Glib::ustring _color_filter_text;
+    Gtk::Button& _new_btn;
+    Gtk::Button& _edit_btn;
+    Gtk::Button& _delete_btn;
 };
 
-} //namespace Dialog
-} //namespace UI
-} //namespace Inkscape
+} // namespace Dialog
 
+} // namespace Inkscape::UI
 
-
-#endif // SEEN_SWATCHES_H
+#endif // UI_DIALOG_SWATCHES_H
 
 /*
   Local Variables:

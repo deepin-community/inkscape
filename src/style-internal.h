@@ -171,6 +171,10 @@ public:
             style_src = SPStyleSrc::STYLE_PROP;
         }
     }
+    void overwrite(const SPIBase* const other) {
+        clear();
+        merge(other);
+    }
 
     virtual void cascade( const SPIBase* const parent ) = 0;
     virtual void merge(   const SPIBase* const parent ) = 0;
@@ -181,13 +185,11 @@ public:
     SPIBase& operator=(const SPIBase& rhs) = default;
 
     // Check apples being compared to apples
-    virtual bool operator==(const SPIBase& rhs) const {
+    virtual bool equals(const SPIBase& rhs) const {
         return id() == rhs.id();
     }
 
-    bool operator!=(const SPIBase& rhs) const {
-        return !(*this == rhs);
-    }
+    bool operator==(const SPIBase& rhs) const { return equals(rhs); }
 
     virtual SPAttr id() const { return SPAttr::INVALID; }
     Glib::ustring const &name() const;
@@ -250,7 +252,7 @@ public:
 
     SPIFloat& operator=(const SPIFloat& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
   // To do: make private
 public:
@@ -317,7 +319,7 @@ public:
 
     SPIScale24& operator=(const SPIScale24& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
 
   // To do: make private
@@ -370,7 +372,7 @@ public:
 
     SPILength& operator=(const SPILength& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
     void setDouble(double v);
     virtual const Glib::ustring toString(bool wname = false) const;
 
@@ -411,7 +413,7 @@ public:
 
     SPILengthOrNormal& operator=(const SPILengthOrNormal& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
   // To do: make private
 public:
@@ -450,7 +452,7 @@ public:
         return *this;
     }
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
     virtual const Glib::ustring toString() const;
 
@@ -498,7 +500,7 @@ public:
         return *this;
     }
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
   // To do: make private
 public:
@@ -629,7 +631,7 @@ public:
         return *this;
     }
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
     //! Get value if set, or inherited value, or default value (may be NULL)
     char const *value() const;
@@ -691,7 +693,7 @@ public:
         return *this;
     }
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
     void setColor( float r, float g, float b ) {
         value.color.set( r, g, b );
@@ -732,16 +734,9 @@ class SPIPaint : public SPIBase
 {
 
 public:
-    SPIPaint()
-        : paintOrigin(SP_CSS_PAINT_ORIGIN_NORMAL),
-          colorSet(false),
-          noneSet(false) {
-        value.href = nullptr;
-        tag = nullptr;
-        clear();
-    }
+    SPIPaint() { clear(); }
 
-    ~SPIPaint() override;  // Clear and delete href.
+    ~SPIPaint() override = default;
     void read( gchar const *str ) override;
     virtual void read( gchar const *str, SPStyle &style, SPDocument *document = nullptr);
     const Glib::ustring get_value() const override;
@@ -760,7 +755,7 @@ public:
         return *this;
     }
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
     bool isSameType( SPIPaint const & other ) const {
         return (isPaintserver() == other.isPaintserver()) && (colorSet == other.colorSet) && (paintOrigin == other.paintOrigin);
@@ -805,10 +800,10 @@ public:
     bool colorSet : 1;
     bool noneSet : 1;
     struct {
-         SPPaintServerReference *href;
+         std::shared_ptr<SPPaintServerReference> href;
          SPColor color;
     } value;
-    SPObject* tag;
+    SPObject *tag = nullptr;
 };
 
 
@@ -844,6 +839,8 @@ public:
 
     void read( gchar const *str ) override;
     const Glib::ustring get_value() const override;
+    unsigned get_order(SPPaintOrderLayer paint_order) const;
+
     void clear() override {
         SPIBase::clear();
         for( unsigned i = 0; i < PAINT_ORDER_LAYERS; ++i ) {
@@ -870,7 +867,7 @@ public:
         return *this;
     }
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
 
   // To do: make private
@@ -903,7 +900,9 @@ public:
 
     SPIDashArray& operator=(const SPIDashArray& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
+
+    bool is_valid() const;
 
   // To do: make private, change double to SVGLength
 public:
@@ -928,7 +927,7 @@ public:
 
     SPIFilter& operator=(const SPIFilter& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
   // To do: make private
 public:
@@ -968,7 +967,7 @@ public:
 
     SPIFontSize& operator=(const SPIFontSize& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
 public:
     static float const font_size_default;
@@ -1011,7 +1010,7 @@ public:
 
     SPIFont& operator=(const SPIFont& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 };
 
 
@@ -1048,7 +1047,7 @@ public:
     SPIBaselineShift& operator=(const SPIBaselineShift& rhs) = default;
 
     // This is not used but we have it for completeness, it has not been tested.
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
     bool isZero() const;
 
@@ -1089,7 +1088,7 @@ public:
 
     SPITextDecorationLine& operator=(const SPITextDecorationLine& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
   // To do: make private
 public:
@@ -1124,7 +1123,7 @@ public:
 
     SPITextDecorationStyle& operator=(const SPITextDecorationStyle& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
   // To do: make private
 public:
@@ -1172,7 +1171,7 @@ public:
     }
 
     // Use CSS2 value
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
 public:
     SPStyle* style_td = nullptr;   // Style to be used for drawing CSS2 text decorations
@@ -1223,7 +1222,7 @@ public:
 
     SPIVectorEffect& operator=(const SPIVectorEffect& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
   // To do: make private
 public:
@@ -1256,7 +1255,7 @@ public:
 
     SPIStrokeExtensions& operator=(const SPIStrokeExtensions& rhs) = default;
 
-    bool operator==(const SPIBase& rhs) const override;
+    bool equals(const SPIBase& rhs) const override;
 
   // To do: make private
 public:

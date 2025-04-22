@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /** \file
  * LPE <lattice2> implementation
-
  */
 /*
  * Authors:
@@ -17,15 +16,21 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <gtkmm.h>
-#include "live_effects/lpe-lattice2.h"
-#include "display/curve.h"
-#include "helper/geom.h"
+#include "lpe-lattice2.h"
+
+#include <glibmm/i18n.h>
+#include <gtkmm/box.h>
+#include <gtkmm/button.h>
+#include <gtkmm/expander.h>
+#include <gtkmm/widget.h>
+
 #include <2geom/sbasis-2d.h>
 #include <2geom/bezier-to-sbasis.h>
 
-// TODO due to internal breakage in glibmm headers, this must be last:
-#include <glibmm/i18n.h>
+#include "display/curve.h"
+#include "helper/geom.h"
+#include "object/sp-lpe-item.h"
+#include "ui/pack.h"
 
 using namespace Geom;
 
@@ -98,15 +103,14 @@ LPELattice2::LPELattice2(LivePathEffectObject *lpeobject) :
     apply_to_clippath_and_mask = true;
 }
 
-LPELattice2::~LPELattice2()
-= default;
+LPELattice2::~LPELattice2() = default;
 
 Geom::Piecewise<Geom::D2<Geom::SBasis> >
 LPELattice2::doEffect_pwd2 (Geom::Piecewise<Geom::D2<Geom::SBasis> > const & pwd2_in)
 {
     PathVector pathv = path_from_piecewise(pwd2_in,0.001);
     //this is because strange problems with sb2 and LineSegment
-    PathVector cubic = pathv_to_cubicbezier(pathv);
+    PathVector cubic = pathv_to_cubicbezier(pathv, true);
     if (cubic.empty()) {
         return pwd2_in;
     }
@@ -221,41 +225,42 @@ Gtk::Widget *
 LPELattice2::newWidget()
 {
     // use manage here, because after deletion of Effect object, others might still be pointing to this widget.
-    Gtk::Box *vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
+    auto const vbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL, 6);
+    vbox->property_margin().set_value(5);
 
-    vbox->set_border_width(5);
-    vbox->set_homogeneous(false);
-    vbox->set_spacing(6);
-    Gtk::Box * hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
-    Gtk::Box *vbox_expander = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
-    vbox_expander->set_border_width(0);
+    auto const hbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL,0);
+
+    auto const vbox_expander = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
     vbox_expander->set_spacing(2);
-    Gtk::Button * reset_button = Gtk::manage(new Gtk::Button(Glib::ustring(_("Reset grid"))));
+
+    auto const reset_button = Gtk::make_managed<Gtk::Button>(Glib::ustring(_("Reset grid")));
     reset_button->signal_clicked().connect(sigc::mem_fun (*this,&LPELattice2::resetGrid));
     reset_button->set_size_request(140,30);
-    vbox->pack_start(*hbox, true,true,2);
-    hbox->pack_start(*reset_button, false, false,2);
+
+    UI::pack_start(*vbox, *hbox, true ,true, 2);
+    UI::pack_start(*hbox, *reset_button, false, false, 2);
+
     std::vector<Parameter *>::iterator it = param_vector.begin();
     while (it != param_vector.end()) {
         if ((*it)->widget_is_visible) {
             Parameter * param = *it;
-            Gtk::Widget * widg = dynamic_cast<Gtk::Widget *>(param->param_newWidget());
+            auto widg = param->param_newWidget();
             if(param->param_key == "grid") {
                 widg = nullptr;
             }
-            Glib::ustring * tip = param->param_getTooltip();
             if (widg) {
                 if (param->param_key == "horizontal_mirror" || 
                     param->param_key == "vertical_mirror" || 
                     param->param_key == "live_update" ||
                     param->param_key == "perimetral") 
                 {
-                    vbox->pack_start(*widg, true, true, 2);
+                    UI::pack_start(*vbox, *widg, true, true, 2);
                 } else {
-                    vbox_expander->pack_start(*widg, true, true, 2);
+                    UI::pack_start(*vbox_expander, *widg, true, true, 2);
                 }
-                if (tip) {
-                    widg->set_tooltip_text(*tip);
+
+                if (auto const tip = param->param_getTooltip()) {
+                    widg->set_tooltip_markup(*tip);
                 } else {
                     widg->set_tooltip_text("");
                     widg->set_has_tooltip(false);
@@ -266,15 +271,12 @@ LPELattice2::newWidget()
         ++it;
     }
 
-    expander = Gtk::manage(new Gtk::Expander(Glib::ustring(_("Show Points"))));
+    expander = Gtk::make_managed<Gtk::Expander>(Glib::ustring(_("Show Points")));
     expander->add(*vbox_expander);
     expander->set_expanded(expanded);
-    vbox->pack_start(*expander, true, true, 2);
+    UI::pack_start(*vbox, *expander, true, true, 2);
     expander->property_expanded().signal_changed().connect(sigc::mem_fun(*this, &LPELattice2::onExpanderChanged) );
-    if(Gtk::Widget* widg = defaultParamSet()) {
-        vbox->pack_start(*widg, true, true, 2);
-    }
-    return dynamic_cast<Gtk::Widget *>(vbox);
+    return vbox;
 }
 
 void
@@ -560,7 +562,7 @@ void
 LPELattice2::resetDefaults(SPItem const* item)
 {
     Effect::resetDefaults(item);
-    original_bbox(SP_LPE_ITEM(item), false, true);
+    original_bbox(cast<SPLPEItem>(item), false, true);
     setDefaults();
     resetGrid();
 }

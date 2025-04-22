@@ -2,13 +2,21 @@
 
 #include "satellite-reference.h"
 
-#include "document.h"
 #include "live_effects/lpeobject.h"
+#include "object/sp-item.h"
 #include "object/sp-item-group.h"
 #include "object/sp-lpe-item.h"
+#include "object/sp-object.h"       // for SPObject
 #include "object/sp-shape.h"
 #include "object/sp-text.h"
-#include "object/uri-references.h"
+#include "object/sp-use.h"
+#include "object/uri-references.h"  // for URIReference
+#include "util/cast.h"              // for is
+
+class LivePathEffectObject;
+class SPGroup;
+class SPShape;
+class SPText;
 
 // SPDX-License-Identifier: GPL-2.0-or-later
 /** @file
@@ -25,13 +33,13 @@ namespace LivePathEffect {
 
 bool SatelliteReference::_acceptObject(SPObject *const obj) const
 {
-    if (SP_IS_SHAPE(obj) || SP_IS_TEXT(obj) || SP_IS_GROUP(obj)) {
+    if (is<SPShape>(obj) || is<SPText>(obj) || is<SPGroup>(obj) || is<SPUse>(obj)) {
         /* Refuse references to lpeobject */
         SPObject *owner = getOwner();
         if (obj == owner) {
             return false;
         }
-        if (!dynamic_cast<LivePathEffectObject *>(owner)) {
+        if (!is<LivePathEffectObject>(owner)) {
             return false;
         }
         return URIReference::_acceptObject(obj);

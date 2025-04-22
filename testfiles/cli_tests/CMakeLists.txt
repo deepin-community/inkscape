@@ -8,6 +8,9 @@
 # Command line options:
 #   INPUT_FILENAME     - name of input file (optional)
 #   OUTPUT_FILENAME    - name of output file (optional)
+#   OUTPUT_PAGE        - index of page in multipage output (optional), starts from 0
+#   FUZZ_PERCENTAGE    - maximum allowed normalized root-mean-squared distance between compared images
+#   RASTER_DPI         - DPI setting for rasterizing vector formats before root-mean-squared comparison
 #   PARAMETERS         - additional command line parameters to pass to Inkscape
 #
 # Pass/fail criteria:
@@ -17,6 +20,9 @@
 #                        see https://cmake.org/cmake/help/latest/prop_test/FAIL_REGULAR_EXPRESSION.html for details
 #   REFERENCE_FILENAME - compare OUTPUT_FILENAME with this pre-rendered reference file
 #                        both files are converted to PNG and compared with ImageMagick's 'compare'
+#                        for multipage output, use OUTPUT_PAGE to specify a single page for comparison
+#   FUZZYREF_FILENAME  - comparison of OUTPUT_FILENAME with this pre-rendered reference file will be
+#                        performed in the L2 metric, subject to the specified FUZZ_PERCENTAGE
 #   EXPECTED_FILES     - verify the command produced the expected files (i.e. they exist on disk)
 #   TEST_SCRIPT        - additional script to run after performing all checks and before cleaning up
 #
@@ -24,7 +30,8 @@
 #   ENVIRONMENT        - Additional environment variables to set while running the test
 function(add_cli_test name)
     # parse arguments
-    set(oneValueArgs INPUT_FILENAME OUTPUT_FILENAME PASS_FOR_OUTPUT FAIL_FOR_OUTPUT REFERENCE_FILENAME)
+    set(oneValueArgs INPUT_FILENAME OUTPUT_FILENAME OUTPUT_PAGE PASS_FOR_OUTPUT FAIL_FOR_OUTPUT REFERENCE_FILENAME
+        FUZZYREF_FILENAME FUZZ_PERCENTAGE RASTER_DPI)
     set(multiValueArgs PARAMETERS EXPECTED_FILES TEST_SCRIPT ENVIRONMENT)
     cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
@@ -78,12 +85,28 @@ function(add_cli_test name)
 
         add_test(NAME ${testname}_check_output
             COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/check_output.sh
-                    "${ARG_OUTPUT_FILENAME}" "${ARG_REFERENCE_FILENAME}" "${ARG_EXPECTED_FILES}" "${ARG_TEST_SCRIPT}")
+                    "${ARG_OUTPUT_FILENAME}" "${ARG_OUTPUT_PAGE}" "${ARG_REFERENCE_FILENAME}"
+                    "${ARG_EXPECTED_FILES}" "${ARG_TEST_SCRIPT}")
         set_tests_properties(${testname}_check_output PROPERTIES
             ENVIRONMENT "${CMAKE_CTEST_ENV}" DEPENDS ${testname} SKIP_RETURN_CODE 42)
     endif()
-endfunction(add_cli_test)
 
+    # add a fuzzy test to check the output files
+    if(DEFINED ARG_FUZZYREF_FILENAME)
+        file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/testcases/${ARG_FUZZYREF_FILENAME}" ARG_FUZZYREF_FILENAME)
+        if(DEFINED ARG_FUZZ_PERCENTAGE)
+            set(ARG_FUZZ "${ARG_FUZZ_PERCENTAGE}")
+        else()
+            set(ARG_FUZZ "0")
+        endif()
+        add_test(NAME ${testname}_check_output
+            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/l2compare.sh
+            "${ARG_OUTPUT_FILENAME}" "${ARG_OUTPUT_PAGE}" "${ARG_FUZZYREF_FILENAME}" "${ARG_FUZZ}" "${ARG_RASTER_DPI}")
+        set_tests_properties(${testname}_check_output PROPERTIES
+            ENVIRONMENT "${CMAKE_CTEST_ENV}" DEPENDS ${testname} SKIP_RETURN_CODE 42)
+    endif()
+
+endfunction(add_cli_test)
 
 
 ##### Tests follow below #####
@@ -98,7 +121,7 @@ endfunction(add_cli_test)
 
 # --version (check if we can run inkscape and the revision is known)
 add_cli_test(version       PARAMETERS --version)
-add_cli_test(version_known PARAMETERS --version FAIL_FOR_OUTPUT unknown)
+add_cli_test(version_known PARAMETERS --version FAIL_FOR_OUTPUT "\\(unknown\\)")
 
 # --system-data-directory / --user-data-directory (unset environment variables to override our override)
 # TODO: Can we make these tests more specific without making too many assumptions?
@@ -136,13 +159,13 @@ add_cli_test(export-type-dot-separated PARAMETERS --export-type=svg,png
 # --export-type=TYPE[,TYPE]*
 
 ##  test whether we can export all default types in principle (and in one command)
-add_cli_test(export-type PARAMETERS --export-type=svg,png,ps,eps,pdf,emf,wmf,xaml
+add_cli_test(export-type PARAMETERS --export-type=svg,png,ps,eps,pdf,emf,wmf
                          INPUT_FILENAME empty.svg OUTPUT_FILENAME empty
-                         EXPECTED_FILES empty.svg empty.png empty.ps empty.eps empty.pdf empty.emf empty.wmf empty.xaml)
+                         EXPECTED_FILES empty.svg empty.png empty.ps empty.eps empty.pdf empty.emf empty.wmf)
 ##  test whether this also works if the export types are not lowercase
-add_cli_test(export-type-caseinsensitive PARAMETERS --export-type=sVg,Png,PS,eps,Pdf,emf,wmf,xaml
+add_cli_test(export-type-caseinsensitive PARAMETERS --export-type=sVg,Png,PS,eps,Pdf,emf,wmf
                          INPUT_FILENAME empty.svg OUTPUT_FILENAME empty
-                         EXPECTED_FILES empty.svg empty.png empty.ps empty.eps empty.pdf empty.emf empty.wmf empty.xaml)
+                         EXPECTED_FILES empty.svg empty.png empty.ps empty.eps empty.pdf empty.emf empty.wmf)
 
 ## test whether we produce sane output for the default types
 add_cli_test(export-type_svg  PARAMETERS --export-type=svg INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes.svg REFERENCE_FILENAME shapes.svg)
@@ -170,8 +193,8 @@ add_cli_test(export-area-page_wmf PARAMETERS --export-area-page --export-type=wm
 # TODO: PDF/PS/EPS always behave as if --export-id-only was given, see https://gitlab.com/inkscape/inkscape/-/issues/1173
 add_cli_test(export-area-page_export-id_png PARAMETERS --export-area-page --export-id=MyStar --export-id-only INPUT_FILENAME areas.svg OUTPUT_FILENAME export-area-page_export-id.png REFERENCE_FILENAME export-area-page_export-id.png)
 add_cli_test(export-area-page_export-id_svg PARAMETERS --export-area-page --export-id=MyStar --export-id-only INPUT_FILENAME areas.svg OUTPUT_FILENAME export-area-page_export-id.svg REFERENCE_FILENAME export-area-page_export-id.svg)
-add_cli_test(export-area-page_export-id_pdf PARAMETERS --export-area-page --export-id=MyStar                  INPUT_FILENAME areas.svg OUTPUT_FILENAME export-area-page_export-id.pdf REFERENCE_FILENAME export-area-page_export-id.pdf)
-add_cli_test(export-area-page_export-id_ps  PARAMETERS --export-area-page --export-id=MyStar                  INPUT_FILENAME areas.svg OUTPUT_FILENAME export-area-page_export-id.ps  REFERENCE_FILENAME export-area-page_export-id.ps)
+add_cli_test(export-area-page_export-id_pdf PARAMETERS --export-area-page --export-id=MyStar --export-id-only INPUT_FILENAME areas.svg OUTPUT_FILENAME export-area-page_export-id.pdf REFERENCE_FILENAME export-area-page_export-id.pdf)
+add_cli_test(export-area-page_export-id_ps  PARAMETERS --export-area-page --export-id=MyStar --export-id-only INPUT_FILENAME areas.svg OUTPUT_FILENAME export-area-page_export-id.ps  REFERENCE_FILENAME export-area-page_export-id.ps)
 # EPS: Currently not supported. Feature request: https://gitlab.com/inkscape/inkscape/-/issues/1074
 #add_cli_test(export-area-page_export-id_eps PARAMETERS --export-area-page --export-id=MyStar INPUT_FILENAME areas.svg OUTPUT_FILENAME export-area-page_export-id.eps REFERENCE_FILENAME export-area-page_export-id.eps)
 # EMF, WMF: Nont supported.
@@ -185,6 +208,12 @@ add_cli_test(export-area-drawing_eps PARAMETERS --export-area-drawing --export-t
 # EMF, WMF: Currently not supported. Feature request: https://gitlab.com/inkscape/inkscape/-/issues/1056
 # add_cli_test(export-area-drawing_emf PARAMETERS --export-area-drawing --export-type=emf INPUT_FILENAME areas.svg OUTPUT_FILENAME export-area-drawing.emf REFERENCE_FILENAME export-area-drawing_expected.emf)
 # add_cli_test(export-area-drawing_wmf PARAMETERS --export-area-drawing --export-type=wmf INPUT_FILENAME areas.svg OUTPUT_FILENAME export-area-drawing.wmf REFERENCE_FILENAME export-area-drawing_expected.wmf)
+
+# --export-area-drawing + --export-area-page should be overriden by --export-area-page
+add_cli_test(export-area-drawing-page_png PARAMETERS --export-area-drawing --export-area-page --export-type=png INPUT_FILENAME areas.svg OUTPUT_FILENAME export-area-drawing-page.png REFERENCE_FILENAME export-area-page_expected.png)
+add_cli_test(export-area-drawing-page_svg PARAMETERS --export-area-drawing --export-area-page --export-type=svg INPUT_FILENAME areas.svg OUTPUT_FILENAME export-area-drawing-page.svg REFERENCE_FILENAME export-area-page_expected.svg)
+add_cli_test(export-area-drawing-page_pdf PARAMETERS --export-area-drawing --export-area-page --export-type=pdf INPUT_FILENAME areas.svg OUTPUT_FILENAME export-area-drawing-page.pdf REFERENCE_FILENAME export-area-page_expected.pdf)
+add_cli_test(export-area-drawing-page_ps  PARAMETERS --export-area-drawing --export-area-page --export-type=ps  INPUT_FILENAME areas.svg OUTPUT_FILENAME export-area-drawing-page.ps  REFERENCE_FILENAME export-area-page_expected.ps)
 
 # --export-area=x0:y0:x1:y1
 add_cli_test(export-area_png PARAMETERS --export-area=150:150:350:300 --export-type=png INPUT_FILENAME areas.svg OUTPUT_FILENAME export-area.png REFERENCE_FILENAME export-area_expected.png)
@@ -228,8 +257,8 @@ add_cli_test(export-height_export-use-hints PARAMETERS --export-height=40 --expo
 
 ## simple --export-margin (millimeter based)
 # add_cli_test(export-margin_mm_png PARAMETERS --export-margin=50 --export-type=png INPUT_FILENAME square_mm.svg OUTPUT_FILENAME export-margin_mm.png REFERENCE_FILENAME export-margin_mm_expected.png )
-add_cli_test(export-margin_mm_svg PARAMETERS --export-margin=50 --export-type=svg INPUT_FILENAME square_mm.svg OUTPUT_FILENAME export-margin_mm.svg REFERENCE_FILENAME export-margin_mm_expected.svg )
-add_cli_test(export-margin_mm_pdf PARAMETERS --export-margin=50 --export-type=pdf INPUT_FILENAME square_mm.svg OUTPUT_FILENAME export-margin_mm.pdf REFERENCE_FILENAME export-margin_mm_expected.pdf )
+# add_cli_test(export-margin_mm_svg PARAMETERS --export-margin=50 --export-type=svg INPUT_FILENAME square_mm.svg OUTPUT_FILENAME export-margin_mm.svg REFERENCE_FILENAME export-margin_mm_expected.svg )
+# add_cli_test(export-margin_mm_pdf PARAMETERS --export-margin=50 --export-type=pdf INPUT_FILENAME square_mm.svg OUTPUT_FILENAME export-margin_mm.pdf REFERENCE_FILENAME export-margin_mm_expected.pdf )
 # add_cli_test(export-margin_mm_ps  PARAMETERS --export-margin=50 --export-type=ps  INPUT_FILENAME square_mm.svg OUTPUT_FILENAME export-margin_mm.ps  REFERENCE_FILENAME export-margin_mm_expected.ps  )
 # add_cli_test(export-margin_mm_eps PARAMETERS --export-margin=50 --export-type=eps INPUT_FILENAME square_mm.svg OUTPUT_FILENAME export-margin_mm.eps REFERENCE_FILENAME export-margin_mm_expected.eps )
 # add_cli_test(export-margin_mm_emf PARAMETERS --export-margin=50 --export-type=emf INPUT_FILENAME square_mm.svg OUTPUT_FILENAME export-margin_mm.emf REFERENCE_FILENAME export-margin_mm_expected.emf )
@@ -237,16 +266,16 @@ add_cli_test(export-margin_mm_pdf PARAMETERS --export-margin=50 --export-type=pd
 
 ## simple --export-margin (pixel based)
 # add_cli_test(export-margin_px_png PARAMETERS --export-margin=50 --export-type=png INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_px.png REFERENCE_FILENAME export-margin_px_expected.png )
-add_cli_test(export-margin_px_svg PARAMETERS --export-margin=50 --export-type=svg INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_px.svg REFERENCE_FILENAME export-margin_px_expected.svg )
+# add_cli_test(export-margin_px_svg PARAMETERS --export-margin=50 --export-type=svg INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_px.svg REFERENCE_FILENAME export-margin_px_expected.svg )
 # add_cli_test(export-margin_px_pdf PARAMETERS --export-margin=50 --export-type=pdf INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_px.pdf REFERENCE_FILENAME export-margin_px_expected.pdf )
-add_cli_test(export-margin_px_ps  PARAMETERS --export-margin=50 --export-type=ps  INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_px.ps  REFERENCE_FILENAME export-margin_px_expected.ps  )
+# add_cli_test(export-margin_px_ps  PARAMETERS --export-margin=50 --export-type=ps  INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_px.ps  REFERENCE_FILENAME export-margin_px_expected.ps  )
 # add_cli_test(export-margin_px_eps PARAMETERS --export-margin=50 --export-type=eps INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_px.eps REFERENCE_FILENAME export-margin_px_expected.eps )
 # add_cli_test(export-margin_px_emf PARAMETERS --export-margin=50 --export-type=emf INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_px.emf REFERENCE_FILENAME export-margin_px_expected.emf )
 # add_cli_test(export-margin_px_wmf PARAMETERS --export-margin=50 --export-type=wmf INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_px.wmf REFERENCE_FILENAME export-margin_px_expected.wmf )
 
 ## --export-margin + --export-id (pixel based)
 # add_cli_test(export-margin_export-id_png PARAMETERS --export-margin=50 --export-id=square-red --export-type=png INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_export-id.png REFERENCE_FILENAME export-margin_export-id_expected.png )
-add_cli_test(export-margin_export-id_svg PARAMETERS --export-margin=50 --export-id=square-red --export-type=svg INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_export-id.svg REFERENCE_FILENAME export-margin_export-id_expected.svg )
+# add_cli_test(export-margin_export-id_svg PARAMETERS --export-margin=50 --export-id=square-red --export-type=svg INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_export-id.svg REFERENCE_FILENAME export-margin_export-id_expected.svg )
 # add_cli_test(export-margin_export-id_pdf PARAMETERS --export-margin=50 --export-id=square-red --export-type=pdf INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_export-id.pdf REFERENCE_FILENAME export-margin_export-id_expected.pdf )
 # add_cli_test(export-margin_export-id_ps  PARAMETERS --export-margin=50 --export-id=square-red --export-type=ps  INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_export-id.ps  REFERENCE_FILENAME export-margin_export-id_expected.ps  )
 # add_cli_test(export-margin_export-id_eps PARAMETERS --export-margin=50 --export-id=square-red --export-type=eps INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_export-id.eps REFERENCE_FILENAME export-margin_export-id_expected.eps )
@@ -255,18 +284,18 @@ add_cli_test(export-margin_export-id_svg PARAMETERS --export-margin=50 --export-
 
 ## --export-margin + --export-id + export-id-only (pixel based)
 # add_cli_test(export-margin_export-id_export-id-only_png PARAMETERS --export-margin=50 --export-id=square-red --export-id-only --export-type=png INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_export-id_export-id-only.png REFERENCE_FILENAME export-margin_export-id_export-id-only_expected.png )
-add_cli_test(export-margin_export-id_export-id-only_svg PARAMETERS --export-margin=50 --export-id=square-red --export-id-only --export-type=svg INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_export-id_export-id-only.svg REFERENCE_FILENAME export-margin_export-id_export-id-only_expected.svg )
+# add_cli_test(export-margin_export-id_export-id-only_svg PARAMETERS --export-margin=50 --export-id=square-red --export-id-only --export-type=svg INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_export-id_export-id-only.svg REFERENCE_FILENAME export-margin_export-id_export-id-only_expected.svg )
 # add_cli_test(export-margin_export-id_export-id-only_pdf PARAMETERS --export-margin=50 --export-id=square-red --export-id-only --export-type=pdf INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_export-id_export-id-only.pdf REFERENCE_FILENAME export-margin_export-id_export-id-only_expected.pdf )
-add_cli_test(export-margin_export-id_export-id-only_ps  PARAMETERS --export-margin=50 --export-id=square-red --export-id-only --export-type=ps  INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_export-id_export-id-only.ps  REFERENCE_FILENAME export-margin_export-id_export-id-only_expected.ps  )
+# add_cli_test(export-margin_export-id_export-id-only_ps  PARAMETERS --export-margin=50 --export-id=square-red --export-id-only --export-type=ps  INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_export-id_export-id-only.ps  REFERENCE_FILENAME export-margin_export-id_export-id-only_expected.ps  )
 # add_cli_test(export-margin_export-id_export-id-only_eps PARAMETERS --export-margin=50 --export-id=square-red --export-id-only --export-type=eps INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_export-id_export-id-only.eps REFERENCE_FILENAME export-margin_export-id_export-id-only_expected.eps )
 # add_cli_test(export-margin_export-id_export-id-only_emf PARAMETERS --export-margin=50 --export-id=square-red --export-id-only --export-type=emf INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_export-id_export-id-only.emf REFERENCE_FILENAME export-margin_export-id_export-id-only_expected.emf )
 # add_cli_test(export-margin_export-id_export-id-only_wmf PARAMETERS --export-margin=50 --export-id=square-red --export-id-only --export-type=wmf INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_export-id_export-id-only.wmf REFERENCE_FILENAME export-margin_export-id_export-id-only_expected.wmf )
 
 ## --export-margin + --export-area-drawing (pixel based)
 # add_cli_test(export-margin_export-area-drawing_png PARAMETERS --export-margin=50 --export-area-drawing --export-type=png INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_drawing.png REFERENCE_FILENAME export-margin_drawing_expected.png )
-add_cli_test(export-margin_export-area-drawing_svg PARAMETERS --export-margin=50 --export-area-drawing --export-type=svg INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_drawing.svg REFERENCE_FILENAME export-margin_drawing_expected.svg )
+# add_cli_test(export-margin_export-area-drawing_svg PARAMETERS --export-margin=50 --export-area-drawing --export-type=svg INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_drawing.svg REFERENCE_FILENAME export-margin_drawing_expected.svg )
 # add_cli_test(export-margin_export-area-drawing_pdf PARAMETERS --export-margin=50 --export-area-drawing --export-type=pdf INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_drawing.pdf REFERENCE_FILENAME export-margin_drawing_expected.pdf )
-add_cli_test(export-margin_export-area-drawing_ps  PARAMETERS --export-margin=50 --export-area-drawing --export-type=ps  INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_drawing.ps  REFERENCE_FILENAME export-margin_drawing_expected.ps  )
+# add_cli_test(export-margin_export-area-drawing_ps  PARAMETERS --export-margin=50 --export-area-drawing --export-type=ps  INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_drawing.ps  REFERENCE_FILENAME export-margin_drawing_expected.ps  )
 # add_cli_test(export-margin_export-area-drawing_eps PARAMETERS --export-margin=50 --export-area-drawing --export-type=eps INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_drawing.eps REFERENCE_FILENAME export-margin_drawing_expected.eps )
 # add_cli_test(export-margin_export-area-drawing_emf PARAMETERS --export-margin=50 --export-area-drawing --export-type=emf INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_drawing.emf REFERENCE_FILENAME export-margin_drawing_expected.emf )
 # add_cli_test(export-margin_export-area-drawing_wmf PARAMETERS --export-margin=50 --export-area-drawing --export-type=wmf INPUT_FILENAME square_px.svg OUTPUT_FILENAME export-margin_drawing.wmf REFERENCE_FILENAME export-margin_drawing_expected.wmf )
@@ -279,7 +308,7 @@ add_cli_test(export-margin_export-area-drawing_ps  PARAMETERS --export-margin=50
 
 ## --export-margin (millimeter based, user units rescaled via viewBox)
 # add_cli_test(export-margin_viewbox_png PARAMETERS --export-margin=50 --export-type=png INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox.png REFERENCE_FILENAME export-margin_mm_viewbox_page_expected.png )
-add_cli_test(export-margin_viewbox_svg PARAMETERS --export-margin=50 --export-type=svg INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox.svg REFERENCE_FILENAME export-margin_mm_viewbox_page_expected.svg )
+# add_cli_test(export-margin_viewbox_svg PARAMETERS --export-margin=50 --export-type=svg INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox.svg REFERENCE_FILENAME export-margin_mm_viewbox_page_expected.svg )
 # add_cli_test(export-margin_viewbox_pdf PARAMETERS --export-margin=50 --export-type=pdf INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox.pdf REFERENCE_FILENAME export-margin_mm_viewbox_page_expected.pdf )
 # add_cli_test(export-margin_viewbox_ps  PARAMETERS --export-margin=50 --export-type=ps  INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox.ps  REFERENCE_FILENAME export-margin_mm_viewbox_page_expected.ps  )
 # add_cli_test(export-margin_viewbox_eps PARAMETERS --export-margin=50 --export-type=eps INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox.eps REFERENCE_FILENAME export-margin_mm_viewbox_page_expected.eps )
@@ -288,7 +317,7 @@ add_cli_test(export-margin_viewbox_svg PARAMETERS --export-margin=50 --export-ty
 
 ## --export-margin + --export-area-drawing (millimeter based, user units rescaled via viewBox)
 # add_cli_test(export-margin_viewbox_drawing_png PARAMETERS --export-margin=50 --export-area-drawing --export-type=png INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox_drawing.png REFERENCE_FILENAME export-margin_mm_viewbox_drawing_expected.png )
-add_cli_test(export-margin_viewbox_drawing_svg PARAMETERS --export-margin=50 --export-area-drawing --export-type=svg INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox_drawing.svg REFERENCE_FILENAME export-margin_mm_viewbox_drawing_expected.svg )
+# add_cli_test(export-margin_viewbox_drawing_svg PARAMETERS --export-margin=50 --export-area-drawing --export-type=svg INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox_drawing.svg REFERENCE_FILENAME export-margin_mm_viewbox_drawing_expected.svg )
 # add_cli_test(export-margin_viewbox_drawing_pdf PARAMETERS --export-margin=50 --export-area-drawing --export-type=pdf INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox_drawing.pdf REFERENCE_FILENAME export-margin_mm_viewbox_drawing_expected.pdf )
 # add_cli_test(export-margin_viewbox_drawing_ps  PARAMETERS --export-margin=50 --export-area-drawing --export-type=ps  INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox_drawing.ps  REFERENCE_FILENAME export-margin_mm_viewbox_drawing_expected.ps  )
 # add_cli_test(export-margin_viewbox_drawing_eps PARAMETERS --export-margin=50 --export-area-drawing --export-type=eps INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox_drawing.eps REFERENCE_FILENAME export-margin_mm_viewbox_drawing_expected.eps )
@@ -297,7 +326,7 @@ add_cli_test(export-margin_viewbox_drawing_svg PARAMETERS --export-margin=50 --e
 
 ## --export-margin + --export-id (millimeter based, user units rescaled via viewBox)
 # add_cli_test(export-margin_viewbox_id_png PARAMETERS --export-margin=50 --export-id=square-red --export-type=png INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox_id.png REFERENCE_FILENAME export-margin_mm_viewbox_id_expected.png )
-add_cli_test(export-margin_viewbox_id_svg PARAMETERS --export-margin=50 --export-id=square-red --export-type=svg INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox_id.svg REFERENCE_FILENAME export-margin_mm_viewbox_id_expected.svg )
+# add_cli_test(export-margin_viewbox_id_svg PARAMETERS --export-margin=50 --export-id=square-red --export-type=svg INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox_id.svg REFERENCE_FILENAME export-margin_mm_viewbox_id_expected.svg )
 # add_cli_test(export-margin_viewbox_id_pdf PARAMETERS --export-margin=50 --export-id=square-red --export-type=pdf INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox_id.pdf REFERENCE_FILENAME export-margin_mm_viewbox_id_expected.pdf )
 # add_cli_test(export-margin_viewbox_id_ps  PARAMETERS --export-margin=50 --export-id=square-red --export-type=ps  INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox_id.ps  REFERENCE_FILENAME export-margin_mm_viewbox_id_expected.ps  )
 # add_cli_test(export-margin_viewbox_id_eps PARAMETERS --export-margin=50 --export-id=square-red --export-type=eps INPUT_FILENAME square_mm_viewbox.svg OUTPUT_FILENAME export-margin_viewbox_id.eps REFERENCE_FILENAME export-margin_mm_viewbox_id_expected.eps )
@@ -314,6 +343,11 @@ add_cli_test(export-id_svg PARAMETERS --export-id=red --export-type=svg INPUT_FI
 # EMF, WMF There is no support, feature request: https://gitlab.com/inkscape/inkscape/-/issues/1204
 # add_cli_test(export-id_emf PARAMETERS --export-id=red --export-type=emf INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id.emf REFERENCE_FILENAME export-id_expected.emf )
 # add_cli_test(export-id_wmf PARAMETERS --export-id=red --export-type=wmf INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id.wmf REFERENCE_FILENAME export-id_expected.wmf )
+
+# --export-id with non-existing ID should skip and output no file
+add_cli_test(non-existing-export-id_png PARAMETERS --export-id=not-exist --export-type=png 
+             INPUT_FILENAME theta.svg OUTPUT_FILENAME export-id-not-exist.png 
+             TESTSCRIPT test_no_output_file.sh export-id-not-exist.png)
 
 ## --export-id + --export-area-page = --export-area-page
 ## --export-id + --export-area-drawing = --export-area-drawing
@@ -410,6 +444,19 @@ add_cli_test(export-text-to-path_eps PARAMETERS --export-text-to-path --export-t
                                      INPUT_FILENAME text.svg OUTPUT_FILENAME export-text-to-path.eps
                                      TEST_SCRIPT match_regex_fail.sh "export-text-to-path.eps" "^%%BeginResource: font")
 
+# --export-text-to-path should convert texts in nested groups to paths
+add_cli_test(export-text-to-path-in-group_svg PARAMETERS --export-text-to-path --export-type=svg
+                                              INPUT_FILENAME text_in_group.svg OUTPUT_FILENAME export-text-to-path-in-group.svg
+                                              TEST_SCRIPT match_regex_fail.sh "export-text-to-path-in-group.svg" "<text")
+
+# --export-text-to-path should preserve shapes inside group https://gitlab.com/inkscape/inkscape/-/issues/2649
+add_cli_test(export-text-to-path-in-group-rect_svg PARAMETERS --export-text-to-path --export-type=svg
+                                                   INPUT_FILENAME shapes.svg OUTPUT_FILENAME export-text-to-path-in-group-rect.svg
+                                                   TEST_SCRIPT match_regex.sh "export-text-to-path-in-group-rect.svg" "<rect")
+add_cli_test(export-text-to-path-in-group-ellipse_svg PARAMETERS --export-text-to-path --export-type=svg
+                                                      INPUT_FILENAME shapes.svg OUTPUT_FILENAME export-text-to-path-in-group-ellipse.svg
+                                                      TEST_SCRIPT match_regex.sh "export-text-to-path-in-group-ellipse.svg" "<ellipse")
+
 # Regression test for https://gitlab.com/inkscape/inkscape/-/issues/1364
 add_cli_test(regression-1364         PARAMETERS --select=large,small --actions=path-intersection
                                      INPUT_FILENAME regression-1364.svg
@@ -441,6 +488,63 @@ add_cli_test(export-with-filters_png  PARAMETERS --export-type=png INPUT_FILENAM
 add_cli_test(export-with-filters_ps   PARAMETERS --export-type=ps  INPUT_FILENAME offset.svg OUTPUT_FILENAME export-with-filters.ps  REFERENCE_FILENAME export-with-filters_expected.ps )
 add_cli_test(export-with-filters_eps  PARAMETERS --export-type=eps INPUT_FILENAME offset.svg OUTPUT_FILENAME export-with-filters.eps REFERENCE_FILENAME export-with-filters_expected.eps)
 add_cli_test(export-with-filters_pdf  PARAMETERS --export-type=pdf INPUT_FILENAME offset.svg OUTPUT_FILENAME export-with-filters.pdf REFERENCE_FILENAME export-with-filters_expected.pdf)
+add_cli_test(export-grouped-mp PARAMETERS --export-type=pdf
+                               INPUT_FILENAME export-grouped-mp.svg
+                               OUTPUT_FILENAME export-grouped-mp.pdf
+                               OUTPUT_PAGE 1
+                               FUZZYREF_FILENAME export-grouped-mp_expected.png
+                               FUZZ_PERCENTAGE 3)
+add_cli_test(export-with-filters-multipage PARAMETERS --export-type=pdf
+                                           INPUT_FILENAME export-with-filters-multipage.svg
+                                           OUTPUT_FILENAME export-with-filters-multipage.pdf
+                                           OUTPUT_PAGE 1
+                                           FUZZYREF_FILENAME export-with-filters-multipage_expected.png
+                                           FUZZ_PERCENTAGE 1)
+add_cli_test(export-filtered-clones-mp PARAMETERS --export-type=pdf --export-dpi=600
+                                       RASTER_DPI 600
+                                       INPUT_FILENAME  export-filtered-clones-mp.svg
+                                       OUTPUT_FILENAME export-filtered-clones-mp.pdf
+                                       OUTPUT_PAGE 1
+                                       FUZZYREF_FILENAME export-filtered-clones-mp_expected.png
+                                       FUZZ_PERCENTAGE 3)
+add_cli_test(export-clone-group-filtered-mp PARAMETERS --export-type=pdf
+                                            INPUT_FILENAME  export-clone-group-filtered-mp.svg
+                                            OUTPUT_FILENAME export-clone-group-filtered-mp.pdf
+                                            OUTPUT_PAGE 1
+                                            FUZZYREF_FILENAME export-clone-group-filtered-mp_expected.png
+                                            FUZZ_PERCENTAGE 3)
+add_cli_test(export-marker-on-clone PARAMETERS --export-type=pdf
+                                    INPUT_FILENAME  export-marker-on-clone.svg
+                                    OUTPUT_FILENAME export-marker-on-clone.pdf
+                                    RASTER_DPI 100
+                                    FUZZYREF_FILENAME export-marker-on-clone_expected.png
+                                    FUZZ_PERCENTAGE 1)
+add_cli_test(export-text-paintorder PARAMETERS --export-type=pdf
+                                    INPUT_FILENAME  export-text-paintorder.svg
+                                    OUTPUT_FILENAME export-text-paintorder.pdf
+                                    RASTER_DPI 200
+                                    FUZZYREF_FILENAME export-text-paintorder_expected.png
+                                    FUZZ_PERCENTAGE 2)
+# This tests the paint order in the text-to-path conversion
+add_cli_test(convert-text-paintorder PARAMETERS --export-type=pdf --export-text-to-path
+                                     INPUT_FILENAME  export-text-paintorder.svg
+                                     OUTPUT_FILENAME export-text-paintorder.pdf
+                                     RASTER_DPI 200
+                                     FUZZYREF_FILENAME export-text-paintorder_expected.png
+                                     FUZZ_PERCENTAGE 2)
+
+add_cli_test(export-mask-viewbox PARAMETERS --export-type=pdf
+                                 INPUT_FILENAME  export-mask-viewbox-scale.svg
+                                 OUTPUT_FILENAME export-mask-viewbox-scale.pdf
+                                 FUZZYREF_FILENAME export-mask-viewbox-scale_expected.png
+                                 FUZZ_PERCENTAGE 1)
+
+add_cli_test(export-mask-on-transformed-image PARAMETERS --export-type=pdf
+                                              INPUT_FILENAME    export-mask-on-transformed-image.svg
+                                              OUTPUT_FILENAME   export-mask-on-transformed-image.pdf
+                                              FUZZYREF_FILENAME export-mask-on-transformed-image_expected.png
+                                              FUZZ_PERCENTAGE 1)
+
 # EMF, WMF: No support for exporting filters. Feature request: https://gitlab.com/inkscape/inbox/-/issues/2275
 # add_cli_test(export-with-filters_emf  PARAMETERS --export-type=emf INPUT_FILENAME offset.svg OUTPUT_FILENAME export-with-filters.emf REFERENCE_FILENAME export-with-filters_expected.emf)
 # add_cli_test(export-with-filters_wmf  PARAMETERS --export-type=wmf INPUT_FILENAME offset.svg OUTPUT_FILENAME export-with-filters.wmf REFERENCE_FILENAME export-with-filters_expected.wmf)
@@ -510,7 +614,7 @@ add_cli_test(export-plain-extension-svg PARAMETERS --export-type=svg --export-ex
 add_cli_test(export-type-extension_svg_guess_file_type  PARAMETERS --export-extension=org.inkscape.output.svg.inkscape INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes)
 
 ## check error messages for --export-extension
-add_cli_test(export-type-extension_png_error  PARAMETERS --export-extension=org.inkscape.output.svg.inkscape INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes.png 
+add_cli_test(export-type-extension_png_error  PARAMETERS --export-extension=org.inkscape.output.svg.inkscape INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes.png
                             PASS_FOR_OUTPUT "InkFileExportCmd::do_export: The parameter --export-extension is invalid for PNG export")
 add_cli_test(export-type-extension_type_error  PARAMETERS --export-extension=org.inkscape.output.svg.inkscape INPUT_FILENAME shapes.svg OUTPUT_FILENAME shapes.pdf
                             PASS_FOR_OUTPUT "InkFileExportCmd::do_export: The supplied extension ID \\(org\\.inkscape\\.output\\.svg\\.inkscape\\) does not match any of the extensions available for this file type.*")
@@ -545,6 +649,8 @@ add_cli_test(action-list   PARAMETERS --action-list PASS_FOR_OUTPUT "file-new")
 
 # --batch-process
 
+# --active-window
+
 # --shell
 
 
@@ -555,7 +661,23 @@ add_cli_test(action-list   PARAMETERS --action-list PASS_FOR_OUTPUT "file-new")
 # action-list: test = action-list
 add_cli_test(actions-action-list           PARAMETERS --actions=action-list PASS_FOR_OUTPUT "file-new")
 
+# actions-file=FILENAME
+
 # convert-dpi-method
+# NOTE: currently convert-dpi-method must be set before file-open, otherwise it will not take effect
+add_cli_test(action-convert-dpi-method-none
+             PARAMETERS --export-area-page --actions=convert-dpi-method:none$<SEMICOLON>file-open:${CMAKE_CURRENT_SOURCE_DIR}/testcases/shapes_pre_0.92.svg$<SEMICOLON>export-filename:action-convert-dpi-method-none.png$<SEMICOLON>export-do
+             OUTPUT_FILENAME action-convert-dpi-method-none.png
+             REFERENCE_FILENAME shapes_expected.png)
+add_cli_test(action-convert-dpi-method-scale-viewbox
+             PARAMETERS --export-area-page --actions=convert-dpi-method:scale-viewbox$<SEMICOLON>file-open:${CMAKE_CURRENT_SOURCE_DIR}/testcases/shapes_pre_0.92.svg$<SEMICOLON>export-filename:action-convert-dpi-method-scale-viewbox.png$<SEMICOLON>export-do
+             OUTPUT_FILENAME action-convert-dpi-method-scale-viewbox.png
+             REFERENCE_FILENAME shapes_pre_0.92_scaled_expected.png)
+add_cli_test(action-convert-dpi-method-scale-document
+             PARAMETERS --export-area-page --actions=convert-dpi-method:scale-document$<SEMICOLON>file-open:${CMAKE_CURRENT_SOURCE_DIR}/testcases/shapes_pre_0.92.svg$<SEMICOLON>export-filename:action-convert-dpi-method-scale-document.png$<SEMICOLON>export-do
+             OUTPUT_FILENAME action-convert-dpi-method-scale-document.png
+             REFERENCE_FILENAME shapes_pre_0.92_scaled_expected.png)
+
 # debug-info
 add_cli_test(actions-debug-info            PARAMETERS --actions=debug-info PASS_FOR_OUTPUT "OS version:")
 
@@ -769,6 +891,56 @@ add_cli_test(action_test_multiline_anchoring
                         EXPECTED_FILES multiline-anchoring_out.svg
                         TEST_SCRIPT match_regex_fail.sh multiline-anchoring_out.svg "(x=\"[3-9][0-9]{2}\")|(x=\"[12][0-9]{3}\")|(y=\"[0-9]{2}\")|(y=\"1[0-9]{2}\")")
 
+
+# The export area type should be the last set value
+add_cli_test(actions-export-area-drawing-then-page
+             INPUT_FILENAME areas.svg
+             PARAMETERS --actions=export-area-drawing:true$<SEMICOLON>export-area-page:true
+             OUTPUT_FILENAME actions-export-area-drawing-then-page.png
+             REFERENCE_FILENAME export-area-page_expected.png)
+add_cli_test(actions-export-area-page-then-drawing
+             INPUT_FILENAME areas.svg
+             PARAMETERS --actions=export-area-page:true$<SEMICOLON>export-area-drawing:true
+             OUTPUT_FILENAME actions-export-area-page-then-drawing.png
+             REFERENCE_FILENAME export-area-drawing_expected.png)
+
+# Sequential export-id-only action should succeed
+# https://gitlab.com/inkscape/inkscape/-/issues/1957
+add_cli_test(actions-sequential-export-id-only_svg 
+             INPUT_FILENAME theta.svg
+             PARAMETERS --actions=export-id-only$<SEMICOLON>export-filename:actions-sequential-export-id-only.svg$<SEMICOLON>export-id:red$<SEMICOLON>export-do$<SEMICOLON>export-filename:actions-sequential-export-id-only.svg$<SEMICOLON>export-id:blue$<SEMICOLON>export-do
+             OUTPUT_FILENAME actions-sequential-export-id-only.svg
+             REFERENCE_FILENAME export-id_export-id-only_expected.svg)
+
+
+###########################
+### pdf input support   ###
+###########################
+
+function(add_pdfinput_test name pages font_strategy)
+
+    add_cli_test(pdfinput-${name}
+        INPUT_FILENAME pdfinput/${name}.pdf
+        PARAMETERS --pages=${pages} --pdf-font-strategy=${font_strategy} --actions=export-filename:${name}.svg$<SEMICOLON>export-do
+        TEST_SCRIPT compare.sh ${name}.svg "${CMAKE_CURRENT_SOURCE_DIR}/testcases/pdfinput/${name}_expected.svg")
+
+endfunction(add_pdfinput_test)
+
+# CMS testing disabled because CI builder doesn't support LCMS yet.
+# add_pdfinput_test(cms 1)
+add_pdfinput_test(font-spacing 1 draw-all)
+add_pdfinput_test(font-style 1 draw-all)
+add_pdfinput_test(gradients 1 draw-all)
+add_pdfinput_test(latex 1 draw-all)
+add_pdfinput_test(transparency-groups 1 draw-all)
+add_pdfinput_test(rotated-gradients 1 draw-all)
+add_pdfinput_test(labels-utf16 1 draw-all)
+add_pdfinput_test(multi-page-sample all draw-all)
+add_pdfinput_test(multiple-style-same-text-block 1 keep)
+add_pdfinput_test(gs_linewidth all draw-all)
+add_pdfinput_test(XObj_layer all draw-all)
+add_pdfinput_test(Annot_w_AP all draw-all)
+
 ###########################
 ### file format support ###
 ###########################
@@ -777,23 +949,28 @@ add_cli_test(action_test_multiline_anchoring
 if(WITH_LIBCDR)
   # add_cli_test(import_cdr  PARAMETERS --export-type=png   # fails to open (regression in libcdr 1.6.0)
   #                          INPUT_FILENAME librevenge_formats/corel_draw.cdr OUTPUT_FILENAME format_corel_draw.png
-  #                          REFERENCE_FILENAME librevenge_formats/corel_draw_expected.png) # check png size is correct
+  #                          FUZZYREF_FILENAME librevenge_formats/corel_draw_expected.png # check png size is correct
+  #                          FUZZ_PERCENTAGE 3)
   add_cli_test(import_cdr2 PARAMETERS --export-type=png
                            INPUT_FILENAME librevenge_formats/corel_draw2.cdr OUTPUT_FILENAME format_corel_draw2.png
-                           REFERENCE_FILENAME librevenge_formats/corel_draw2_expected.png)
+                           FUZZYREF_FILENAME librevenge_formats/corel_draw2_expected.png
+                           FUZZ_PERCENTAGE 3)
 endif()
 if(WITH_LIBVISIO)
   add_cli_test(import_vsd  PARAMETERS --export-type=png
                            INPUT_FILENAME librevenge_formats/visio.vsd OUTPUT_FILENAME format_visio.vsd.png
-                           REFERENCE_FILENAME librevenge_formats/visio.vsd_expected.png)
+                           FUZZYREF_FILENAME librevenge_formats/visio.vsd_expected.png
+                           FUZZ_PERCENTAGE 3)
   add_cli_test(import_vsdx PARAMETERS --export-type=png
                            INPUT_FILENAME librevenge_formats/visio.vsdx OUTPUT_FILENAME format_visio.vsdx.png
-                           REFERENCE_FILENAME librevenge_formats/visio.vsdx_expected.png)
+                           FUZZYREF_FILENAME librevenge_formats/visio.vsdx_expected.png
+                           FUZZ_PERCENTAGE 3)
 endif()
 if(WITH_LIBWPG)
   add_cli_test(import_wpg  PARAMETERS --export-type=png
                            INPUT_FILENAME librevenge_formats/word_perfect.wpg OUTPUT_FILENAME format_word_perfect.png
-                           REFERENCE_FILENAME librevenge_formats/word_perfect_expected.png)
+                           FUZZYREF_FILENAME librevenge_formats/word_perfect_expected.png
+                           FUZZ_PERCENTAGE 3)
 endif()
 
 

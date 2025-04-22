@@ -22,11 +22,11 @@ function(join OUTPUT GLUE)
     set(_TMP_RESULT "")
     set(_GLUE "") # effective glue is empty at the beginning
     foreach(arg ${ARGN})
-	# Skip empty lines
-	if(NOT arg STREQUAL "\n")
-	    set(_TMP_RESULT "${_TMP_RESULT}${_GLUE}${arg}")
-	    set(_GLUE "${GLUE}")
-	endif()
+        # Skip empty lines
+        if(NOT arg STREQUAL "\n")
+            set(_TMP_RESULT "${_TMP_RESULT}${_GLUE}${arg}")
+            set(_GLUE "${GLUE}")
+        endif()
     endforeach()
     set(${OUTPUT} "${_TMP_RESULT}" PARENT_SCOPE)
 endfunction()
@@ -227,11 +227,16 @@ function(filter_and_install_translated_content file_list destination)
         list(FILTER translated_files INCLUDE REGEX "${regex}")
         list(FILTER remaining_files  EXCLUDE REGEX "${regex}")
 
+        string(MAKE_C_IDENTIFIER "${language_code}" language_code_escaped)
         if(translated_files)
-            string(MAKE_C_IDENTIFIER "${language_code}" language_code_escaped)
+            if(WIN32)
+                set(COMP translations.${language_code_escaped})
+            else()
+                set(COMP translations)
+            endif()
             install(FILES ${translated_files}
                 DESTINATION ${destination}
-                COMPONENT translations.${language_code_escaped})
+                COMPONENT ${COMP})
         endif()
     endforeach()
 

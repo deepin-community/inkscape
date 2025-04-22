@@ -26,13 +26,14 @@ Interface for all group based elements such as Groups, Use, Markers etc.
 from lxml import etree  # pylint: disable=unused-import
 
 from ..paths import Path
-from ..transforms import Transform
+from ..transforms import BoundingBox, Transform
 
 from ._utils import addNS
-from ._base import ShapeElement
+from ._base import ShapeElement, ViewboxMixin
+from ._polygons import PathElement
 
 try:
-    from typing import Optional  # pylint: disable=unused-import
+    from typing import Optional, List  # pylint: disable=unused-import
 except ImportError:
     pass
 
@@ -47,15 +48,69 @@ class GroupBase(ShapeElement):
                 ret += child.path.transform(child.transform)
         return ret
 
+    def bounding_box(self, transform=None):
+        # type: (Optional[Transform]) -> Optional[BoundingBox]
+        """BoundingBox of the shape
+
+        .. versionchanged:: 1.4
+            Exclude invisible child objects from bounding box computation
+
+        .. versionchanged:: 1.1
+            result adjusted for element's clip path if applicable.
+        """
+        bbox = None
+        effective_transform = Transform(transform) @ self.transform
+        for child in self:
+            if isinstance(child, ShapeElement) and child.is_visible():
+                child_bbox = child.bounding_box(transform=effective_transform)
+                if child_bbox is not None:
+                    bbox += child_bbox
+        clip = self.clip
+        if clip is None or bbox is None:
+            return bbox
+        return bbox & clip.bounding_box(Transform(transform) @ self.transform)
+
     def shape_box(self, transform=None):
+        # type: (Optional[Transform]) -> Optional[BoundingBox]
+        """BoundingBox of the unclipped shape
+
+        .. versionchanged:: 1.4
+            returns the bounding box without possible clip effects of child objects
+
+        .. versionadded:: 1.1
+            Previous :func:`bounding_box` function, returning the bounding box
+            without computing the effect of a possible clip."""
         bbox = None
         effective_transform = Transform(transform) @ self.transform
         for child in self:
             if isinstance(child, ShapeElement):
-                child_bbox = child.bounding_box(transform=effective_transform)
+                child_bbox = child.shape_box(transform=effective_transform)
                 if child_bbox is not None:
                     bbox += child_bbox
         return bbox
+
+    def bake_transforms_recursively(self, apply_to_paths=True):
+        """Bake transforms, i.e. each leaf node has the effective transform (starting
+        from this group) set, and parent transforms are removed.
+
+        .. versionadded:: 1.4
+
+        Args:
+            apply_to_paths (bool, optional): For path elements, the
+                path data is transformed with its effective transform. Nodes and handles
+                will have the same position as before, but visual appearance of the
+                stroke may change (stroke-width is not touched). Defaults to True.
+        """
+        # pylint: disable=attribute-defined-outside-init
+        self.transform: Transform
+        for element in self:
+            if isinstance(element, PathElement) and apply_to_paths:
+                element.path = element.path.transform(self.transform)
+            else:
+                element.transform = self.transform @ element.transform
+                if isinstance(element, GroupBase):
+                    element.bake_transforms_recursively(apply_to_paths)
+        self.transform = None
 
 
 class Group(GroupBase):
@@ -90,7 +145,10 @@ class Layer(Group):
     @classmethod
     def is_class_element(cls, elem):
         # type: (etree.Element) -> bool
-        return elem.attrib.get(addNS("inkscape:groupmode"), None) == "layer"
+        return (
+            elem.get("{http://www.inkscape.org/namespaces/inkscape}groupmode", None)
+            == "layer"
+        )
 
 
 class Anchor(GroupBase):
@@ -110,17 +168,26 @@ class ClipPath(GroupBase):
     tag_name = "clipPath"
 
 
-class Marker(GroupBase):
+class Marker(GroupBase, ViewboxMixin):
     """The <marker> element defines the graphic that is to be used for drawing
     arrowheads or polymarkers on a given <path>, <line>, <polyline> or <polygon>
     element."""
 
     tag_name = "marker"
 
+    def get_viewbox(self) -> List[float]:
+        """Returns the viewbox of the Marker, falling back to
+        [0 0 markerWidth markerHeight]
 
-class Mask(GroupBase):
-    """An alpha mask for compositing an object into the background
-
-    .. versionadded:: 1.2"""
-
-    tag_name = "mask"
+        .. versionadded:: 1.3"""
+        vbox = self.get("viewBox", None)
+        result = self.parse_viewbox(vbox)
+        if result is None:
+            # use viewport, https://www.w3.org/TR/SVG11/painting.html#MarkerElement
+            return [
+                0,
+                0,
+                self.to_dimensionless(self.get("markerWidth")),
+                self.to_dimensionless(self.get("markerHeight")),
+            ]
+        return result

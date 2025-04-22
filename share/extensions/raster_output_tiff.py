@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Convert PNG to Tiff using Raster Output extension.
 """
@@ -20,7 +20,6 @@ class TiffOutput(inkex.RasterOutputExtension):
             format="tiff",
             compression=(self.options.compression or None),
             dpi=self.img.info["dpi"],
-            quality=100,
         )
         stream.write(tempstream.getvalue())
         # TODO: Add other fields such as copyright etc.

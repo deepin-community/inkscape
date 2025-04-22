@@ -9,13 +9,16 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "dependency.h"
+
 #include <glibmm/i18n.h>
 #include <glibmm/fileutils.h>
 #include <glibmm/miscutils.h>
-#include "dependency.h"
+
 #include "db.h"
 #include "extension.h"
 #include "io/resource.h"
+#include "xml/node.h"
 
 namespace Inkscape {
 namespace Extension {
@@ -179,7 +182,7 @@ bool Dependency::check ()
                 case LOCATION_EXTENSIONS: {
                     // get_filename will warn if the resource isn't found, while returning an empty string.
                     std::string temploc =
-                        Inkscape::IO::Resource::get_filename_string(Inkscape::IO::Resource::EXTENSIONS, location.c_str());
+                        Inkscape::IO::Resource::get_filename(Inkscape::IO::Resource::EXTENSIONS, location.c_str());
                     if (!temploc.empty()) {
                         location = temploc;
                         _absolute_location = temploc;
@@ -188,7 +191,7 @@ bool Dependency::check ()
                     /* Look for deprecated locations next */
                     auto deprloc = g_build_filename("inkex", "deprecated-simple", location.c_str(), nullptr);
                     std::string tempdepr =
-                        Inkscape::IO::Resource::get_filename_string(Inkscape::IO::Resource::EXTENSIONS, deprloc, false, true);
+                        Inkscape::IO::Resource::get_filename(Inkscape::IO::Resource::EXTENSIONS, deprloc, false, true);
                     g_free(deprloc);
                     if (!tempdepr.empty()) {
                         location = tempdepr;

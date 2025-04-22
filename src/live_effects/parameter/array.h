@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef INKSCAPE_LIVEPATHEFFECT_PARAMETER_ARRAY_H
-#define INKSCAPE_LIVEPATHEFFECT_PARAMETER_ARRAY_H
-
 /*
  * Inkscape::LivePathEffectParameters
  *
@@ -10,8 +7,12 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <glib.h>
+#ifndef INKSCAPE_LIVEPATHEFFECT_PARAMETER_ARRAY_H
+#define INKSCAPE_LIVEPATHEFFECT_PARAMETER_ARRAY_H
+
+#include <cstddef>
 #include <vector>
+#include <glib.h>
 
 #include "bad-uri-exception.h"
 #include "helper/geom-nodesatellite.h"
@@ -19,11 +20,14 @@
 #include "live_effects/parameter/satellite-reference.h"
 #include "object/uri.h"
 #include "svg/stringstream.h"
-#include "svg/svg.h"
 
-namespace Inkscape {
+namespace Inkscape::LivePathEffect {
 
-namespace LivePathEffect {
+namespace TpS {
+// we need a separate namespace to avoid clashes with other LPEs
+class KnotHolderEntityAttachBegin;
+class KnotHolderEntityAttachEnd;
+} // namespace TpS
 
 template <typename StorageType>
 class ArrayParam : public Parameter {
@@ -33,13 +37,13 @@ public:
                 const Glib::ustring& key,
                 Inkscape::UI::Widget::Registry* wr,
                 Effect* effect,
-                size_t n = 0 )
+                std::size_t n = 0 )
         : Parameter(label, tip, key, wr, effect), _vector(n), _default_size(n)
     {
-
     }
 
-    ~ArrayParam() override = default;;
+    ArrayParam(const ArrayParam&);
+    ArrayParam& operator=(const ArrayParam&);
 
     std::vector<StorageType> const & data() const {
         return _vector;
@@ -49,18 +53,24 @@ public:
         return nullptr;
     }
 
-    bool param_readSVGValue(const gchar * strvalue) override {
+    bool param_readSVGValue(char const * const strvalue) override {
         _vector.clear();
-        gchar ** strarray = g_strsplit(strvalue, "|", 0);
-        gchar ** iter = strarray;
+        auto const strarray = g_strsplit(strvalue, "|", 0);
+        auto iter = strarray;
+        
         while (*iter != nullptr) {
-            _vector.push_back( readsvg(*iter) );
+            Glib::ustring fixer = *iter;
+            fixer.erase(0, fixer.find_first_not_of(" "));
+            fixer.erase(fixer.find_last_not_of(" ")+1); 
+            _vector.push_back( readsvg(fixer.c_str()) );
             iter++;
         }
         g_strfreev (strarray);
         return true;
     }
-    void param_update_default(const gchar * default_value) override{};
+
+    void param_update_default(char const * default_value) override{};
+
     Glib::ustring param_getSVGValue() const override {
         Inkscape::SVGOStringStream os;
         writesvg(os, _vector);
@@ -82,17 +92,20 @@ public:
     void param_set_and_write_new_value(std::vector<StorageType> const &new_vector) {
         Inkscape::SVGOStringStream os;
         writesvg(os, new_vector);
-        gchar * str = g_strdup(os.str().c_str());
-        param_write_to_repr(str);
-        g_free(str);
+        param_write_to_repr(os.str().c_str());
     }
+
     ParamType paramType() const override { return ParamType::ARRAY; };
+    bool valid_index(int index) const { return _vector.size() > index; }
+
 protected:
+    friend class TpS::KnotHolderEntityAttachBegin;
+    friend class TpS::KnotHolderEntityAttachEnd;
     std::vector<StorageType> _vector;
-    size_t _default_size;
+    std::size_t _default_size;
 
     void writesvg(SVGOStringStream &str, std::vector<StorageType> const &vector) const {
-        for (unsigned int i = 0; i < vector.size(); ++i) {
+        for (std::size_t i = 0; i < vector.size(); ++i) {
             if (i != 0) {
                 // separate items with pipe symbol
                 str << " | ";
@@ -106,6 +119,10 @@ protected:
     }
 
     void writesvgData(SVGOStringStream &str, double const &vector_data) const {
+        str << vector_data;
+    }
+
+    void writesvgData(SVGOStringStream &str, Glib::ustring const &vector_data) const {
         str << vector_data;
     }
 
@@ -126,7 +143,7 @@ protected:
 
     void writesvgData(SVGOStringStream &str, std::vector<NodeSatellite> const &vector_data) const
     {
-        for (size_t i = 0; i < vector_data.size(); ++i) {
+        for (std::size_t i = 0; i < vector_data.size(); ++i) {
             if (i != 0) {
                 // separate nodes with @ symbol ( we use | for paths)
                 str << " @ ";
@@ -149,19 +166,12 @@ protected:
         }
     }
 
-    StorageType readsvg(const gchar * str);
-
-private:
-    ArrayParam(const ArrayParam&);
-    ArrayParam& operator=(const ArrayParam&);
+    StorageType readsvg(char const * str);
 };
 
+} // namespace Inkscape::LivePathEffect
 
-} //namespace LivePathEffect
-
-} //namespace Inkscape
-
-#endif
+#endif // INKSCAPE_LIVEPATHEFFECT_PARAMETER_ARRAY_H
 
 /*
   Local Variables:

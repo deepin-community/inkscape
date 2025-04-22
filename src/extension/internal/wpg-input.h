@@ -11,8 +11,8 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef __EXTENSION_INTERNAL_WPGOUTPUT_H__
-#define __EXTENSION_INTERNAL_WPGOUTPUT_H__
+#ifndef SEEN_EXTENSION_INTERNAL_WPGOUTPUT_H
+#define SEEN_EXTENSION_INTERNAL_WPGOUTPUT_H
 
 #ifdef HAVE_CONFIG_H
 # include "config.h"  // only include where actually required!
@@ -27,18 +27,19 @@ namespace Extension {
 namespace Internal {
 
 class WpgInput : public Inkscape::Extension::Implementation::Implementation {
-    WpgInput () = default;;
 public:
+    WpgInput() = default;
     SPDocument *open( Inkscape::Extension::Input *mod,
-                                const gchar *uri ) override;
+                                const gchar *uri,
+                                bool is_importing) override;
     static void         init( );
 
 };
 
 } } }  /* namespace Inkscape, Extension, Implementation */
 
-#endif /* WITH_LIBWPG */
-#endif /* __EXTENSION_INTERNAL_WPGOUTPUT_H__ */
+#endif // WITH_LIBWPG
+#endif // SEEN_EXTENSION_INTERNAL_WPGOUTPUT_H
 
 
 /*

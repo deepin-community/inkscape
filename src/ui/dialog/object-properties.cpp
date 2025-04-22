@@ -30,39 +30,45 @@
 #include "object-properties.h"
 
 #include <glibmm/i18n.h>
-
+#include <gtkmm/adjustment.h>
+#include <gtkmm/box.h>
+#include <gtkmm/enums.h>
+#include <gtkmm/expander.h>
 #include <gtkmm/grid.h>
+#include <gtkmm/label.h>
+#include <gtkmm/object.h>
+#include <gtkmm/separator.h>
 
 #include "document-undo.h"
 #include "document.h"
 #include "inkscape.h"
-#include "style.h"
-#include "style-enums.h"
-
+#include "object/sp-item.h"
+#include "preferences.h"
+#include "selection.h"
 #include "object/sp-image.h"
 #include "ui/icon-names.h"
+#include "ui/pack.h"
+#include "ui/syntax.h"
+#include "ui/widget/frame.h"
 #include "widgets/sp-attribute-widget.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
+namespace Inkscape::UI::Dialog {
 
 ObjectProperties::ObjectProperties()
-    : DialogBase("/dialogs/object/", "ObjectProperties")
+    : DialogBase("/dialogs/object-properties-widget/", "ObjectPropertiesWidget")
     , _blocked(false)
     , _current_item(nullptr)
     , _label_id(_("_ID:"), true)
     , _label_label(_("_Label:"), true)
     , _label_title(_("_Title:"), true)
     , _label_dpi(_("_DPI SVG:"), true)
-    , _label_image_rendering(_("_Image Rendering:"), true)
     , _label_color(_("Highlight Color:"), true)
     , _highlight_color(_("Highlight Color"), "", 0xff0000ff, true)
     , _cb_hide(_("_Hide"), true)
     , _cb_lock(_("L_ock"), true)
     , _cb_aspect_ratio(_("Preserve Ratio"), true)
     , _exp_interactivity(_("_Interactivity"), true)
-    , _attr_table(Gtk::manage(new SPAttributeTable()))
+    , _attr_table(Gtk::make_managed<SPAttributeTable>(Syntax::SyntaxMode::JavaScript))
 {
     //initialize labels for the table at the bottom of the dialog
     _int_attrs.emplace_back("onclick");
@@ -75,30 +81,48 @@ ObjectProperties::ObjectProperties()
     _int_attrs.emplace_back("onfocusout");
     _int_attrs.emplace_back("onload");
 
-    _int_labels.emplace_back("onclick:");
-    _int_labels.emplace_back("onmouseover:");
-    _int_labels.emplace_back("onmouseout:");
-    _int_labels.emplace_back("onmousedown:");
-    _int_labels.emplace_back("onmouseup:");
-    _int_labels.emplace_back("onmousemove:");
-    _int_labels.emplace_back("onfocusin:");
-    _int_labels.emplace_back("onfocusout:");
-    _int_labels.emplace_back("onload:");
+    _int_labels.emplace_back("OnClick:");
+    _int_labels.emplace_back("OnMouseOver:");
+    _int_labels.emplace_back("OnMouseOut:");
+    _int_labels.emplace_back("OnMouseDown:");
+    _int_labels.emplace_back("OnMouseUp:");
+    _int_labels.emplace_back("OnMouseMove:");
+    _int_labels.emplace_back("OnFocusIn:");
+    _int_labels.emplace_back("OnFocusOut:");
+    _int_labels.emplace_back("OnLoad:");
 
     _init();
 }
 
 void ObjectProperties::_init()
 {
-    set_spacing(0);
+    const int spacing = 4;
+    set_spacing(spacing);
 
-    auto grid_top = Gtk::manage(new Gtk::Grid());
-    grid_top->set_row_spacing(4);
-    grid_top->set_column_spacing(0);
-    grid_top->set_border_width(4);
+    {
+        auto exp_path = _prefs_path + "expand-props";
+        auto expanded = Inkscape::Preferences::get()->getBool(exp_path, false);
+        _exp_properties.set_expanded(expanded);
+        _exp_properties.property_expanded().signal_changed().connect([=]{
+            Inkscape::Preferences::get()->setBool(exp_path, _exp_properties.get_expanded());
+        });
+    }
+    {
+        auto exp_path = _prefs_path + "expand-interactive";
+        auto expanded = Inkscape::Preferences::get()->getBool(exp_path, false);
+        _exp_interactivity.set_expanded(expanded);
+        _exp_interactivity.property_expanded().signal_changed().connect([=]{
+            Inkscape::Preferences::get()->setBool(exp_path, _exp_interactivity.get_expanded());
+        });
+    }
 
-    pack_start(*grid_top, false, false, 0);
+    auto const grid_top = Gtk::make_managed<Gtk::Grid>();
+    grid_top->set_row_spacing(spacing);
+    grid_top->set_column_spacing(spacing);
 
+    _exp_properties.set_label(_("Properties"));
+    _exp_properties.add(*grid_top);
+    UI::pack_start(*this, _exp_properties, false, false);
 
     /* Create the label for the object id */
     _label_id.set_label(_label_id.get_label() + " ");
@@ -114,10 +138,9 @@ void ObjectProperties::_init()
     _label_id.set_mnemonic_widget(_entry_id);
 
     // pressing enter in the id field is the same as clicking Set:
-    _entry_id.signal_activate().connect(sigc::mem_fun(this, &ObjectProperties::_labelChanged));
+    _entry_id.signal_activate().connect(sigc::mem_fun(*this, &ObjectProperties::_labelChanged));
     // focus is in the id field initially:
     _entry_id.grab_focus();
-
 
     /* Create the label for the object label */
     _label_label.set_label(_label_label.get_label() + " ");
@@ -134,8 +157,7 @@ void ObjectProperties::_init()
     _label_label.set_mnemonic_widget(_entry_label);
 
     // pressing enter in the label field is the same as clicking Set:
-    _entry_label.signal_activate().connect(sigc::mem_fun(this, &ObjectProperties::_labelChanged));
-
+    _entry_label.signal_activate().connect(sigc::mem_fun(*this, &ObjectProperties::_labelChanged));
 
     /* Create the label for the object title */
     _label_title.set_label(_label_title.get_label() + " ");
@@ -151,24 +173,24 @@ void ObjectProperties::_init()
 
     _label_title.set_mnemonic_widget(_entry_title);
     // pressing enter in the label field is the same as clicking Set:
-    _entry_title.signal_activate().connect(sigc::mem_fun(this, &ObjectProperties::_labelChanged));
+    _entry_title.signal_activate().connect(sigc::mem_fun(*this, &ObjectProperties::_labelChanged));
 
     _label_color.set_mnemonic_widget(_highlight_color);
     _label_color.set_halign(Gtk::ALIGN_START);
     _highlight_color.connectChanged(sigc::mem_fun(*this, &ObjectProperties::_highlightChanged));
 
     /* Create the frame for the object description */
-    Gtk::Label *label_desc = Gtk::manage(new Gtk::Label(_("_Description:"), true));
-    UI::Widget::Frame *frame_desc = Gtk::manage(new UI::Widget::Frame("", FALSE));
+    auto const label_desc = Gtk::make_managed<Gtk::Label>(_("_Description:"), true);
+    auto const frame_desc = Gtk::make_managed<UI::Widget::Frame>("", FALSE);
     frame_desc->set_label_widget(*label_desc);
-    frame_desc->set_padding (0,0,0,0);
-    pack_start(*frame_desc, true, true, 0);
+    label_desc->set_margin_bottom(spacing);
+    frame_desc->set_padding(0, 0, 0, 0);
+    frame_desc->set_size_request(-1, 80);
 
     /* Create the text view box for the object description */
-    _ft_description.set_border_width(4);
-    _ft_description.set_sensitive(FALSE);
+    _ft_description.set_sensitive(false);
     frame_desc->add(_ft_description);
-    _ft_description.set_shadow_type(Gtk::SHADOW_IN);
+    _ft_description.property_margin().set_value(0);
 
     _tv_description.set_wrap_mode(Gtk::WRAP_WORD);
     _tv_description.get_buffer()->set_text("");
@@ -176,69 +198,32 @@ void ObjectProperties::_init()
     _tv_description.add_mnemonic_label(*label_desc);
 
     /* Create the label for the object title */
-    _label_dpi.set_label(_label_dpi.get_label() + " ");
     _label_dpi.set_halign(Gtk::ALIGN_START);
     _label_dpi.set_valign(Gtk::ALIGN_CENTER);
 
     /* Create the entry box for the SVG DPI */
     _spin_dpi.set_digits(2);
-    _spin_dpi.set_range(1, 1200);
+    _spin_dpi.set_range(1, 2400);
+    auto adj = Gtk::Adjustment::create(96, 1, 2400);
+    adj->set_step_increment(10);
+    adj->set_page_increment(100);
+    _spin_dpi.set_adjustment(adj);
+    _spin_dpi.set_tooltip_text(_("Set resolution for vector images (press Enter to see change in rendering quality)"));
 
     _label_dpi.set_mnemonic_widget(_spin_dpi);
     // pressing enter in the label field is the same as clicking Set:
-    _spin_dpi.signal_activate().connect(sigc::mem_fun(this, &ObjectProperties::_labelChanged));
-
-    /* Image rendering */
-    /* Create the label for the object ImageRendering */
-    _label_image_rendering.set_label(_label_image_rendering.get_label() + " ");
-    _label_image_rendering.set_halign(Gtk::ALIGN_START);
-    _label_image_rendering.set_valign(Gtk::ALIGN_CENTER);
-
-    /* Create the combo box text for the 'image-rendering' property  */
-    for (unsigned i = 0; enum_image_rendering[i].key; ++i) {
-        _combo_image_rendering.append(enum_image_rendering[i].key);
-    }
-    _combo_image_rendering.set_tooltip_text(_("The 'image-rendering' property can influence how a bitmap is re-scaled:\n"
-                                              "\t• 'auto': no preference (scaled image is usually smooth but blurred)\n"
-                                              "\t• 'optimizeQuality': prefer rendering quality (usually smooth but blurred)\n"
-                                              "\t• 'optimizeSpeed': prefer rendering speed (usually blocky)\n"
-                                              "\t• 'crisp-edges': rescale without blurring edges (often blocky)\n"
-                                              "\t• 'pixelated': render blocky\n"
-                                              "Note that the specification of this property is not finalized. "
-                                              "Support and interpretation of these values varies between renderers."));
-
-    _combo_image_rendering.set_valign(Gtk::ALIGN_CENTER);
-
-    _label_image_rendering.set_mnemonic_widget(_combo_image_rendering);
-
-    _combo_image_rendering.signal_changed().connect(
-        sigc::mem_fun(this, &ObjectProperties::_imageRenderingChanged)
-    );
-
-
-    grid_top->attach(_label_id,              0, 0, 1, 1);
-    grid_top->attach(_entry_id,              1, 0, 1, 1);
-    grid_top->attach(_label_label,           0, 1, 1, 1);
-    grid_top->attach(_entry_label,           1, 1, 1, 1);
-    grid_top->attach(_label_title,           0, 2, 1, 1);
-    grid_top->attach(_entry_title,           1, 2, 1, 1);
-    grid_top->attach(_label_color,           0, 3, 1, 1);
-    grid_top->attach(_highlight_color,       1, 3, 1, 1);
-    grid_top->attach(_label_dpi,             0, 4, 1, 1);
-    grid_top->attach(_spin_dpi,              1, 4, 1, 1);
-    grid_top->attach(_label_image_rendering, 0, 5, 1, 1);
-    grid_top->attach(_combo_image_rendering, 1, 5, 1, 1);
+    _spin_dpi.signal_activate().connect(sigc::mem_fun(*this, &ObjectProperties::_labelChanged));
 
     /* Check boxes */
-    Gtk::Box *hb_checkboxes = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
-    pack_start(*hb_checkboxes, Gtk::PACK_SHRINK, 0);
+    auto const hb_checkboxes = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
 
-    auto grid_cb = Gtk::manage(new Gtk::Grid());
+    auto const grid_cb = Gtk::make_managed<Gtk::Grid>();
     grid_cb->set_row_homogeneous();
     grid_cb->set_column_homogeneous(true);
-
-    grid_cb->set_border_width(4);
-    hb_checkboxes->pack_start(*grid_cb, true, true, 0);
+    grid_cb->set_row_spacing(spacing);
+    grid_cb->set_column_spacing(spacing);
+    grid_cb->property_margin().set_value(0);
+    UI::pack_start(*hb_checkboxes, *grid_cb, true, true);
 
     /* Hide */
     _cb_hide.set_tooltip_text (_("Check to make the object invisible"));
@@ -246,7 +231,7 @@ void ObjectProperties::_init()
     _cb_hide.set_valign(Gtk::ALIGN_CENTER);
     grid_cb->attach(_cb_hide, 0, 0, 1, 1);
 
-    _cb_hide.signal_toggled().connect(sigc::mem_fun(this, &ObjectProperties::_hiddenToggled));
+    _cb_hide.signal_toggled().connect(sigc::mem_fun(*this, &ObjectProperties::_hiddenToggled));
 
     /* Lock */
     // TRANSLATORS: "Lock" is a verb here
@@ -255,7 +240,7 @@ void ObjectProperties::_init()
     _cb_lock.set_valign(Gtk::ALIGN_CENTER);
     grid_cb->attach(_cb_lock, 1, 0, 1, 1);
 
-    _cb_lock.signal_toggled().connect(sigc::mem_fun(this, &ObjectProperties::_sensitivityToggled));
+    _cb_lock.signal_toggled().connect(sigc::mem_fun(*this, &ObjectProperties::_sensitivityToggled));
 
     /* Preserve aspect ratio */
     _cb_aspect_ratio.set_tooltip_text(_("Check to preserve aspect ratio on images"));
@@ -263,20 +248,44 @@ void ObjectProperties::_init()
     _cb_aspect_ratio.set_valign(Gtk::ALIGN_CENTER);
     grid_cb->attach(_cb_aspect_ratio, 0, 1, 1, 1);
 
-    _cb_aspect_ratio.signal_toggled().connect(sigc::mem_fun(this, &ObjectProperties::_aspectRatioToggled));
-
+    _cb_aspect_ratio.signal_toggled().connect(sigc::mem_fun(*this, &ObjectProperties::_aspectRatioToggled));
 
     /* Button for setting the object's id, label, title and description. */
-    Gtk::Button *btn_set = Gtk::manage(new Gtk::Button(_("_Set"), true));
+    auto const btn_set = Gtk::make_managed<Gtk::Button>(_("_Set"), true);
     btn_set->set_hexpand();
     btn_set->set_valign(Gtk::ALIGN_CENTER);
     grid_cb->attach(*btn_set, 1, 1, 1, 1);
 
-    btn_set->signal_clicked().connect(sigc::mem_fun(this, &ObjectProperties::_labelChanged));
+    btn_set->signal_clicked().connect(sigc::mem_fun(*this, &ObjectProperties::_labelChanged));
 
-    /* Interactivity options */
-    _exp_interactivity.set_vexpand(false);
-    pack_start(_exp_interactivity, Gtk::PACK_SHRINK);
+    grid_top->attach(_label_id,        0, 0, 1, 1);
+    grid_top->attach(_entry_id,        1, 0, 1, 1);
+    grid_top->attach(_label_label,     0, 1, 1, 1);
+    grid_top->attach(_entry_label,     1, 1, 1, 1);
+    grid_top->attach(_label_title,     0, 2, 1, 1);
+    grid_top->attach(_entry_title,     1, 2, 1, 1);
+    grid_top->attach(_label_color,     0, 3, 1, 1);
+    grid_top->attach(_highlight_color, 1, 3, 1, 1);
+    grid_top->attach(_label_dpi,       0, 4, 1, 1);
+    grid_top->attach(_spin_dpi,        1, 4, 1, 1);
+    grid_top->attach(*frame_desc,      0, 5, 2, 1);
+    grid_top->attach(*hb_checkboxes,   0, 6, 2, 1);
+
+    _attr_table->create(_int_labels, _int_attrs);
+    auto vbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
+    auto js = Gtk::make_managed<Gtk::Label>();
+    js->set_markup(_("<small><i>Enter JavaScript code for interactive behavior in a browser.</i></small>"));
+    js->set_ellipsize(Pango::EllipsizeMode::ELLIPSIZE_END);
+    js->set_xalign(0.0);
+    vbox->set_spacing(spacing);
+    vbox->add(*_attr_table);
+    vbox->add(*js);
+    _exp_interactivity.add(*vbox);
+
+    auto sep = Gtk::make_managed<Gtk::Separator>(Gtk::ORIENTATION_HORIZONTAL);
+    UI::pack_start(*this, *sep, false, false);
+    UI::pack_start(*this, _exp_interactivity, false, false);
+
     show_all();
 }
 
@@ -289,33 +298,56 @@ void ObjectProperties::update_entries()
     auto selection = getSelection();
     if (!selection) return;
 
-    if (!selection->singleItem()) {
-        set_sensitive (false);
+    SPItem* item = nullptr;
+
+    auto set_sens = [](Gtk::Expander& exp, bool sensitive) {
+        if (auto w = exp.get_child()) {
+            w->set_sensitive(sensitive);
+        }
+    };
+
+    if (selection->singleItem()) {
+        item = selection->singleItem();
+        set_sens(_exp_properties, true);
+        set_sens(_exp_interactivity, true);
+    }
+    else {
+        set_sens(_exp_properties, false);
+        set_sens(_exp_interactivity, false);
         _current_item = nullptr;
         //no selection anymore or multiple objects selected, means that we need
         //to close the connections to the previously selected object
-        _attr_table->clear();
-        _highlight_color.setRgba32(0x0);
-        return;
-    } else {
-        set_sensitive (true);
+        _attr_table->change_object(nullptr);
     }
 
-    SPItem *item = selection->singleItem();
-    if (_current_item == item)
-    {
+    if (item && _current_item == item) {
         //otherwise we would end up wasting resources through the modify selection
         //callback when moving an object (endlessly setting the labels and recreating _attr_table)
         return;
     }
-    _blocked = true;
-    _cb_aspect_ratio.set_active(g_strcmp0(item->getAttribute("preserveAspectRatio"), "none") != 0);
-    _cb_lock.set_active(item->isLocked());           /* Sensitive */
-    _cb_hide.set_active(item->isExplicitlyHidden()); /* Hidden */
-    _highlight_color.setRgba32(item->highlight_color());
-    _highlight_color.closeWindow();
 
-    if (item->cloned) {
+    _blocked = true;
+    _cb_aspect_ratio.set_active(item && g_strcmp0(item->getAttribute("preserveAspectRatio"), "none") != 0);
+    _cb_lock.set_active(item && item->isLocked());           /* Sensitive */
+    _cb_hide.set_active(item && item->isExplicitlyHidden()); /* Hidden */
+    _highlight_color.setRgba32(item ? item->highlight_color() : 0x0);
+    _highlight_color.closeWindow();
+    // hide aspect ratio checkbox for an image element, images have their own panel in object attributes;
+    // apart from <image> only <marker>, <patten>, and <view> support this attribute, but we don't handle them
+    // in this dialog today; I'm leaving the code, as we may handle them in the future
+    _cb_aspect_ratio.set_visible(item && false);
+
+    // image-only SVG DPI attribute:
+    bool show_dpi = is<SPImage>(item);
+    _label_dpi.set_visible(show_dpi);
+    _spin_dpi.set_visible(show_dpi);
+    if (show_dpi && item->getRepr()) {
+        // update DPI
+        auto dpi = item->getRepr()->getAttributeDouble("inkscape:svg-dpi", 96);
+        _spin_dpi.set_value(dpi);
+    }
+
+    if (item && item->cloned) {
         /* ID */
         _entry_id.set_text("");
         _entry_id.set_sensitive(FALSE);
@@ -327,26 +359,26 @@ void ObjectProperties::update_entries()
         _label_label.set_text(_("Ref"));
 
     } else {
-        SPObject *obj = static_cast<SPObject*>(item);
+        auto obj = static_cast<SPObject*>(item);
 
         /* ID */
-        _entry_id.set_text(obj->getId() ? obj->getId() : "");
+        _entry_id.set_text(obj && obj->getId() ? obj->getId() : "");
         _entry_id.set_sensitive(TRUE);
         _label_id.set_markup_with_mnemonic(_("_ID:") + Glib::ustring(" "));
 
         /* Label */
-        char const *currentlabel = obj->label();
-        char const *placeholder = "";
+        auto currentlabel = obj ? obj->label() : nullptr;
+        auto placeholder = "";
         if (!currentlabel) {
             currentlabel = "";
-            placeholder = obj->defaultLabel();
+            placeholder = obj ? obj->defaultLabel() : "";
         }
         _entry_label.set_text(currentlabel);
         _entry_label.set_placeholder_text(placeholder);
         _entry_label.set_sensitive(TRUE);
 
         /* Title */
-        gchar *title = obj->title();
+        auto title = obj ? obj->title() : nullptr;
         if (title) {
             _entry_title.set_text(title);
             g_free(title);
@@ -356,29 +388,8 @@ void ObjectProperties::update_entries()
         }
         _entry_title.set_sensitive(TRUE);
 
-        /* Image Rendering */
-        if (SP_IS_IMAGE(item)) {
-            _combo_image_rendering.show();
-            _label_image_rendering.show();
-            _combo_image_rendering.set_active(obj->style->image_rendering.value);
-            if (obj->getAttribute("inkscape:svg-dpi")) {
-                _spin_dpi.set_value(std::stod(obj->getAttribute("inkscape:svg-dpi")));
-                _spin_dpi.show();
-                _label_dpi.show();
-            } else {
-                _spin_dpi.hide();
-                _label_dpi.hide();
-            }
-        } else {
-            _combo_image_rendering.hide();
-            _combo_image_rendering.unset_active();
-            _label_image_rendering.hide();
-            _spin_dpi.hide();
-            _label_dpi.hide();
-        }
-
         /* Description */
-        gchar *desc = obj->desc();
+        auto desc = obj ? obj->desc() : nullptr;
         if (desc) {
             _tv_description.get_buffer()->set_text(desc);
             g_free(desc);
@@ -387,12 +398,7 @@ void ObjectProperties::update_entries()
         }
         _ft_description.set_sensitive(TRUE);
 
-        if (_current_item == nullptr) {
-            _attr_table->set_object(obj, _int_labels, _int_attrs, (GtkWidget*) _exp_interactivity.gobj());
-        } else {
-            _attr_table->change_object(obj);
-        }
-        _attr_table->show_all();
+        _attr_table->change_object(obj);
     }
     _current_item = item;
     _blocked = false;
@@ -444,7 +450,7 @@ void ObjectProperties::_labelChanged()
     }
 
     /* Retrieve the DPI */
-    if (SP_IS_IMAGE(obj)) {
+    if (is<SPImage>(obj)) {
         Glib::ustring dpi_value = Glib::ustring::format(_spin_dpi.get_value());
         obj->setAttribute("inkscape:svg-dpi", dpi_value);
         DocumentUndo::done(getDocument(), _("Set image DPI"), INKSCAPE_ICON("dialog-object-properties"));
@@ -470,32 +476,6 @@ void ObjectProperties::_highlightChanged(guint rgba)
         item->setHighlight(rgba);
         DocumentUndo::done(getDocument(), _("Set item highlight color"), INKSCAPE_ICON("dialog-object-properties"));
     }
-}
-
-void ObjectProperties::_imageRenderingChanged()
-{
-    if (_blocked) {
-        return;
-    }
-
-    SPItem *item = getSelection()->singleItem();
-    g_return_if_fail (item != nullptr);
-
-    _blocked = true;
-
-    Glib::ustring scale = _combo_image_rendering.get_active_text();
-
-    // We should unset if the parent computed value is auto and the desired value is auto.
-    SPCSSAttr *css = sp_repr_css_attr_new();
-    sp_repr_css_set_property(css, "image-rendering", scale.c_str());
-    Inkscape::XML::Node *image_node = item->getRepr();
-    if (image_node) {
-        sp_repr_css_change(image_node, css, "style");
-        DocumentUndo::done(getDocument(), _("Set image rendering option"), INKSCAPE_ICON("dialog-object-properties"));
-    }
-    sp_repr_css_attr_unref(css);
-
-    _blocked = false;
 }
 
 void ObjectProperties::_sensitivityToggled()
@@ -532,7 +512,7 @@ void ObjectProperties::_aspectRatioToggled()
         active = "none";
     }
     /* Retrieve the DPI */
-    if (SP_IS_IMAGE(item)) {
+    if (is<SPImage>(item)) {
         Glib::ustring dpi_value = Glib::ustring::format(_spin_dpi.get_value());
         item->setAttribute("preserveAspectRatio", active);
         DocumentUndo::done(getDocument(), _("Set preserve ratio"), INKSCAPE_ICON("dialog-object-properties"));
@@ -565,9 +545,7 @@ void ObjectProperties::desktopReplaced()
     update_entries();
 }
 
-}
-}
-}
+} // namespace Inkscape::UI::Dialog
 
 /*
   Local Variables:

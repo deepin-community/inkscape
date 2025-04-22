@@ -16,6 +16,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -28,311 +29,211 @@
 #include "tweak-toolbar.h"
 
 #include <glibmm/i18n.h>
-
-#include <gtkmm/radiotoolbutton.h>
-#include <gtkmm/separatortoolitem.h>
+#include <gtkmm/radiobutton.h>
 
 #include "desktop.h"
-#include "document-undo.h"
-
-#include "ui/icon-names.h"
+#include "ui/builder-utils.h"
 #include "ui/tools/tweak-tool.h"
+#include "ui/util.h"
 #include "ui/widget/canvas.h"
-#include "ui/widget/label-tool-item.h"
 #include "ui/widget/spinbutton.h"
-#include "ui/widget/spin-button-tool-item.h"
+#include "ui/widget/toolbar-menu-button.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Toolbar {
+namespace Inkscape::UI::Toolbar {
+
 TweakToolbar::TweakToolbar(SPDesktop *desktop)
-        : Toolbar(desktop)
+    : Toolbar(desktop)
+    , _builder(create_builder("toolbar-tweak.ui"))
+    , _width_item(get_derived_widget<UI::Widget::SpinButton>(_builder, "_width_item"))
+    , _force_item(get_derived_widget<UI::Widget::SpinButton>(_builder, "_force_item"))
+    , _fidelity_box(get_widget<Gtk::Box>(_builder, "_fidelity_box"))
+    , _fidelity_item(get_derived_widget<UI::Widget::SpinButton>(_builder, "_fidelity_item"))
+    , _pressure_btn(get_widget<Gtk::ToggleButton>(_builder, "_pressure_btn"))
+    , _channels_box(get_widget<Gtk::Box>(_builder, "_channels_box"))
+    , _doh_btn(get_widget<Gtk::ToggleButton>(_builder, "_doh_btn"))
+    , _dos_btn(get_widget<Gtk::ToggleButton>(_builder, "_dos_btn"))
+    , _dol_btn(get_widget<Gtk::ToggleButton>(_builder, "_dol_btn"))
+    , _doo_btn(get_widget<Gtk::ToggleButton>(_builder, "_doo_btn"))
 {
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    _toolbar = &get_widget<Gtk::Box>(_builder, "tweak-toolbar");
 
-    /* Width */
-    {
-        std::vector<Glib::ustring> labels = {_("(pinch tweak)"), "", "", "", _("(default)"), "", "", "", "", _("(broad tweak)")};
-        std::vector<double>        values = {                 1,  3,  5, 10,             15, 20, 30, 50, 75,                100};
+    setup_derived_spin_button(_width_item, "width", 15, &TweakToolbar::width_value_changed);
+    setup_derived_spin_button(_force_item, "force", 20, &TweakToolbar::force_value_changed);
+    setup_derived_spin_button(_fidelity_item, "fidelity", 50, &TweakToolbar::fidelity_value_changed);
 
-        auto width_val = prefs->getDouble("/tools/tweak/width", 15);
-        _width_adj = Gtk::Adjustment::create(width_val * 100, 1, 100, 1.0, 10.0);
-        _width_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("tweak-width", _("Width:"), _width_adj, 0.01, 0));
-        _width_item->set_tooltip_text(_("The width of the tweak area (relative to the visible canvas area)"));
-        _width_item->set_custom_numeric_menu_data(values, labels);
-        _width_item->set_focus_widget(desktop->canvas);
-        _width_adj->signal_value_changed().connect(sigc::mem_fun(*this, &TweakToolbar::width_value_changed));
-        add(*_width_item);
-        _width_item->set_sensitive(true);
-    }
+    _width_item.set_custom_numeric_menu_data({
+        {1, _("(pinch tweak)")},
+        {2, ""},
+        {3, ""},
+        {5, ""},
+        {10, ""},
+        {15, _("(default)")},
+        {30, ""},
+        {50, ""},
+        {75, ""},
+        {100, _("(broad tweak)")}
+    });
 
-    // Force
-    {
-        std::vector<Glib::ustring> labels = {_("(minimum force)"), "", "", _("(default)"), "", "", "", _("(maximum force)")};
-        std::vector<double>        values = {                   1,  5, 10,             20, 30, 50, 70,                  100};
-        auto force_val = prefs->getDouble("/tools/tweak/force", 20);
-        _force_adj = Gtk::Adjustment::create(force_val * 100, 1, 100, 1.0, 10.0);
-        _force_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("tweak-force", _("Force:"), _force_adj, 0.01, 0));
-        _force_item->set_tooltip_text(_("The force of the tweak action"));
-        _force_item->set_custom_numeric_menu_data(values, labels);
-        _force_item->set_focus_widget(desktop->canvas);
-        _force_adj->signal_value_changed().connect(sigc::mem_fun(*this, &TweakToolbar::force_value_changed));
-        add(*_force_item);
-        _force_item->set_sensitive(true);
-    }
+    _force_item.set_custom_numeric_menu_data({
+        {1, _("(minimum force)")},
+        {5, ""},
+        {10, ""},
+        {20, _("(default)")},
+        {30, ""},
+        {50, ""},
+        {70, ""},
+        {100, _("(maximum force)")}
+    });
 
-    /* Use Pressure button */
-    {
-        _pressure_item = add_toggle_button(_("Pressure"),
-                                           _("Use the pressure of the input device to alter the force of tweak action"));
-        _pressure_item->set_icon_name(INKSCAPE_ICON("draw-use-pressure"));
-        _pressure_item->signal_toggled().connect(sigc::mem_fun(*this, &TweakToolbar::pressure_state_changed));
-        _pressure_item->set_active(prefs->getBool("/tools/tweak/usepressure", true));
-    }
+    _fidelity_item.set_custom_numeric_menu_data({
+        {10, _("(rough, simplified)")},
+        {25, ""},
+        {35, ""},
+        {50, _("(default)")},
+        {60, ""},
+        {80, ""},
+        {100, _("(fine, but many nodes)")}
+    });
 
-    add(* Gtk::manage(new Gtk::SeparatorToolItem()));
+    // Fetch all the ToolbarMenuButtons at once from the UI file
+    // Menu Button #1
+    auto popover_box1 = &get_widget<Gtk::Box>(_builder, "popover_box1");
+    auto menu_btn1 = &get_derived_widget<UI::Widget::ToolbarMenuButton>(_builder, "menu_btn1");
 
-    /* Mode */
-    {
-        add_label(_("Mode:"));
-        Gtk::RadioToolButton::Group mode_group;
+    // Menu Button #2
+    auto popover_box2 = &get_widget<Gtk::Box>(_builder, "popover_box2");
+    menu_btn2 = &get_derived_widget<UI::Widget::ToolbarMenuButton>(_builder, "menu_btn2");
 
-        auto mode_move_btn = Gtk::manage(new Gtk::RadioToolButton(mode_group, _("Move mode")));
-        mode_move_btn->set_tooltip_text(_("Move objects in any direction"));
-        mode_move_btn->set_icon_name(INKSCAPE_ICON("object-tweak-push"));
-        _mode_buttons.push_back(mode_move_btn);
+    // Initialize all the ToolbarMenuButtons only after all the children of the
+    // toolbar have been fetched. Otherwise, the children to be moved in the
+    // popover will get mapped to a different position and it will probably
+    // cause segfault.
+    auto children = _toolbar->get_children();
 
-        auto mode_inout_btn = Gtk::manage(new Gtk::RadioToolButton(mode_group, _("Move in/out mode")));
-        mode_inout_btn->set_tooltip_text(_("Move objects towards cursor; with Shift from cursor"));
-        mode_inout_btn->set_icon_name(INKSCAPE_ICON("object-tweak-attract"));
-        _mode_buttons.push_back(mode_inout_btn);
+    menu_btn1->init(1, "tag1", popover_box1, children);
+    addCollapsibleButton(menu_btn1);
+    menu_btn2->init(2, "tag2", popover_box2, children);
+    addCollapsibleButton(menu_btn2);
 
-        auto mode_jitter_btn = Gtk::manage(new Gtk::RadioToolButton(mode_group, _("Move jitter mode")));
-        mode_jitter_btn->set_tooltip_text(_("Move objects in random directions"));
-        mode_jitter_btn->set_icon_name(INKSCAPE_ICON("object-tweak-randomize"));
-        _mode_buttons.push_back(mode_jitter_btn);
+    // Configure mode buttons (need menu_btn2).
+    int btn_index = 0;
+    for_each_child(get_widget<Gtk::Box>(_builder, "mode_buttons_box"), [&](Gtk::Widget &item){
+        auto &btn = dynamic_cast<Gtk::RadioButton &>(item);
+        _mode_buttons.push_back(&btn);
+        btn.signal_clicked().connect(sigc::bind(sigc::mem_fun(*this, &TweakToolbar::mode_changed), btn_index++));
 
-        auto mode_scale_btn = Gtk::manage(new Gtk::RadioToolButton(mode_group, _("Scale mode")));
-        mode_scale_btn->set_tooltip_text(_("Shrink objects, with Shift enlarge"));
-        mode_scale_btn->set_icon_name(INKSCAPE_ICON("object-tweak-shrink"));
-        _mode_buttons.push_back(mode_scale_btn);
+        return ForEachResult::_continue;
+    });
 
-        auto mode_rotate_btn = Gtk::manage(new Gtk::RadioToolButton(mode_group, _("Rotate mode")));
-        mode_rotate_btn->set_tooltip_text(_("Rotate objects, with Shift counterclockwise"));
-        mode_rotate_btn->set_icon_name(INKSCAPE_ICON("object-tweak-rotate"));
-        _mode_buttons.push_back(mode_rotate_btn);
+    auto prefs = Inkscape::Preferences::get();
 
-        auto mode_dupdel_btn = Gtk::manage(new Gtk::RadioToolButton(mode_group, _("Duplicate/delete mode")));
-        mode_dupdel_btn->set_tooltip_text(_("Duplicate objects, with Shift delete"));
-        mode_dupdel_btn->set_icon_name(INKSCAPE_ICON("object-tweak-duplicate"));
-        _mode_buttons.push_back(mode_dupdel_btn);
+    // Pressure button.
+    _pressure_btn.signal_toggled().connect(sigc::mem_fun(*this, &TweakToolbar::pressure_state_changed));
+    _pressure_btn.set_active(prefs->getBool("/tools/tweak/usepressure", true));
 
-        auto mode_push_btn = Gtk::manage(new Gtk::RadioToolButton(mode_group, _("Push mode")));
-        mode_push_btn->set_tooltip_text(_("Push parts of paths in any direction"));
-        mode_push_btn->set_icon_name(INKSCAPE_ICON("path-tweak-push"));
-        _mode_buttons.push_back(mode_push_btn);
-
-        auto mode_shrinkgrow_btn = Gtk::manage(new Gtk::RadioToolButton(mode_group, _("Shrink/grow mode")));
-        mode_shrinkgrow_btn->set_tooltip_text(_("Shrink (inset) parts of paths; with Shift grow (outset)"));
-        mode_shrinkgrow_btn->set_icon_name(INKSCAPE_ICON("path-tweak-shrink"));
-        _mode_buttons.push_back(mode_shrinkgrow_btn);
-
-        auto mode_attrep_btn = Gtk::manage(new Gtk::RadioToolButton(mode_group, _("Attract/repel mode")));
-        mode_attrep_btn->set_tooltip_text(_("Attract parts of paths towards cursor; with Shift from cursor"));
-        mode_attrep_btn->set_icon_name(INKSCAPE_ICON("path-tweak-attract"));
-        _mode_buttons.push_back(mode_attrep_btn);
-
-        auto mode_roughen_btn = Gtk::manage(new Gtk::RadioToolButton(mode_group, _("Roughen mode")));
-        mode_roughen_btn->set_tooltip_text(_("Roughen parts of paths"));
-        mode_roughen_btn->set_icon_name(INKSCAPE_ICON("path-tweak-roughen"));
-        _mode_buttons.push_back(mode_roughen_btn);
-
-        auto mode_colpaint_btn = Gtk::manage(new Gtk::RadioToolButton(mode_group, _("Color paint mode")));
-        mode_colpaint_btn->set_tooltip_text(_("Paint the tool's color upon selected objects"));
-        mode_colpaint_btn->set_icon_name(INKSCAPE_ICON("object-tweak-paint"));
-        _mode_buttons.push_back(mode_colpaint_btn);
-
-        auto mode_coljitter_btn = Gtk::manage(new Gtk::RadioToolButton(mode_group, _("Color jitter mode")));
-        mode_coljitter_btn->set_tooltip_text(_("Jitter the colors of selected objects"));
-        mode_coljitter_btn->set_icon_name(INKSCAPE_ICON("object-tweak-jitter-color"));
-        _mode_buttons.push_back(mode_coljitter_btn);
-
-        auto mode_blur_btn = Gtk::manage(new Gtk::RadioToolButton(mode_group, _("Blur mode")));
-        mode_blur_btn->set_tooltip_text(_("Blur selected objects more; with Shift, blur less"));
-        mode_blur_btn->set_icon_name(INKSCAPE_ICON("object-tweak-blur"));
-        _mode_buttons.push_back(mode_blur_btn);
-
-        int btn_idx = 0;
-
-        for (auto btn : _mode_buttons) {
-            btn->set_sensitive();
-            add(*btn);
-            btn->signal_clicked().connect(sigc::bind(sigc::mem_fun(*this, &TweakToolbar::mode_changed), btn_idx++));
-        }
-    }
-
-    add(* Gtk::manage(new Gtk::SeparatorToolItem()));
-
-    guint mode = prefs->getInt("/tools/tweak/mode", 0);
-
-    /* Fidelity */
-    {
-        std::vector<Glib::ustring> labels = {_("(rough, simplified)"), "", "", _("(default)"), "", "", _("(fine, but many nodes)")};
-        std::vector<double>        values = {                      10, 25, 35,             50, 60, 80,                         100};
-
-        auto fidelity_val = prefs->getDouble("/tools/tweak/fidelity", 50);
-        _fidelity_adj = Gtk::Adjustment::create(fidelity_val * 100, 1, 100, 1.0, 10.0);
-        _fidelity_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("tweak-fidelity", _("Fidelity:"), _fidelity_adj, 0.01, 0));
-        _fidelity_item->set_tooltip_text(_("Low fidelity simplifies paths; high fidelity preserves path features but may generate a lot of new nodes"));
-        _fidelity_item->set_custom_numeric_menu_data(values, labels);
-        _fidelity_item->set_focus_widget(desktop->canvas);
-        _fidelity_adj->signal_value_changed().connect(sigc::mem_fun(*this, &TweakToolbar::fidelity_value_changed));
-        add(*_fidelity_item);
-    }
-
-    add(* Gtk::manage(new Gtk::SeparatorToolItem()));
-
-    {
-        _channels_label = Gtk::manage(new UI::Widget::LabelToolItem(_("Channels:")));
-        _channels_label->set_use_markup(true);
-        add(*_channels_label);
-    }
-
-    {
-        //TRANSLATORS:  "H" here stands for hue
-        _doh_item = add_toggle_button(C_("Hue", "H"),
-                                      _("In color mode, act on object's hue"));
-        _doh_item->signal_toggled().connect(sigc::mem_fun(*this, &TweakToolbar::toggle_doh));
-        _doh_item->set_active(prefs->getBool("/tools/tweak/doh", true));
-    }
-    {
-        //TRANSLATORS:  "S" here stands for saturation
-        _dos_item = add_toggle_button(C_("Saturation", "S"),
-                                      _("In color mode, act on object's saturation"));
-        _dos_item->signal_toggled().connect(sigc::mem_fun(*this, &TweakToolbar::toggle_dos));
-        _dos_item->set_active(prefs->getBool("/tools/tweak/dos", true));
-    }
-    {
-        //TRANSLATORS:  "S" here stands for saturation
-        _dol_item = add_toggle_button(C_("Lightness", "L"),
-                                      _("In color mode, act on object's lightness"));
-        _dol_item->signal_toggled().connect(sigc::mem_fun(*this, &TweakToolbar::toggle_dol));
-        _dol_item->set_active(prefs->getBool("/tools/tweak/dol", true));
-    }
-    {
-        //TRANSLATORS:  "O" here stands for opacity
-        _doo_item = add_toggle_button(C_("Opacity", "O"),
-                                      _("In color mode, act on object's opacity"));
-        _doo_item->signal_toggled().connect(sigc::mem_fun(*this, &TweakToolbar::toggle_doo));
-        _doo_item->set_active(prefs->getBool("/tools/tweak/doo", true));
-    }
-
+    // Set initial mode.
+    int mode = prefs->getIntLimited("/tools/tweak/mode", 0, 0, _mode_buttons.size() - 1);
     _mode_buttons[mode]->set_active();
+
+    // Configure channel buttons.
+    // TRANSLATORS: H, S, L, and O stands for:
+    // Hue, Saturation, Lighting and Opacity respectively.
+    _doh_btn.signal_toggled().connect(sigc::mem_fun(*this, &TweakToolbar::toggle_doh));
+    _doh_btn.set_active(prefs->getBool("/tools/tweak/doh", true));
+    _dos_btn.signal_toggled().connect(sigc::mem_fun(*this, &TweakToolbar::toggle_dos));
+    _dos_btn.set_active(prefs->getBool("/tools/tweak/dos", true));
+    _dol_btn.signal_toggled().connect(sigc::mem_fun(*this, &TweakToolbar::toggle_dol));
+    _dol_btn.set_active(prefs->getBool("/tools/tweak/dol", true));
+    _doo_btn.signal_toggled().connect(sigc::mem_fun(*this, &TweakToolbar::toggle_doo));
+    _doo_btn.set_active(prefs->getBool("/tools/tweak/doo", true));
+
+    add(*_toolbar);
+
     show_all();
 
     // Elements must be hidden after show_all() is called
     if (mode == Inkscape::UI::Tools::TWEAK_MODE_COLORPAINT || mode == Inkscape::UI::Tools::TWEAK_MODE_COLORJITTER) {
-        _fidelity_item->set_visible(false);
+        _fidelity_box.set_visible(false);
     } else {
-        _channels_label->set_visible(false);
-        _doh_item->set_visible(false);
-        _dos_item->set_visible(false);
-        _dol_item->set_visible(false);
-        _doo_item->set_visible(false);
+        _channels_box.set_visible(false);
+        menu_btn2->set_visible(false);
     }
 }
 
-void
-TweakToolbar::set_mode(int mode)
+TweakToolbar::~TweakToolbar() = default;
+
+void TweakToolbar::setup_derived_spin_button(UI::Widget::SpinButton &btn, Glib::ustring const &name,
+                                             double default_value, ValueChangedMemFun const value_changed_mem_fun)
+{
+    const Glib::ustring path = "/tools/tweak/" + name;
+    auto const val = Preferences::get()->getDouble(path, default_value);
+
+    auto adj = btn.get_adjustment();
+    adj->set_value(val);
+    adj->signal_value_changed().connect(sigc::mem_fun(*this, value_changed_mem_fun));
+
+    btn.set_defocus_widget(_desktop->getCanvas());
+}
+
+void TweakToolbar::set_mode(int mode)
 {
     _mode_buttons[mode]->set_active();
 }
 
-GtkWidget *
-TweakToolbar::create(SPDesktop *desktop)
+void TweakToolbar::width_value_changed()
 {
-    auto toolbar = new TweakToolbar(desktop);
-    return GTK_WIDGET(toolbar->gobj());
+    Preferences::get()->setDouble("/tools/tweak/width", _width_item.get_adjustment()->get_value() * 0.01);
 }
 
-void
-TweakToolbar::width_value_changed()
+void TweakToolbar::force_value_changed()
 {
-    auto prefs = Inkscape::Preferences::get();
-    prefs->setDouble( "/tools/tweak/width",
-            _width_adj->get_value() * 0.01 );
+    Preferences::get()->setDouble("/tools/tweak/force", _force_item.get_adjustment()->get_value() * 0.01);
 }
 
-void
-TweakToolbar::force_value_changed()
+void TweakToolbar::mode_changed(int mode)
 {
-    auto prefs = Inkscape::Preferences::get();
-    prefs->setDouble( "/tools/tweak/force",
-            _force_adj->get_value() * 0.01 );
-}
-
-void
-TweakToolbar::mode_changed(int mode)
-{
-    auto prefs = Inkscape::Preferences::get();
-    prefs->setInt("/tools/tweak/mode", mode);
+    Preferences::get()->setInt("/tools/tweak/mode", mode);
 
     bool flag = ((mode == Inkscape::UI::Tools::TWEAK_MODE_COLORPAINT) ||
                  (mode == Inkscape::UI::Tools::TWEAK_MODE_COLORJITTER));
 
-    _doh_item->set_visible(flag);
-    _dos_item->set_visible(flag);
-    _dol_item->set_visible(flag);
-    _doo_item->set_visible(flag);
-    _channels_label->set_visible(flag);
+    _channels_box.set_visible(flag);
+    menu_btn2->set_visible(flag);
 
-    if (_fidelity_item) {
-        _fidelity_item->set_visible(!flag);
-    }
+    _fidelity_box.set_visible(!flag);
 }
 
-void
-TweakToolbar::fidelity_value_changed()
+void TweakToolbar::fidelity_value_changed()
 {
-    auto prefs = Inkscape::Preferences::get();
-    prefs->setDouble( "/tools/tweak/fidelity",
-            _fidelity_adj->get_value() * 0.01 );
+    Preferences::get()->setDouble("/tools/tweak/fidelity", _fidelity_item.get_adjustment()->get_value() * 0.01);
 }
 
-void
-TweakToolbar::pressure_state_changed()
+void TweakToolbar::pressure_state_changed()
 {
-    auto prefs = Inkscape::Preferences::get();
-    prefs->setBool("/tools/tweak/usepressure", _pressure_item->get_active());
+    Preferences::get()->setBool("/tools/tweak/usepressure", _pressure_btn.get_active());
 }
 
-void
-TweakToolbar::toggle_doh() {
-    auto prefs = Inkscape::Preferences::get();
-    prefs->setBool("/tools/tweak/doh", _doh_item->get_active());
+void TweakToolbar::toggle_doh()
+{
+    Preferences::get()->setBool("/tools/tweak/doh", _doh_btn.get_active());
 }
 
-void
-TweakToolbar::toggle_dos() {
-    auto prefs = Inkscape::Preferences::get();
-    prefs->setBool("/tools/tweak/dos", _dos_item->get_active());
+void TweakToolbar::toggle_dos()
+{
+    Preferences::get()->setBool("/tools/tweak/dos", _dos_btn.get_active());
 }
 
-void
-TweakToolbar::toggle_dol() {
-    auto prefs = Inkscape::Preferences::get();
-    prefs->setBool("/tools/tweak/dol", _dol_item->get_active());
+void TweakToolbar::toggle_dol()
+{
+    Preferences::get()->setBool("/tools/tweak/dol", _dol_btn.get_active());
 }
 
-void
-TweakToolbar::toggle_doo() {
-    auto prefs = Inkscape::Preferences::get();
-    prefs->setBool("/tools/tweak/doo", _doo_item->get_active());
+void TweakToolbar::toggle_doo()
+{
+    Preferences::get()->setBool("/tools/tweak/doo", _doo_btn.get_active());
 }
 
-}
-}
-}
+} // namespace Inkscape::UI::Toolbar
 
 /*
   Local Variables:

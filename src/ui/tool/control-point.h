@@ -8,36 +8,30 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef SEEN_UI_TOOL_CONTROL_POINT_H
-#define SEEN_UI_TOOL_CONTROL_POINT_H
+#ifndef INKSCAPE_UI_TOOL_CONTROL_POINT_H
+#define INKSCAPE_UI_TOOL_CONTROL_POINT_H
 
-#include <gdkmm/pixbuf.h>
-#include <boost/utility.hpp>
 #include <cstddef>
+#include <boost/noncopyable.hpp>
+#include <gdkmm/pixbuf.h>
 #include <sigc++/signal.h>
 #include <sigc++/trackable.h>
+
 #include <2geom/point.h>
 
-// #include "ui/control-types.h"
 #include "display/control/canvas-item-ctrl.h"
 #include "display/control/canvas-item-enums.h"
-
+#include "display/control/canvas-item-ptr.h"
 #include "enums.h" // TEMP TEMP
+#include "helper/auto-connection.h"
 
 class SPDesktop;
 
-namespace Inkscape {
-namespace UI {
-namespace Tools {
+namespace Inkscape { struct MotionEvent; struct ButtonReleaseEvent; }
 
-class ToolBase;
+namespace Inkscape::UI {
 
-}
-}
-}
-
-namespace Inkscape {
-namespace UI {
+namespace Tools { class ToolBase; }
 
 /**
  * Draggable point, the workhorse of on-canvas editing.
@@ -76,16 +70,19 @@ namespace UI {
  * - If the point has additional canvas items tied to it (like handle lines), override
  *   the setPosition() method.
  */
-class ControlPoint : boost::noncopyable, public sigc::trackable {
+class ControlPoint
+    : boost::noncopyable
+    , public sigc::trackable
+{
 public:
-
     /**
      * Enumeration representing the possible states of the control point, used to determine
      * its appearance.
      *
      * @todo resolve this to be in sync with the five standard GTK states.
      */
-    enum State {
+    enum State
+    {
         /** Normal state. */
         STATE_NORMAL,
 
@@ -96,17 +93,15 @@ public:
         STATE_CLICKED
     };
 
-    /**
-     * Destructor
-     */
     virtual ~ControlPoint();
-    
+
+    ControlPoint  (ControlPoint const &other) = delete;
+    void operator=(ControlPoint const &other) = delete;
+
     /// @name Adjust the position of the control point
     /// @{
     /** Current position of the control point. */
     Geom::Point const &position() const { return _position; }
-
-    operator Geom::Point const &() { return _position; }
 
     /**
      * Move the control point to new position with side effects.
@@ -146,8 +141,7 @@ public:
 
     /**
      * Set the visibility of the control point. An invisible point is not drawn on the canvas
-     * and cannot receive any events. If you want to have an invisible point that can respond
-     * to events, use <tt>invisible_cset</tt> as its color set.
+     * and cannot receive any events.
      */
     virtual void setVisible(bool v);
     /// @}
@@ -166,7 +160,7 @@ public:
      * Note that this will break horribly if you try to transfer grab between points in different
      * desktops, which doesn't make much sense anyway.
      */
-    void transferGrab(ControlPoint *from, GdkEventMotion *event);
+    void transferGrab(ControlPoint *from, MotionEvent const &event);
     /// @}
 
     /// @name Inspect the state of the control point
@@ -183,41 +177,20 @@ public:
      * Emitted when the mouseovered point changes. The parameter is the new mouseovered point.
      * When a point ceases to be mouseovered, the parameter will be NULL.
      */
-    static sigc::signal<void, ControlPoint*> signal_mouseover_change;
+    static sigc::signal<void (ControlPoint*)> signal_mouseover_change;
 
     static Glib::ustring format_tip(char const *format, ...) G_GNUC_PRINTF(1,2);
 
     // temporarily public, until snap delay is refactored a little
-    virtual bool _eventHandler(Inkscape::UI::Tools::ToolBase *event_context, GdkEvent *event);
+    virtual bool _eventHandler(Inkscape::UI::Tools::ToolBase *event_context, CanvasEvent const &event);
     SPDesktop *const _desktop; ///< The desktop this control point resides on.
 
-    bool doubleClicked() {return _double_clicked;}
+    bool doubleClicked() const { return _double_clicked; }
+
+    // make handle look like "selected" one without participating in selection
+    void set_selected_appearance(bool selected);
 
 protected:
-
-    struct ColorEntry {
-        guint32 fill;
-        guint32 stroke;
-    };
-
-    /**
-     * Color entries for each possible state.
-     * @todo resolve this to be in sync with the five standard GTK states.
-     */
-    struct ColorSet {
-        ColorEntry normal;
-        ColorEntry mouseover;
-        ColorEntry clicked;
-        ColorEntry selected_normal;
-        ColorEntry selected_mouseover;
-        ColorEntry selected_clicked;
-    };
-
-    /**
-     * A color set which you can use to create an invisible control that can still receive events.
-     */
-    static ColorSet invisible_cset;
-
     /**
      * Create a regular control point.
      * Derive to have constructors with a reasonable number of parameters.
@@ -226,27 +199,10 @@ protected:
      * @param initial_pos Initial position of the control point in desktop coordinates
      * @param anchor Where is the control point rendered relative to its desktop coordinates
      * @param type Logical type of the control point.
-     * @param cset Colors of the point
      * @param group The canvas group the point's canvas item should be created in
      */
     ControlPoint(SPDesktop *d, Geom::Point const &initial_pos, SPAnchorType anchor,
                  Inkscape::CanvasItemCtrlType type,
-                 ColorSet const &cset = _default_color_set,
-                 Inkscape::CanvasItemGroup *group = nullptr);
-
-    /**
-     * Create a control point with a pixbuf-based visual representation.
-     *
-     * @param d Desktop for this control
-     * @param initial_pos Initial position of the control point in desktop coordinates
-     * @param anchor Where is the control point rendered relative to its desktop coordinates
-     * @param pixbuf Pixbuf to be used as the visual representation
-     * @param cset Colors of the point
-     * @param group The canvas group the point's canvas item should be created in
-     */
-    ControlPoint(SPDesktop *d, Geom::Point const &initial_pos, SPAnchorType anchor,
-                 Glib::RefPtr<Gdk::Pixbuf> pixbuf,
-                 ColorSet const &cset = _default_color_set,
                  Inkscape::CanvasItemGroup *group = nullptr);
 
     /// @name Handle control point events in subclasses
@@ -258,7 +214,7 @@ protected:
      * @param event Motion event when drag tolerance was exceeded.
      * @return true if you called transferGrab() during this method.
      */
-    virtual bool grabbed(GdkEventMotion *event);
+    virtual bool grabbed(MotionEvent const &event);
 
     /**
      * Called while dragging, but before moving the knot to new position.
@@ -268,14 +224,14 @@ protected:
      *   so you can change it from the handler - that's how constrained dragging is implemented.
      * @param event Motion event.
      */
-    virtual void dragged(Geom::Point &new_pos, GdkEventMotion *event);
+    virtual void dragged(Geom::Point &new_pos, MotionEvent const &event);
 
     /**
      * Called when the control point finishes a drag.
      *
      * @param event Button release event
      */
-    virtual void ungrabbed(GdkEventButton *event);
+    virtual void ungrabbed(ButtonReleaseEvent const *event);
 
     /**
      * Called when the control point is clicked, at mouse button release.
@@ -285,14 +241,14 @@ protected:
      * @param event Button release event
      * @return true if the click had some effect, false if it did nothing.
      */
-    virtual bool clicked(GdkEventButton *event);
+    virtual bool clicked(ButtonReleaseEvent const &event);
 
     /**
      * Called when the control point is doubleclicked, at mouse button release.
      *
      * @param event Button release event
      */
-    virtual bool doubleclicked(GdkEventButton *event);
+    virtual bool doubleclicked(ButtonReleaseEvent const &event);
     /// @}
 
     /// @name Manipulate the control point's appearance in subclasses
@@ -307,71 +263,31 @@ protected:
 
     void _handleControlStyling();
 
-    void _setColors(ColorEntry c);
-
     void _setSize(unsigned int size);
-
     void _setControlType(Inkscape::CanvasItemCtrlType type);
-
     void _setAnchor(SPAnchorType anchor);
 
-    void _setPixbuf(Glib::RefPtr<Gdk::Pixbuf>);
-
-    /**
-     * Determines if the control point is not visible yet still reacting to events.
-     *
-     * @return true if non-visible, false otherwise.
-     */
-    bool _isLurking();
-
-    /**
-     * Sets the control point to be non-visible yet still reacting to events.
-     *
-     * @param lurking true to make non-visible, false otherwise.
-     */
-    void _setLurking(bool lurking);
-
-    /// @}
-
     virtual Glib::ustring _getTip(unsigned /*state*/) const { return ""; }
-
-    virtual Glib::ustring _getDragTip(GdkEventMotion */*event*/) const { return ""; }
-
+    virtual Glib::ustring _getDragTip(MotionEvent const &event) const { return ""; }
     virtual bool _hasDragTips() const { return false; }
 
-
-    Inkscape::CanvasItemCtrl * _canvas_item_ctrl = nullptr; ///< Visual representation of the control point.
-
-    ColorSet const &_cset; ///< Colors used to represent the point
+    CanvasItemPtr<Inkscape::CanvasItemCtrl> _canvas_item_ctrl; ///< Visual representation of the control point.
 
     State _state = STATE_NORMAL;
 
     static Geom::Point const &_last_click_event_point() { return _drag_event_origin; }
-
     static Geom::Point const &_last_drag_origin() { return _drag_origin; }
 
-    static bool _is_drag_cancelled(GdkEventMotion *event);
-
-    /** Events which should be captured when a handle is being dragged. */
-    static Gdk::EventMask const _grab_event_mask;
+    static bool _is_drag_cancelled(MotionEvent const &event);
 
     static bool _drag_initiated;
 
 private:
-
-    ControlPoint(ControlPoint const &other);
-
-    void operator=(ControlPoint const &other);
-
-    static bool _event_handler(GdkEvent *event, ControlPoint *point);
-
     static void _setMouseover(ControlPoint *, unsigned state);
-
     static void _clearMouseover();
 
     bool _updateTip(unsigned state);
-
-    bool _updateDragTip(GdkEventMotion *event);
+    bool _updateDragTip(MotionEvent const &event);
 
     void _setDefaultColors();
 
@@ -379,28 +295,21 @@ private:
 
     Geom::Point _position; ///< Current position in desktop coordinates
 
-    sigc::connection _event_handler_connection;
-
-    bool _lurking = false;
-
-    static ColorSet _default_color_set;
+    auto_connection _event_handler_connection;
 
     /** Stores the window point over which the cursor was during the last mouse button press. */
     static Geom::Point _drag_event_origin;
-
     /** Stores the desktop point from which the last drag was initiated. */
     static Geom::Point _drag_origin;
-
     static bool _event_grab;
 
     bool _double_clicked = false;
+    bool _selected_appearance = false;
 };
 
+} // namespace Inkscape::UI
 
-} // namespace UI
-} // namespace Inkscape
-
-#endif
+#endif // INKSCAPE_UI_TOOL_CONTROL_POINT_H
 
 /*
   Local Variables:

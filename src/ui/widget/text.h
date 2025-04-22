@@ -14,13 +14,14 @@
 
 #include "labelled.h"
 
+namespace Gtk {
+class Entry;
+} // namespace Gtk
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 /**
- * A labelled text box, with optional icon or suffix, for entering arbitrary number values.
+ * A labelled text box, with optional icon, for entering arbitrary number values.
  */
 class Text : public Labelled
 {
@@ -29,17 +30,16 @@ public:
     /**
      * Construct a Text Widget.
      *
-     * @param label     Label.
-     * @param suffix    Suffix, placed after the widget (defaults to "").
-     * @param icon      Icon filename, placed before the label (defaults to "").
+     * @param label     Label, as per the Labelled base class.
+     * @param tooltip   Tooltip, as per the Labelled base class.
+     * @param icon      Icon name, placed before the label (defaults to empty).
      * @param mnemonic  Mnemonic toggle; if true, an underscore (_) in the label
      *                  indicates the next character should be used for the
      *                  mnemonic accelerator key (defaults to false).
      */
     Text(Glib::ustring const &label,
 	 Glib::ustring const &tooltip,
-	 Glib::ustring const &suffix = "",
-	 Glib::ustring const &icon = "",
+	 Glib::ustring const &icon = {},
 	 bool mnemonic = true);
 
     /**
@@ -57,15 +57,17 @@ public:
     /**
      * Signal raised when the spin button's value changes.
      */
-    Glib::SignalProxy0<void> signal_activate();
+    Glib::SignalProxy<void> signal_activate();
 
     bool setProgrammatically; // true if the value was set by setValue, not changed by the user;
                               // if a callback checks it, it must reset it back to false
+
+private:
+    Gtk::Entry const &getEntry() const;
+    Gtk::Entry       &getEntry()      ;
 };
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 #endif // INKSCAPE_UI_WIDGET_TEXT_H
 

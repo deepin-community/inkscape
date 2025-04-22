@@ -17,6 +17,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
 """Test interpolation inkex module functionality"""
+
 from inkex.tester import TestCase
 
 import inkex

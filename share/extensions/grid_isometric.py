@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 #
 # Copyright (C) 2010 Jean-Luc JOULIN "JeanJouX" jean-luc.joulin@laposte.net
@@ -101,9 +101,7 @@ class GridIsometric(inkex.GenerateExtension):
     @property
     def container_label(self):
         """Generate label from options"""
-        return "Grid_Polar:X{0.x_divs}:Y{0.y_divs}".format(
-            self.options
-        )  # pylint: disable=missing-format-attribute
+        return "Grid_Polar:X{0.x_divs}:Y{0.y_divs}".format(self.options)  # pylint: disable=missing-format-attribute
 
     def generate(self):
         self.options.dx = self.svg.unittouu(str(self.options.dx) + "px")

@@ -91,13 +91,15 @@ bool Inkscape::have_viable_layer(SPDesktop *desktop, MessageStack *message)
 Geom::Rect Inkscape::snap_rectangular_box(SPDesktop const *desktop, SPItem *item,
                                         Geom::Point const &pt, Geom::Point const &center, int state)
 {
-    desktop->snapindicator->remove_snaptarget();
+    desktop->getSnapIndicator()->remove_snaptarget();
     Geom::Point p[2];
 
     auto confine = Modifiers::Modifier::get(Modifiers::Type::TRANS_CONFINE)->active(state);
     auto off_center = Modifiers::Modifier::get(Modifiers::Type::TRANS_OFF_CENTER)->active(state);
+    /* Check if Alt key is pressed */
+    auto rect_edge = Modifiers::Modifier::get(Modifiers::Type::TRANS_INCREMENT)->active(state);
 
-    SnapManager &m = desktop->namedview->snap_manager;
+    auto &m = desktop->getNamedView()->snap_manager;
     m.setup(desktop, false, item);
     Inkscape::SnappedPoint snappoint;
 
@@ -107,24 +109,35 @@ Geom::Rect Inkscape::snap_rectangular_box(SPDesktop const *desktop, SPItem *item
         /* Vector from the centre of the box to the point we are dragging to */
         Geom::Point delta = pt - center;
 
-        /* Round it so that we have an integer-ratio (or golden ratio) box */
-        if (fabs(delta[Geom::X]) > fabs(delta[Geom::Y]) && (delta[Geom::Y] != 0.0)) {
-            double ratio = delta[Geom::X] / delta[Geom::Y];
-            double ratioabs = fabs (ratio);
-            double sign = (ratio < 0 ? -1 : 1);
-            if (midpt_1_goldenratio < ratioabs && ratioabs < midpt_goldenratio_2) {
-                delta[Geom::X] = sign * goldenratio * delta[Geom::Y];
-            } else {
-                delta[Geom::X] = floor(ratio + 0.5) * delta[Geom::Y];
+        if (!rect_edge) {
+            /* Round it so that we have an integer-ratio (or golden ratio) box */
+            if (fabs(delta[Geom::X]) > fabs(delta[Geom::Y]) && (delta[Geom::Y] != 0.0)) {
+                double ratio = delta[Geom::X] / delta[Geom::Y];
+                double ratioabs = fabs (ratio);
+                double sign = (ratio < 0 ? -1 : 1);
+                if (midpt_1_goldenratio < ratioabs && ratioabs < midpt_goldenratio_2) {
+                    delta[Geom::X] = sign * goldenratio * delta[Geom::Y];
+                } else {
+                    delta[Geom::X] = floor(ratio + 0.5) * delta[Geom::Y];
+                }
+            } else if (delta[Geom::X] != 0.0) {
+                double ratio = delta[Geom::Y] / delta[Geom::X];
+                double ratioabs = fabs(ratio);
+                double sign = (ratio < 0 ? -1 : 1);
+                if (midpt_1_goldenratio < ratioabs && ratioabs < midpt_goldenratio_2) {
+                    delta[Geom::Y] = sign * goldenratio * delta[Geom::X];
+                } else {
+                    delta[Geom::Y] = floor(delta[Geom::Y] / delta[Geom::X] + 0.5) * delta[Geom::X];
+                }
             }
-        } else if (delta[Geom::X] != 0.0) {
+        } else {
+            /* Since Alt+Ctrl is pressed we make mouse pointer lie on square with origin as one corner */
             double ratio = delta[Geom::Y] / delta[Geom::X];
-            double ratioabs = fabs (ratio);
             double sign = (ratio < 0 ? -1 : 1);
-            if (midpt_1_goldenratio < ratioabs && ratioabs < midpt_goldenratio_2) {
-                delta[Geom::Y] = sign * goldenratio * delta[Geom::X];
-            } else {
-                delta[Geom::Y] = floor(delta[Geom::Y] / delta[Geom::X] + 0.5) * delta[Geom::X];
+            if (fabs(delta[Geom::X]) > fabs(delta[Geom::Y]) && (delta[Geom::Y] != 0.0)) {
+                delta[Geom::Y] = sign * delta[Geom::X];
+            } else if (delta[Geom::X] != 0.0) {
+                delta[Geom::X] = sign * delta[Geom::Y];
             }
         }
 
@@ -212,7 +225,7 @@ Geom::Rect Inkscape::snap_rectangular_box(SPDesktop const *desktop, SPItem *item
     }
 
     if (snappoint.getSnapped()) {
-        desktop->snapindicator->set_new_snaptarget(snappoint);
+        desktop->getSnapIndicator()->set_new_snaptarget(snappoint);
     }
 
     p[0] *= desktop->dt2doc();

@@ -16,27 +16,27 @@
 
 #include <cstdlib>
 #include <cstring>
-#include <glibmm/regex.h>
 #include <list>
 #include <map>
 #include <string>
 #include <utility>
 
-#include "extract-uri.h"
+#include <glibmm/regex.h>
+
+#include "attributes.h"                              // for SPAttr
+#include "document.h"                                // for SPDocument
+#include "extract-uri.h"                             // for extract_uri
+#include "style-internal.h"                          // for SPIPaint, SPIShapes
+#include "style.h"                                   // for SPStyle, sp_styl...
+
 #include "live_effects/effect.h"
 #include "live_effects/lpeobject.h"
-#include "live_effects/parameter/originalpath.h"
-#include "live_effects/parameter/path.h"
-#include "live_effects/parameter/patharray.h"
-#include "live_effects/parameter/originalsatellite.h"
 #include "live_effects/parameter/parameter.h"
-#include "live_effects/parameter/satellitearray.h"
 #include "object/sp-gradient.h"
 #include "object/sp-object.h"
 #include "object/sp-paint-server.h"
 #include "object/sp-root.h"
 #include "object/sp-use.h"
-#include "style.h"
 
 enum ID_REF_TYPE { REF_HREF, REF_STYLE, REF_SHAPES, REF_URL, REF_CLIPBOARD };
 
@@ -58,7 +58,9 @@ const char *href_like_attributes[] = {"inkscape:connection-end",
                                       "inkscape:href",
                                       "inkscape:path-effect",
                                       "inkscape:perspectiveID",
+                                      "inkscape:linked-fill",
                                       "inkscape:tiled-clone-of",
+                                      "href",
                                       "xlink:href"};
 #define NUM_HREF_LIKE_ATTRIBUTES (sizeof(href_like_attributes) / sizeof(*href_like_attributes))
 
@@ -121,7 +123,11 @@ fix_ref(IdReference const &idref, SPObject *to_obj, const char *old_id) {
                 old += old_id;
                 size_t posid = value.find(old_id);
                 if (new_uri && posid != Glib::ustring::npos) {
-                    value = value.replace(posid - 1, old.size(), new_uri);
+                    if (!g_strcmp0(idref.attr,"inkscape:linked-fill")) {
+                        value = value.replace(posid, old.size() - 1, to_obj->getId());
+                    } else {
+                        value = value.replace(posid - 1, old.size(), new_uri);
+                    }
                     idref.elem->setAttribute(idref.attr, value.c_str());
                 }
                 g_free(new_uri);
@@ -200,7 +206,7 @@ static void find_references(SPObject *elem, refmap_type &refmap, bool from_clipb
         //}
     }
     if (!std::strcmp(repr_elem->name(), "inkscape:path-effect")) {
-        LivePathEffectObject *lpeobj = dynamic_cast<LivePathEffectObject *>(elem);
+        auto lpeobj = cast<LivePathEffectObject>(elem);
         if (lpeobj) {
             Inkscape::LivePathEffect::Effect *effect = lpeobj->get_lpe();
             if (effect) {
@@ -269,8 +275,15 @@ static void find_references(SPObject *elem, refmap_type &refmap, bool from_clipb
     }
     /* check for xlink:href="#..." and similar */
     for (auto attr : href_like_attributes) {
-        const gchar *val = repr_elem->attribute(attr);
-        if (val && val[0] == '#') {
+        Glib::ustring attfixed = "";
+        if (repr_elem->attribute(attr)) {
+            if (!g_strcmp0(attr,"inkscape:linked-fill")) {
+                attfixed += "#";
+            }
+            attfixed += repr_elem->attribute(attr);
+        }
+        const gchar *val = attfixed.c_str();
+        if (!attfixed.empty() && attfixed[0] == '#') {
             gchar **strarray = g_strsplit(val, ";", 0);
             if (strarray) {
                 unsigned int i = 0;
@@ -376,21 +389,21 @@ static void change_clashing_ids(SPDocument *imported_doc, SPDocument *current_do
         // may have had, the new ID is the old ID followed by a hyphen
         // and one or more digits.
 
-        if (SP_IS_GRADIENT(elem)) {
+        if (is<SPGradient>(elem)) {
             SPObject *cd_obj =  current_doc->getObjectById(id);
 
-            if (cd_obj && SP_IS_GRADIENT(cd_obj)) {
-                SPGradient *cd_gr = SP_GRADIENT(cd_obj);
-                if ( cd_gr->isEquivalent(SP_GRADIENT(elem))) {
+            if (cd_obj && is<SPGradient>(cd_obj)) {
+                auto cd_gr = cast<SPGradient>(cd_obj);
+                if ( cd_gr->isEquivalent(cast<SPGradient>(elem))) {
                     fix_clashing_ids = false;
                  }
              }
         }
 
-        LivePathEffectObject *lpeobj = dynamic_cast<LivePathEffectObject *>(elem);
+        auto lpeobj = cast<LivePathEffectObject>(elem);
         if (lpeobj) {
             SPObject *cd_obj = current_doc->getObjectById(id);
-            LivePathEffectObject *cd_lpeobj = dynamic_cast<LivePathEffectObject *>(cd_obj);
+            auto cd_lpeobj = cast<LivePathEffectObject>(cd_obj);
             if (cd_lpeobj && lpeobj->is_similar(cd_lpeobj)) {
                 fix_clashing_ids = from_clipboard;
             }
@@ -410,7 +423,7 @@ static void change_clashing_ids(SPDocument *imported_doc, SPDocument *current_do
             elem->setAttribute("id", new_id);
                 // Make a note of this change, if we need to fix up refs to it
             if (refmap.find(old_id) != refmap.end())
-                id_changes->push_back(id_changeitem_type(elem, old_id));
+                id_changes->emplace_back(elem, old_id);
         }
     }
 
@@ -480,27 +493,38 @@ change_def_references(SPObject *from_obj, SPObject *to_obj)
     }
 }
 
+// Supposedly this is a list of valid XML 1.0 ID characters
+// TODO: find link to some reference page
 const char valid_id_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.:";
+
+Glib::ustring sanitize_id(const Glib::ustring& input_id) {
+    if (input_id.empty()) return input_id;
+
+    auto id = input_id;
+    for (auto pos = id.find_first_not_of(valid_id_chars);
+            pos != Glib::ustring::npos;
+            pos = id.find_first_not_of(valid_id_chars, pos)) {
+        id.replace(pos, 1, "_");
+    }
+    // ID cannot start with a digit, period, or minus (https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/id)
+    auto c = id[0];
+    if (isdigit(c) || c == '.' || c == '-') {
+        id.insert(0, "x");
+    }
+    return id;
+}
 
 /**
  * Modify 'base_name' to create a new ID that is not used in the 'document'
 */
-Glib::ustring generate_unique_id(SPDocument* document, const Glib::ustring& base_name) {
-    const auto NPOS = Glib::ustring::npos;
+Glib::ustring generate_similar_unique_id(SPDocument* document, const Glib::ustring& base_name) {
     // replace illegal chars in base_name
     auto id = base_name;
     if (id.empty()) {
         id = "id-0";
     }
     else {
-        for (auto pos = id.find_first_not_of(valid_id_chars);
-                  pos != NPOS;
-                  pos = id.find_first_not_of(valid_id_chars, pos)) {
-            id.replace(pos, 1, "_");
-        }
-        if (!isalnum(id[0])) {
-            id.insert(0, "x");
-        }
+        id = sanitize_id(base_name);
     }
 
     if (!document) {
@@ -572,7 +596,7 @@ void rename_id(SPObject *elem, Glib::ustring const &new_name)
     // Make a note of this change, if we need to fix up refs to it
     id_changelist_type id_changes;
     if (refmap.find(old_id) != refmap.end()) {
-        id_changes.push_back(id_changeitem_type(elem, old_id));
+        id_changes.emplace_back(elem, old_id);
     }
 
     fix_up_refs(refmap, id_changes);

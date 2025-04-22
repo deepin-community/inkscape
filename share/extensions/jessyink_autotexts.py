@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # Copyright 2008, 2009 Hannes Hochreiner
 #
@@ -16,7 +16,6 @@
 # along with this program.  If not, see http://www.gnu.org/licenses/.
 #
 """Automatic text for jessyInk"""
-
 
 import inkex
 from jessyink_install import JessyInkMixin, _

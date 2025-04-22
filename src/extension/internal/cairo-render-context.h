@@ -144,6 +144,8 @@ public:
 
     void tagBegin(const char* link);
     void tagEnd();
+    void destBegin(const char* link);
+    void destEnd();
 
     /* Graphics state manipulation */
     void pushState();
@@ -155,6 +157,7 @@ public:
     void transform(Geom::Affine const &transform);
     void setTransform(Geom::Affine const &transform);
     Geom::Affine getTransform() const;
+    Geom::Affine getItemTransform() const;
     Geom::Affine getParentTransform() const;
 
     /* Clipping methods */
@@ -170,10 +173,11 @@ public:
     };
 
     bool renderPathVector(Geom::PathVector const &pathv, SPStyle const *style, Geom::OptRect const &pbox, CairoPaintOrder order = STROKE_OVER_FILL);
-    bool renderImage(Inkscape::Pixbuf *pb,
+    bool renderImage(Inkscape::Pixbuf const *pb,
                      Geom::Affine const &image_transform, SPStyle const *style);
     bool renderGlyphtext(PangoFont *font, Geom::Affine const &font_matrix,
-                         std::vector<CairoGlyphInfo> const &glyphtext, SPStyle const *style);
+                         std::vector<CairoGlyphInfo> const &glyphtext, SPStyle const *style,
+                         bool second_pass = false);
 
     /* More general rendering methods will have to be added (like fill, stroke) */
 
@@ -197,6 +201,9 @@ protected:
     bool _is_omittext;
     bool _is_filtertobitmap;
     bool _is_show_page;
+    // If both ps and pdf are false, then we are printing.
+    bool _is_pdf;
+    bool _is_ps;
     int _bitmapresolution;
 
     FILE *_stream;

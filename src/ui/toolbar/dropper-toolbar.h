@@ -19,6 +19,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -30,32 +31,38 @@
 
 #include "toolbar.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Toolbar {
+namespace Gtk {
+class Builder;
+class ToggleButton;
+} // namespace Gtk
+
+namespace Inkscape::UI::Toolbar {
 
 /**
  * \brief A toolbar for controlling the dropper tool
  */
-class DropperToolbar : public Toolbar {
+class DropperToolbar final : public Toolbar
+{
+public:
+    DropperToolbar(SPDesktop *desktop);
+    ~DropperToolbar() override;
+
 private:
-    // Tool widgets
-    Gtk::ToggleToolButton *_pick_alpha_button; ///< Control whether to pick opacity
-    Gtk::ToggleToolButton *_set_alpha_button;  ///< Control whether to set opacity
+    Glib::RefPtr<Gtk::Builder> _builder;
+
+    // Control whether to pick opacity.
+    Gtk::ToggleButton &_pick_alpha_btn;
+
+    // Control whether to set opacity.
+    Gtk::ToggleButton &_set_alpha_btn;
 
     // Event handlers
     void on_pick_alpha_button_toggled();
     void on_set_alpha_button_toggled();
-
-protected:
-    DropperToolbar(SPDesktop *desktop);
-
-public:
-    static GtkWidget * create(SPDesktop *desktop);
 };
-}
-}
-}
+
+} // namespace Inkscape::UI::Toolbar
+
 #endif /* !SEEN_DROPPER_TOOLBAR_H */
 
 /*

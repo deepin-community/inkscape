@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 #
 # Copyright (C) 2010 Craig Marshall, craig9 [at] gmail.com
@@ -25,6 +25,7 @@ font.
 It can also replace all fonts indiscriminately, and list all fonts
 currently being used.
 """
+
 import inkex
 from inkex.localization import inkex_gettext as _
 

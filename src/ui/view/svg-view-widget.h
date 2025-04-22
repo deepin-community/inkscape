@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /**
  * @file
- * A light-weight widget containing an SPCanvas with for rendering an SVG.
+ * A light-weight widget containing an Inkscape canvas for rendering an SVG.
  */
 /*
  * Authors:
@@ -14,11 +14,10 @@
  *
  */
 
-#ifndef INKSCAPE_UI_SVG_VIEW_WIDGET_VARIATIONS_H
-#define INKSCAPE_UI_SVG_VIEW_WIDGET_VARIATIONS_H
+#ifndef INKSCAPE_UI_VIEW_SVG_VIEW_WIDGET_H
+#define INKSCAPE_UI_VIEW_SVG_VIEW_WIDGET_H
 
-
-#include <gtkmm.h>
+#include <gtkmm/box.h>
 
 class SPDocument;
 
@@ -26,38 +25,41 @@ namespace Inkscape {
 
 class CanvasItemDrawing;
 class CanvasItemGroup;
+struct CanvasEvent;
+class DrawingItem;
 
 namespace UI {
 
-namespace Widget {
-class Canvas;
-}
+namespace Widget { class Canvas; }
 
 namespace View {
 
 /**
  * A light-weight widget containing an Inkscape canvas for rendering an SVG.
  */
-class SVGViewWidget : public Gtk::Bin {
-
+class SVGViewWidget final : public Gtk::Box
+{
 public:
-    SVGViewWidget(SPDocument* document);
-    ~SVGViewWidget() override;
-    void setDocument(  SPDocument* document);
-    void setResize( int width, int height);
-    void on_size_allocate(Gtk::Allocation& allocation) override;
+    SVGViewWidget(SPDocument *document);
+    ~SVGViewWidget() final;
+
+    void setDocument(SPDocument *document);
+    void setResize(int width, int height);
 
 private:
+    UI::Widget::Canvas *_canvas = nullptr;
+    bool _clicking = false;
 
-    Inkscape::UI::Widget::Canvas *_canvas;
+    void on_size_allocate(Gtk::Allocation &allocation) final;
 
-// From SVGView ---------------------------------
+    bool event(CanvasEvent const &event, DrawingItem *drawing_item);
 
 public:
+    // From SVGView ---------------------------------
     SPDocument*     _document = nullptr;
-    unsigned int    _dkey     = 0;
-    Inkscape::CanvasItemGroup    *_parent   = nullptr;
-    Inkscape::CanvasItemDrawing  *_drawing  = nullptr;
+    unsigned        _dkey     = 0;
+    CanvasItemGroup   *_parent  = nullptr;
+    CanvasItemDrawing *_drawing = nullptr;
     Gtk::Allocation _allocation;
     double          _hscale   = 1.0;     ///< horizontal scale
     double          _vscale   = 1.0;     ///< vertical scale
@@ -70,20 +72,13 @@ public:
      * Helper function that sets rescale ratio.
      */
     void doRescale();
-
-    /**
-     * Change cursor (used for links).
-     */
-    void mouseover();
-    void mouseout();
-
 };
 
-} // Namespace View
-} // Namespace UI
-} // Namespace Inkscape
+} // namespace View
+} // namespace UI
+} // namespace Inkscape
 
-#endif // INKSCAPE_UI_SVG_VIEW_WIDGET
+#endif // INKSCAPE_UI_VIEW_SVG_VIEW_WIDGET_H
 
 /*
   Local Variables:

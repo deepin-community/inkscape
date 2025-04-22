@@ -16,21 +16,14 @@
 #define noSP_ANCHOR_VERBOSE
 
 #include <glibmm/i18n.h>
-#include "xml/quote.h"
-#include "xml/repr.h"
+
 #include "attributes.h"
-#include "sp-anchor.h"
-#include "ui/view/svg-view-widget.h"
 #include "document.h"
+#include "sp-anchor.h"
 
-SPAnchor::SPAnchor() : SPGroup() {
-    this->href = nullptr;
-    this->type = nullptr;
-    this->title = nullptr;
-    this->page = nullptr;
-}
-
-SPAnchor::~SPAnchor() = default;
+#include "xml/document.h"               // for Document
+#include "xml/href-attribute-helper.h"  // for setHrefAttribute
+#include "xml/quote.h"                  // for xml_quote_strdup
 
 void SPAnchor::build(SPDocument *document, Inkscape::XML::Node *repr) {
     SPGroup::build(document, repr);
@@ -105,10 +98,14 @@ void SPAnchor::set(SPAttr key, const gchar* value) {
  */
 void SPAnchor::updatePageAnchor() {
     if (this->type && !strcmp(this->type, "page")) {
+        local_link.reset();
         if (this->href && !this->page) {
              this->page = this->document->createChildDoc(this->href);
         }
-    }    
+    } else if (this->href) {
+        local_link = std::make_unique<Inkscape::URIReference>(this);
+        local_link->try_attach(this->href);
+    }
 }
 
 #define COPY_ATTR(rd,rs,key) (rd)->setAttribute((key), rs->attribute(key));
@@ -118,7 +115,7 @@ Inkscape::XML::Node* SPAnchor::write(Inkscape::XML::Document *xml_doc, Inkscape:
         repr = xml_doc->createElement("svg:a");
     }
 
-    repr->setAttribute("xlink:href", this->href);
+    Inkscape::setHrefAttribute(*repr, this->href);
     if (this->type) repr->setAttribute("xlink:type", this->type);
     if (this->title) repr->setAttribute("xlink:title", this->title);
 
@@ -142,7 +139,7 @@ const char* SPAnchor::typeName() const {
 }
 
 const char* SPAnchor::displayName() const {
-    return _("Link");
+    return C_("Hyperlink|Noun", "Link");
 }
 
 gchar* SPAnchor::description() const {
@@ -156,41 +153,14 @@ gchar* SPAnchor::description() const {
     }
 }
 
-/* fixme: We should forward event to appropriate container/view */
-/* The only use of SPEvent appears to be here, to change the cursor in Inkview when over a link (and
- * which hasn't worked since at least 0.48). GUI code should not be here. */
-int SPAnchor::event(SPEvent* event) {
-
-    switch (event->type) {
-	case SPEvent::ACTIVATE:
-            if (this->href) {
-                // If this actually worked, it could be useful to open a webpage with the link.
-                g_print("Activated xlink:href=\"%s\"\n", this->href);
-                return TRUE;
-            }
-            break;
-
-	case SPEvent::MOUSEOVER:
-        {
-            if (event->view) {
-                event->view->mouseover();
-            }
-            break;
+void SPAnchor::getLinked(std::vector<SPObject *> &objects, LinkedObjectNature direction) const
+{
+    if (direction == LinkedObjectNature::ANY || direction == LinkedObjectNature::DEPENDENCY) {
+        if (auto linked = (local_link ? local_link->getObject() : nullptr)) {
+            objects.emplace_back(linked);
         }
-
-	case SPEvent::MOUSEOUT:
-        {
-            if (event->view) {
-                event->view->mouseout();
-            }
-            break;
-        }
-
-	default:
-            break;
     }
-
-    return FALSE;
+    SPObject::getLinked(objects, direction);
 }
 
 /*

@@ -16,23 +16,15 @@
 
 #include "lpe-offset.h"
 
-#include <2geom/path-intersection.h>
-#include <2geom/piecewise.h>
-#include <2geom/svg-path-parser.h>
-
-#include "inkscape.h"
-#include "style.h"
-
 #include "display/curve.h"
 #include "helper/geom-pathstroke.h"
 #include "helper/geom.h"
 #include "live_effects/parameter/enum.h"
+#include "object/sp-item-group.h"
+#include "object/sp-lpe-item.h"
 #include "object/sp-shape.h"
-#include "path/path-boolop.h"
-#include "path/path-util.h"
-#include "svg/svg.h"
-#include "ui/knot/knot-holder.h"
 #include "ui/knot/knot-holder-entity.h"
+#include "ui/knot/knot-holder.h"
 #include "util/units.h"
 
 // TODO due to internal breakage in glibmm headers, this must be last:
@@ -49,7 +41,7 @@ namespace OfS {
         {
             LPEOffset *lpe = dynamic_cast<LPEOffset *>(_effect);
             if (lpe) {
-                lpe->_knot_entity = nullptr;
+                lpe->_knotholder = nullptr;
             }
         }
         void knot_set(Geom::Point const &p, Geom::Point const &origin, guint state) override;
@@ -95,7 +87,7 @@ LPEOffset::LPEOffset(LivePathEffectObject *lpeobject) :
     offset.param_set_increments(0.1, 0.1);
     offset.param_set_digits(6);
     offset_pt = Geom::Point(Geom::infinity(), Geom::infinity());
-    _knot_entity = nullptr;
+    _knotholder = nullptr;
     _provides_knotholder_entities = true;
     apply_to_clippath_and_mask = true;
     prev_unit = unit.get_abbreviation();
@@ -103,9 +95,12 @@ LPEOffset::LPEOffset(LivePathEffectObject *lpeobject) :
     fillrule = fill_nonZero;
 }
 
-LPEOffset::~LPEOffset()
-{
+LPEOffset::~LPEOffset() {
     modified_connection.disconnect();
+    if (_knotholder) {
+        _knotholder->clear();
+        _knotholder = nullptr;
+    }
 };
 
 bool LPEOffset::doOnOpen(SPLPEItem const *lpeitem)
@@ -114,14 +109,12 @@ bool LPEOffset::doOnOpen(SPLPEItem const *lpeitem)
     if (!is_load || is_applied) {
         return fixed;
     }
-    legacytest_livarotonly = false;
+    // because offest changes on core we not keep 1.3 < full down compatibility
+    // so we take the oportunity to reset all previous "legacytest_livarotonly"
+    // and improve the LPE itself
     Glib::ustring version = lpeversion.param_getSVGValue();
-    if (version < "1.2") {
-        if (!SP_ACTIVE_DESKTOP) {
-            legacytest_livarotonly = true;
-        }
-        lpeversion.param_setValue("1.2", true);
-        fixed = true;
+    if (version < "1.3") {
+        lpeversion.param_setValue("1.3", true);
     }
     return fixed;
 }
@@ -129,25 +122,31 @@ bool LPEOffset::doOnOpen(SPLPEItem const *lpeitem)
 void
 LPEOffset::doOnApply(SPLPEItem const* lpeitem)
 {
-    lpeversion.param_setValue("1.2", true);
+    lpeversion.param_setValue("1.3", true);
 }
+
+Glib::ustring 
+sp_get_fill_rule(SPObject *obj) {
+    SPCSSAttr *css;
+    css = sp_repr_css_attr (obj->getRepr() , "style");
+    Glib::ustring  val = sp_repr_css_property (css, "fill-rule", "");
+    sp_repr_css_attr_unref(css);
+    return val;
+} 
 
 void
 LPEOffset::modified(SPObject *obj, guint flags)
 {
-    if (flags & SP_OBJECT_STYLE_MODIFIED_FLAG) {
+    // we check for style changes and apply LPE to get appropiate fill rule on change
+    if (flags & SP_OBJECT_STYLE_MODIFIED_FLAG && obj) {
         // Get the used fillrule
-        SPCSSAttr *css;
-        const gchar *val;
-        css = sp_repr_css_attr (sp_lpe_item->getRepr() , "style");
-        val = sp_repr_css_property (css, "fill-rule", nullptr);
-        FillRuleFlatten fillrule_chan = fill_nonZero;
-        if (val && strcmp (val, "evenodd") == 0)
-        {
+        Glib::ustring fr = sp_get_fill_rule(obj);
+        FillRule fillrule_chan = fill_nonZero;
+        if (fr == "evenodd") {
             fillrule_chan = fill_oddEven;
         }
-        if (fillrule != fillrule_chan) {
-            sp_lpe_item_update_patheffect (sp_lpe_item, true, true);
+        if (fillrule != fillrule_chan && sp_lpe_item) {
+            sp_lpe_item_update_patheffect(sp_lpe_item, true, true);
         }
     }
 }
@@ -162,21 +161,6 @@ Geom::Point get_nearest_point(Geom::PathVector pathv, Geom::Point point)
     }
     return res;
 }
-
-/* double get_separation(Geom::PathVector pathv, Geom::Point point, Geom::Point point_b)
-{
-    Geom::Point res = Geom::Point(Geom::infinity(), Geom::infinity());
-    std::optional<Geom::PathVectorTime> pathvectortime = pathv.nearestTime(point);
-    std::optional<Geom::PathVectorTime> pathvectortime_b = pathv.nearestTime(point_b);
-    if (pathvectortime && pathvectortime_b) {
-        Geom::PathTime pathtime = pathvectortime->asPathTime();
-        Geom::PathTime pathtime_b = pathvectortime_b->asPathTime();
-        if ((*pathvectortime).path_index == (*pathvectortime_b).path_index) {
-            return std::abs((pathtime.curve_index + pathtime.t) - (pathtime_b.curve_index + pathtime_b.t));
-        }
-    }
-    return -1;
-} */
 
 void LPEOffset::transform_multiply(Geom::Affine const &postmul, bool /*set*/)
 {
@@ -200,17 +184,32 @@ Geom::Point LPEOffset::get_default_point(Geom::PathVector pathv)
 }
 
 double
-LPEOffset::sp_get_offset(Geom::Point origin)
+LPEOffset::sp_get_offset()
 {
     double ret_offset = 0;
-    int winding_value = mix_pathv_all.winding(origin);
-    bool inset = false;
-    if (winding_value % 2 != 0) {
-        inset = true;
-    }
-    ret_offset = Geom::distance(origin, get_nearest_point(mix_pathv_all, origin));
-    if (inset) {
-        ret_offset *= -1;
+    Geom::Point res = Geom::Point(Geom::infinity(), Geom::infinity());
+    std::optional< Geom::PathVectorTime > pathvectortime = mix_pathv_all.nearestTime(offset_pt);
+    if (pathvectortime) {
+        Geom::PathTime pathtime = pathvectortime->asPathTime();
+        Geom::Path npath = mix_pathv_all[(*pathvectortime).path_index];
+        res = npath.pointAt(pathtime.curve_index + pathtime.t);
+        if (npath.closed()) {
+            int winding_value = mix_pathv_all.winding(offset_pt);
+            bool inset = false;
+            if (winding_value % 2 != 0) {
+                inset = true;
+            }
+            
+            ret_offset = Geom::distance(offset_pt, res);
+            if (inset) {
+                ret_offset *= -1;
+            }
+        } else {
+            ret_offset = Geom::distance(offset_pt, res);
+            if (!sign) {
+                ret_offset *= -1;
+            }
+        }
     }
     return Inkscape::Util::Quantity::convert(ret_offset, "px", unit.get_abbreviation()) * this->scale;
 }
@@ -224,406 +223,113 @@ LPEOffset::addCanvasIndicators(SPLPEItem const *lpeitem, std::vector<Geom::PathV
 void
 LPEOffset::doBeforeEffect (SPLPEItem const* lpeitem)
 {
-    SPObject *obj = dynamic_cast<SPObject *>(sp_lpe_item);
+    auto obj = sp_lpe_item;
     if (is_load && obj) {
         modified_connection = obj->connectModified(sigc::mem_fun(*this, &LPEOffset::modified));
     }
     original_bbox(lpeitem);
-    SPGroup *group = dynamic_cast<SPGroup *>(sp_lpe_item);
+    auto group = cast<SPGroup>(sp_lpe_item);
     if (group) {
         mix_pathv_all.clear();
     }
     this->scale = lpeitem->i2doc_affine().descrim();
     if (!is_load && prev_unit != unit.get_abbreviation()) {
+        offset.param_set_undo(false);
         offset.param_set_value(Inkscape::Util::Quantity::convert(offset, prev_unit, unit.get_abbreviation()));
+    } else {
+        offset.param_set_undo(true);
     }
     prev_unit = unit.get_abbreviation();
-}
-
-int offset_winding(Geom::PathVector pathvector, Geom::Path path)
-{
-    int wind = 0;
-    Geom::Point p = path.initialPoint();
-    for (auto i:pathvector) {
-        if (i == path)  continue;
-        if (!i.boundsFast().contains(p)) continue;
-        wind += i.winding(p);
-    }
-    return wind;
 }
 
 void LPEOffset::doAfterEffect(SPLPEItem const * /*lpeitem*/, SPCurve *curve)
 {
     if (offset_pt == Geom::Point(Geom::infinity(), Geom::infinity())) {
-        if (_knot_entity) {
-            _knot_entity->knot_get();
+        if (_knotholder && !_knotholder->entity.empty()) {
+            _knotholder->entity.front()->knot_get();
         }
     }
     if (is_load) {
         offset_pt = Geom::Point(Geom::infinity(), Geom::infinity());
     }
-    if (_knot_entity && sp_lpe_item && !liveknot) {
+    if (_knotholder && !_knotholder->entity.empty() && sp_lpe_item && !liveknot) {
         Geom::PathVector out;
         // we don do this on groups, editing is joining ito so no need to update knot
-        SPShape *shape = dynamic_cast<SPShape *>(sp_lpe_item);
+        auto shape = cast<SPShape>(sp_lpe_item);
         if (shape) {
-            out = SP_SHAPE(sp_lpe_item)->curve()->get_pathvector();
+            out = cast<SPShape>(sp_lpe_item)->curve()->get_pathvector();
             offset_pt = get_nearest_point(out, offset_pt);
-            _knot_entity->knot_get();
+            _knotholder->entity.front()->knot_get();
         }
     }
-}
-
-// TODO: find a way to not remove wanted self intersections
-// previously are some failed attempts
-
-/* // Taken from Knot LPE duple code
-static Geom::Path::size_type size_nondegenerate(Geom::Path const &path)
-{
-    Geom::Path::size_type retval = path.size_default();
-    const Geom::Curve &closingline = path.back_closed();
-    // the closing line segment is always of type
-    // Geom::LineSegment.
-    if (are_near(closingline.initialPoint(), closingline.finalPoint())) {
-        // closingline.isDegenerate() did not work, because it only checks for
-        // *exact* zero length, which goes wrong for relative coordinates and
-        // rounding errors...
-        // the closing line segment has zero-length. So stop before that one!
-        retval = path.size_open();
-    }
-    return retval;
-}
-gint get_nearest_corner(Geom::OptRect bbox, Geom::Point point)
-{
-    if (bbox) {
-        double distance_a = Geom::distance(point, (*bbox).corner(0));
-        double distance_b = Geom::distance(point, (*bbox).corner(1));
-        double distance_c = Geom::distance(point, (*bbox).corner(2));
-        double distance_d = Geom::distance(point, (*bbox).corner(3));
-        std::vector<double> distances{distance_a, distance_b, distance_c, distance_d};
-        std::vector<double>::iterator mindistance = std::min_element(distances.begin(), distances.end());
-        return std::distance(distances.begin(), mindistance);
-    }
-    return -1;
-}
-
-// This way not work with good selfintersections on consecutive curves
-// and when there is nodes nearest to points
-// I try different methods to cleanup without luky
-// if anyone is interested there is a way to explore
-// if in original path the section into the 2 nearest point dont have
-// self intersections we can suppose this is a intersection to remove
-// it works very well but in good selfintersections work only in one offset direction
-bool consecutiveCurves(Geom::Path pathin, Geom::Point p) {
-    Geom::Coord mindist = std::numeric_limits<Geom::Coord>::max();
-    size_t pos;
-    for (size_t i = 0; i < pathin.size_default(); ++i) {
-        Geom::Curve const &c = pathin.at(i);
-        double dist = Geom::distance(p, c.boundsFast());
-        if (dist >= mindist) {
-            continue;
-        }
-        Geom::Coord t = c.nearestTime(p);
-        Geom::Coord d = Geom::distance(c.pointAt(t), p);
-        if (d < mindist) {
-            pos = i;
-            mindist = d;
-        }
-    }
-    size_t pos_b;
-    mindist = std::numeric_limits<Geom::Coord>::max();
-    for (size_t i = 0; i < pathin.size_default(); ++i) {
-        Geom::Curve const &c = pathin.at(i);
-        double dist = Geom::distance(p, c.boundsFast());
-        if (dist >= mindist || pos == i) {
-            continue;
-        }
-        Geom::Coord t = c.nearestTime(p);
-        Geom::Coord d = Geom::distance(c.pointAt(t), p);
-        if (d < mindist) {
-            pos_b = i;
-            mindist = d;
-        }
-    }
-    if (Geom::are_near(Geom::distance(pos,pos_b), 1)) {
-        return true;
-    }
-    return false;
-}
-
-Geom::Path removeIntersects(Geom::Path pathin, Geom::Path pathorig, size_t skipcross)
-{
-    Geom::Path out;
-    Geom::Crossings crossings = Geom::self_crossings(pathin);
-    size_t counter = 0;
-    for (auto cross : crossings) {
-        if (!Geom::are_near(cross.ta, cross.tb, 0.01)) {
-            size_t sizepath = size_nondegenerate(pathin);
-            double ta = cross.ta > cross.tb ? cross.tb : cross.ta;
-            double tb = cross.ta > cross.tb ? cross.ta : cross.tb;
-            if (!pathin.closed()) {
-                counter++;
-                if (skipcross >= counter) {
-                    continue;
-                }
-                bool removeint = consecutiveCurves(pathorig, pathin.pointAt(ta));
-                Geom::Path p0 = pathin;
-                if (removeint) {
-                    Geom::Path p1 = pathin.portion(ta, tb);
-                    if ((*p1.boundsFast()).maxExtent() > 0.01) {
-                        p0 = pathin.portion(0, ta);
-                        if (!Geom::are_near(tb, sizepath, 0.01)) {
-                            Geom::Path p2 = pathin.portion(tb, sizepath);
-                            p0.setFinal(p2.initialPoint());
-                            p0.append(p2);
-                        }
-                    } else {
-                        skipcross++;
-                    }
-                } else {
-                    skipcross++;
-                }
-                out = removeIntersects(p0, pathorig, skipcross);
-                return out;
-            }
-        }
-    }
-    return pathin;
-} */
-
-Geom::Path removeIntersects(Geom::Path pathin)
-{
-    // I have a pending ping to moazin for 1.2 to fix open paths offeset self intesections (Jabiertxof)
-    // For 1.1 I comment the code because simply slow a lot or crash sometimes and never work really well
-    /* Geom::Path out;
-    Geom::Crossings crossings = Geom::self_crossings(pathin);
-    static size_t maxiter = 0;
-    if (!maxiter) {
-        maxiter = crossings.size();
-    }
-    for (auto cross : crossings) {
-        maxiter--;
-        if (!maxiter) {
-            return pathin;
-        }
-        if (!Geom::are_near(cross.ta, cross.tb, 0.01)) {
-            size_t sizepath = size_nondegenerate(pathin);
-            double ta = cross.ta > cross.tb ? cross.tb : cross.ta;
-            double tb = cross.ta > cross.tb ? cross.ta : cross.tb;
-            if (!pathin.closed()) {
-                Geom::Path p0 = pathin;
-                Geom::Path p1 = pathin.portion(ta, tb);
-                p0 = pathin.portion(0, ta);
-                if (!Geom::are_near(tb, sizepath, 0.01)) {
-                    Geom::Path p2 = pathin.portion(tb, sizepath);
-                    p0.setFinal(p2.initialPoint());
-                    p0.append(p2);
-                }
-                out = removeIntersects(p0);
-                return out;
-            }
-        }
-    } */
-    return pathin;
-}
-
-static Geom::PathVector
-sp_simplify_pathvector(Geom::PathVector original_pathv, double threshold)
-{
-    Path* pathliv = Path_for_pathvector(original_pathv);
-    pathliv->ConvertEvenLines(threshold);
-    pathliv->Simplify(threshold);
-    return Geom::parse_svg_path(pathliv->svg_dump_path());
 }
 
 Geom::PathVector 
 LPEOffset::doEffect_path(Geom::PathVector const & path_in)
 {
-    Geom::PathVector ret_closed;
-    Geom::PathVector ret_open;
     SPItem *item = current_shape;
     SPDocument *document = getSPDoc();
     if (!item || !document) {
         return path_in;
     }
+    if (Geom::are_near(offset,0.0)) {
+        // this is to keep reference to multiple pathvectors like in a group. Used by knot position in LPE Offset
+        mix_pathv_all.insert(mix_pathv_all.end(), path_in.begin(), path_in.end());
+        if (is_load && offset_pt == Geom::Point(Geom::infinity(), Geom::infinity())) {
+            offset_pt = get_default_point(path_in);
+            if (_knotholder && !_knotholder->entity.empty()) {
+                _knotholder->entity.front()->knot_get();
+            }
+        }
+        // allow offset 0 to get flattened version
+    }
     // Get the used fillrule
-    SPCSSAttr *css;
-    const gchar *val;
-    css = sp_repr_css_attr (item->getRepr() , "style");
-    val = sp_repr_css_property (css, "fill-rule", nullptr);
-
+    Glib::ustring fr = sp_get_fill_rule(item);
     fillrule = fill_nonZero;
-    if (val && strcmp (val, "evenodd") == 0)
-    {
+    if (fr == "evenodd") {
         fillrule = fill_oddEven;
     }
-
+    // ouline operations faster on live editing knot, on release it, get updated to -1
+    // todo study remove/change value. Use text paths to test if is needed
     double tolerance = -1;
     if (liveknot) {
         tolerance = 3;
     }
     // Get the doc units offset
     double to_offset = Inkscape::Util::Quantity::convert(offset, unit.get_abbreviation(), "px") / this->scale;
-    Geom::PathVector open_pathv;
-    Geom::PathVector closed_pathv;
-    Geom::PathVector mix_pathv;
-    Geom::PathVector mix_pathv_workon;
-    Geom::PathVector orig_pathv = pathv_to_linear_and_cubic_beziers(path_in);
-    helper_path = orig_pathv;
-    // Store separated open/closed paths
-    Geom::PathVector splitter;
-    for (auto &i : orig_pathv) {
-        // this improve offset in near closed paths
-        if (Geom::are_near(i.initialPoint(), i.finalPoint())) {
-            i.close(true);
-        }
-        if (i.closed()) {
-            closed_pathv.push_back(i);
-        } else {
-            open_pathv.push_back(i);
-        }
-    }
-    sp_flatten(closed_pathv, fillrule);
-
-    // we flatten using original fill rule
-    mix_pathv = open_pathv;
-    for (auto path : closed_pathv) {
-        mix_pathv.push_back(path);
-    }
-    SPGroup *group = dynamic_cast<SPGroup *>(sp_lpe_item);
-    // Calculate the original pathvector used outside this function
-    // to calculate the offset
-    if (group) {
-        mix_pathv_all.insert(mix_pathv_all.begin(), mix_pathv.begin(), mix_pathv.end());
-    } else {
-        mix_pathv_all = mix_pathv;
-    }
-    if (to_offset < 0) {
-        Geom::OptRect bbox = mix_pathv.boundsFast();
-        if (bbox) {
-            (*bbox).expandBy(to_offset / 2.0);
-            if ((*bbox).hasZeroArea()) {
-                Geom::PathVector empty;
-                return empty;
-            }
-        }
-    }
-    for (auto pathin : closed_pathv) {
-        // Geom::OptRect bbox = pathin.boundsFast();
-        // if (pbbox && (*pbbox).minExtent() > to_offset) {
-        mix_pathv_workon.push_back(pathin);
-        //}
-    }
-    mix_pathv_workon.insert(mix_pathv_workon.begin(), open_pathv.begin(), open_pathv.end());
-
-    if (offset == 0.0) {
-        if (is_load && offset_pt == Geom::Point(Geom::infinity(), Geom::infinity())) {
-            offset_pt = get_default_point(path_in);
-            if (_knot_entity) {
-                _knot_entity->knot_get();
-            }
-        }
-        return path_in;
-    }
-    Geom::OptRect bbox = closed_pathv.boundsFast();
-    double bboxsize = 0;
-    if (bbox) {
-        bboxsize = (*bbox).maxExtent();
+    Geom::PathVector inputpv = path_in;
+    Geom::PathVector prev_mix_pathv_all;
+    Geom::PathVector prev_helper_path;
+    bool is_group = is<SPGroup>(sp_lpe_item);
+    // Pathvector used outside this function to calculate the offset
+    if (!is_group) {
+        mix_pathv_all.clear();
+        helper_path.clear();
     }
     LineJoinType join = static_cast<LineJoinType>(linejoin_type.get_value());
-    Geom::PathVector ret_closed_tmp;
-    if (to_offset > 0) {
-        for (auto &i : mix_pathv_workon) {
-            Geom::Path tmp = half_outline(
-                i, to_offset, (attempt_force_join ? std::numeric_limits<double>::max() : miter_limit), join, tolerance);
-            if (tmp.closed()) {
-                Geom::OptRect pbbox = tmp.boundsFast();
-                if (pbbox && (*pbbox).minExtent() > to_offset) {
-                    ret_closed_tmp.push_back(tmp);
-                }
-            } else {
-                Geom::Path tmp_b = half_outline(i.reversed(), to_offset,
-                                                (attempt_force_join ? std::numeric_limits<double>::max() : miter_limit),
-                                                join, tolerance);
-                Geom::PathVector switch_pv_a(tmp);
-                Geom::PathVector switch_pv_b(tmp_b);
-                double distance_b = Geom::distance(offset_pt, get_nearest_point(switch_pv_a, offset_pt));
-                double distance_a = Geom::distance(offset_pt, get_nearest_point(switch_pv_b, offset_pt));
-                if (distance_b < distance_a) {
-                    ret_open.push_back(removeIntersects(tmp));
-                } else {
-                    ret_open.push_back(removeIntersects(tmp_b));
-                }
-            }
-        }
-        sp_flatten(ret_closed_tmp, fill_nonZero);
-        for (auto path : ret_closed_tmp) {
-            ret_closed.push_back(path);
-        }
-    } else if (to_offset < 0) {
-        for (auto &i : mix_pathv_workon) {
-            double gap = 0.01;
-            if (legacytest_livarotonly) {
-                gap = 0;
-            }
-            Geom::Path tmp =
-                half_outline(i.reversed(), std::abs(to_offset + gap),
-                             (attempt_force_join ? std::numeric_limits<double>::max() : miter_limit), join, tolerance);
-            // not remember why i instead tmp, afete 1.1 release we can switch to tmp to tests
-            if (i.closed()) {
-                Geom::PathVector out(tmp);
-                for (auto path : out) {
-                    ret_closed.push_back(path);
-                }
-            } else {
-                Geom::Path tmp_b = half_outline(i, std::abs(to_offset),
-                                                (attempt_force_join ? std::numeric_limits<double>::max() : miter_limit),
-                                                join, tolerance);
-                Geom::PathVector switch_pv_a(tmp);
-                Geom::PathVector switch_pv_b(tmp_b);
-                double distance_b = Geom::distance(offset_pt, get_nearest_point(switch_pv_a, offset_pt));
-                double distance_a = Geom::distance(offset_pt, get_nearest_point(switch_pv_b, offset_pt));
-                if (distance_b < distance_a) {
-                    ret_open.push_back(removeIntersects(tmp));
-                } else {
-                    ret_open.push_back(removeIntersects(tmp_b));
-                }
-            }
-        }
-        if (!ret_closed.empty()) {
-            Geom::PathVector outline;
-            for (const auto &i : mix_pathv_workon) {
-                if (i.closed()) {
-                    Geom::PathVector tmp = Inkscape::outline(i, std::abs(to_offset * 2), 4.0, join,
-                                                             static_cast<LineCapType>(BUTT_FLAT), tolerance);
-                    outline.insert(outline.begin(), tmp.begin(), tmp.end());
-                }
-            }
-            sp_flatten(outline, fill_nonZero);
-            double size = Geom::L2(Geom::bounds_fast(ret_closed)->dimensions());
-            size /= sp_lpe_item->i2doc_affine().descrim();
-            ret_closed = sp_pathvector_boolop(outline, ret_closed, bool_op_diff, fill_nonZero, fill_nonZero, legacytest_livarotonly);
-            if (!liveknot && legacytest_livarotonly) {
-                ret_closed = sp_simplify_pathvector(ret_closed, 0.0003 * size);
-            }
-        }
+    double miterlimit = attempt_force_join ? std::numeric_limits<double>::max() : miter_limit;
+    Geom::Point point = offset_pt;
+    if (is_group) {
+        point = Geom::Point(Geom::infinity(), Geom::infinity());
     }
-    ret_closed.insert(ret_closed.begin(), ret_open.begin(), ret_open.end());
-    return ret_closed;
+    Geom::PathVector out = do_offset(inputpv, to_offset, tolerance, miterlimit, fillrule,  join,  point, helper_path, mix_pathv_all);
+    // we are fastering outline on expand
+    if (!prev_mix_pathv_all.empty()) {
+        mix_pathv_all = prev_mix_pathv_all;
+        helper_path = prev_helper_path;
+    }
+    return out;
 }
 
 void LPEOffset::addKnotHolderEntities(KnotHolder *knotholder, SPItem *item)
 {
-    _knot_entity = new OfS::KnotHolderEntityOffsetPoint(this);
-    _knot_entity->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE,
+    _knotholder = knotholder;
+    KnotHolderEntity * knot_entity = new OfS::KnotHolderEntityOffsetPoint(this);
+    knot_entity->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE,
                          "LPEOffset", _("Offset point"));
-    _knot_entity->knot->setMode(Inkscape::CANVAS_ITEM_CTRL_MODE_COLOR);
-    _knot_entity->knot->setShape(Inkscape::CANVAS_ITEM_CTRL_SHAPE_CIRCLE);
-    _knot_entity->knot->setFill(0xFF6600FF, 0x4BA1C7FF, 0xCF1410FF, 0xFF6600FF);
-    _knot_entity->knot->setStroke(0x000000FF, 0x000000FF, 0x000000FF, 0x000000FF);
-    _knot_entity->knot->updateCtrl();
+    knot_entity->knot->updateCtrl();
     offset_pt = Geom::Point(Geom::infinity(), Geom::infinity());
-    knotholder->add(_knot_entity);
+    _knotholder->add(knot_entity);
 }
 
 namespace OfS {
@@ -632,13 +338,12 @@ void KnotHolderEntityOffsetPoint::knot_set(Geom::Point const &p, Geom::Point con
 {
     using namespace Geom;
     LPEOffset* lpe = dynamic_cast<LPEOffset *>(_effect);
-    Geom::Point s = snap_knot_position(p, state);
-    double offset = lpe->sp_get_offset(s);
-    lpe->offset_pt = s;
+    lpe->offset_pt = snap_knot_position(p, state);
+    double offset = lpe->sp_get_offset();
     if (lpe->update_on_knot_move) {
         lpe->liveknot = true;
         lpe->offset.param_set_value(offset);
-        sp_lpe_item_update_patheffect (SP_LPE_ITEM(item), false, false);
+        sp_lpe_item_update_patheffect (cast<SPLPEItem>(item), false, false);
     } else {
         lpe->liveknot = false;
     }
@@ -647,13 +352,11 @@ void KnotHolderEntityOffsetPoint::knot_set(Geom::Point const &p, Geom::Point con
 void KnotHolderEntityOffsetPoint::knot_ungrabbed(Geom::Point const &p, Geom::Point const &origin, guint state)
 {
     LPEOffset *lpe = dynamic_cast<LPEOffset *>(_effect);
-    lpe->refresh_widgets = true;
     lpe->liveknot = false;
     using namespace Geom;
-    Geom::Point s = lpe->offset_pt;
-    double offset = lpe->sp_get_offset(s);
+    double offset = lpe->sp_get_offset();
     lpe->offset.param_set_value(offset);
-    sp_lpe_item_update_patheffect(SP_LPE_ITEM(item), false, false);
+    lpe->makeUndoDone(_("Move handle"));
 }
 
 Geom::Point KnotHolderEntityOffsetPoint::knot_get() const
@@ -665,32 +368,10 @@ Geom::Point KnotHolderEntityOffsetPoint::knot_get() const
     if (!lpe->update_on_knot_move) {
         return lpe->offset_pt;
     }
-    Geom::Point nearest = lpe->offset_pt;
-    if (nearest == Geom::Point(Geom::infinity(), Geom::infinity())) {
-        Geom::PathVector out;
-        SPGroup *group = dynamic_cast<SPGroup *>(item);
-        SPShape *shape = dynamic_cast<SPShape *>(item);
-        if (group) {
-            std::vector<SPItem *> item_list = sp_item_group_item_list(group);
-            for (auto child : item_list) {
-                SPShape *subchild = dynamic_cast<SPShape *>(child);
-                if (subchild) {
-                    Geom::PathVector tmp = subchild->curve()->get_pathvector();
-                    out.insert(out.begin(), tmp.begin(), tmp.end());
-                    sp_flatten(out, fill_oddEven);
-                }
-            }
-        } else if (shape) {
-            SPCurve const *c = shape->curve();
-            if (c) {
-                out = c->get_pathvector();
-            }
-        }
-        if (!out.empty()) {
-            nearest = lpe->get_default_point(out);
-        }
+    if (lpe->offset_pt == Geom::Point(Geom::infinity(), Geom::infinity())) {
+        lpe->offset_pt = lpe->get_default_point(lpe->pathvector_after_effect);
     }
-    lpe->offset_pt = nearest;
+    
     return lpe->offset_pt;
 }
 

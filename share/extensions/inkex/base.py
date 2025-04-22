@@ -20,6 +20,7 @@
 The ultimate base functionality for every Inkscape extension.
 """
 
+import io
 import os
 import re
 import sys
@@ -48,8 +49,6 @@ from .elements._parser import load_svg
 from .elements._utils import NSS
 from .localization import localize
 
-stdout = sys.stdout.buffer  # type: ignore
-
 
 class InkscapeExtension:
     """
@@ -59,6 +58,11 @@ class InkscapeExtension:
 
     multi_inx = False  # Set to true if this class is used by multiple inx files.
     extra_nss = {}  # type: Dict[str, str]
+
+    # Provide a unique value to allow detection of no argument specified
+    # for `output` parameter of `run()`, not even `None`; this has to be an io
+    # type for type checking purposes:
+    output_unspecified = io.StringIO("")
 
     def __init__(self):
         # type: () -> None
@@ -129,7 +133,6 @@ class InkscapeExtension:
 
     @staticmethod
     def arg_number_ranges():
-
         """Parses a number descriptor. e.g:
         ``1,2,4-5,7,9-`` is parsed to ``1, 2, 4, 5, 7, 9, 10, ..., lastvalue``
 
@@ -151,17 +154,19 @@ class InkscapeExtension:
                 # replace ranges, such as -3, 10- with startvalue,2,3,10..lastvalue
                 pages = re.sub(
                     r"(\d+|)\s?-\s?(\d+|)",
-                    lambda m: ",".join(
-                        map(
-                            str,
-                            range(
-                                int(m.group(1) or startvalue),
-                                int(m.group(2) or lastvalue) + 1,
-                            ),
+                    lambda m: (
+                        ",".join(
+                            map(
+                                str,
+                                range(
+                                    int(m.group(1) or startvalue),
+                                    int(m.group(2) or lastvalue) + 1,
+                                ),
+                            )
                         )
-                    )
-                    if not (m.group(1) or m.group(2)) == ""
-                    else "",
+                        if not (m.group(1) or m.group(2)) == ""
+                        else ""
+                    ),
                     pages,
                 )
 
@@ -211,7 +216,7 @@ class InkscapeExtension:
         """Write a non-error message"""
         errormsg(msg)
 
-    def run(self, args=None, output=stdout):
+    def run(self, args=None, output=output_unspecified):
         # type: (Optional[List[str]], Union[str, IO]) -> None
         """Main entrypoint for any Inkscape Extension"""
         try:
@@ -224,7 +229,23 @@ class InkscapeExtension:
             elif "DOCUMENT_PATH" not in os.environ:
                 os.environ["DOCUMENT_PATH"] = self.options.input_file
 
+            self.bin_stdout = None
             if self.options.output is None:
+                # If no output was specified, attempt to extract a binary
+                # output from stdout, and if that doesn't seem possible,
+                # punt and try whatever stream stdout is:
+                if output is InkscapeExtension.output_unspecified:
+                    output = sys.stdout
+                    if "b" not in getattr(output, "mode", "") and not isinstance(
+                        output, (io.RawIOBase, io.BufferedIOBase)
+                    ):
+                        if hasattr(output, "buffer"):
+                            output = output.buffer  # type: ignore
+                        elif hasattr(output, "fileno"):
+                            self.bin_stdout = os.fdopen(
+                                output.fileno(), "wb", closefd=False
+                            )
+                            output = self.bin_stdout
                 self.options.output = output
 
             self.load_raw()
@@ -299,6 +320,9 @@ class InkscapeExtension:
     def clean_up(self):
         # type: () -> None
         """Clean up any open handles and other items"""
+        if hasattr(self, "bin_stdout"):
+            if self.bin_stdout is not None:
+                self.bin_stdout.close()
         if self.file_io is not None:
             self.file_io.close()
 
@@ -413,6 +437,7 @@ class TempDirMixin(_Base):  # pylint: disable=abstract-method
 
     def __init__(self, *args, **kwargs):
         self.tempdir = None
+        self._tempdir = None
         super().__init__(*args, **kwargs)
 
     def load_raw(self):
@@ -432,7 +457,9 @@ class TempDirMixin(_Base):  # pylint: disable=abstract-method
         # type: () -> None
         """Delete the temporary directory"""
         self.tempdir = None
-        self._tempdir.cleanup()
+        # if the file does not exist, _tempdir is never set.
+        if self._tempdir is not None:
+            self._tempdir.cleanup()
         super().clean_up()
 
 

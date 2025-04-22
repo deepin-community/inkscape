@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 """
 Test specific elements API from svg xml lxml custom classes.
@@ -40,7 +40,8 @@ from inkex import paths
 from inkex.colors import Color
 from inkex.paths import Move, Line
 from inkex.utils import FragmentError
-from inkex.units import parse_unit
+from inkex.units import parse_unit, convert_unit
+from inkex.transforms import BoundingBox
 
 from .test_inkex_elements_base import SvgTestCase
 from inkex.tester.svg import svg
@@ -240,6 +241,21 @@ class PathElementTestCase(ElementTestCase):
             precision=2,
         )
 
+    def test_context_manager(self):
+        """Test that modifications inside the context manager are written back"""
+        pel = PathElement.new(path=[Move(10, 10), Line(20, 20)])
+        with pel.path as path:
+            path.append(Line(20, 10))
+            path.close()
+
+        assert str(pel.path) == "M 10 10 L 20 20 L 20 10 Z"
+
+        pline = Polyline.new(points="10,10 50,50 10,15 15,10")
+        with pline.path as path:
+            path.append(Line(20, 10))
+
+        assert pline.get("points", "10,10 50,50 10,15 15,10, 20,10")
+
 
 class PolylineElementTestCase(ElementTestCase):
     """Test the polyline elements support"""
@@ -256,6 +272,12 @@ class PolylineElementTestCase(ElementTestCase):
         self.assertEqual(str(pol.path), "M 10 10 L 50 50 L 10 15 L 15 10")
         pol.path = "M 10 10 L 30 9 L 1 2 C 10 45 3 4 45 60 M 35 35"
         self.assertEqual(pol.get("points"), "10,10 30,9 1,2 45,60 35,35")
+        pol = Polyline.new(points="M 10 10 L 50 50 L 10 15 L 15 10")
+        self.assertEqual(pol.get("points"), "10,10 50,50 10,15 15,10")
+        pol = Polyline.new(points="10,10 50,50 10,15 5,0")
+        self.assertEqual(pol.get("points"), "10,10 50,50 10,15 5,0")
+        pol = Polyline.new(points=[(1, 2), (3, 4), (5, 6)])
+        self.assertEqual(str(pol.path), "M 1 2 L 3 4 L 5 6")
 
 
 class PolygonElementTestCase(ElementTestCase):
@@ -271,6 +293,10 @@ class PolygonElementTestCase(ElementTestCase):
         """Polygones are converted to paths"""
         pol = inkex.Polygon(points="10,10 50,50 10,15 15,10")
         self.assertEqual(str(pol.path), "M 10 10 L 50 50 L 10 15 L 15 10 Z")
+        pol = inkex.Polygon.new(points=[(1, 2), (3, 4), (5, 6)])
+        self.assertEqual(str(pol.path), "M 1 2 L 3 4 L 5 6 Z")
+        pol.path = inkex.Path("M 20 20 L 30 10 L 10 40")
+        self.assertEqual(str(pol.path), "M 20 20 L 30 10 L 10 40 Z")
 
 
 class LineElementTestCase(ElementTestCase):
@@ -410,8 +436,32 @@ class RectTest(ElementTestCase):
 
     def test_path(self):
         """Rectangle path"""
-        self.assertEqual(self.elem.get_path(), "M 200.0,200.0 h100.0v100.0h-100.0 z")
+        self.assertEqual(
+            self.elem.get_path(), inkex.Path("M 200.0,200.0 h100.0v100.0h-100.0 z")
+        )
         self.assertEqual(str(self.elem.path), "M 200 200 h 100 v 100 h -100 z")
+
+    def test_bad_ry(self):
+        """Test for https://gitlab.com/inkscape/extensions/-/issues/579"""
+        rect = Rectangle(
+            attrib={
+                "x": "53.4809",
+                "y": "40.852928",
+                "width": "51.448818",
+                "height": "44.433071",
+                "rx": "40.130795",
+                "ry": "1.6217518e-12",
+            }
+        )
+        self.assertEqual(rect.ry, 1.6217518e-12)
+
+        # Transform this path
+        transformed = inkex.Path(rect.get_path()).transform(
+            inkex.Transform("translate(10, 0)")
+        )
+
+        assert isinstance(transformed[2], paths.Arc)
+        assert transformed[2].radius == 25.724409 + 1.6217518e-12j
 
 
 class PathTest(ElementTestCase):
@@ -464,8 +514,10 @@ class CircleTest(ElementTestCase):
         """Circle path"""
         self.assertEqual(
             self.elem.get_path(),
-            "M 100.0,50.0 a 50.0,50.0 0 1 0 50.0, "
-            "50.0 a 50.0,50.0 0 0 0 -50.0, -50.0 z",
+            inkex.Path(
+                "M 100.0,50.0 a 50.0,50.0 0 1 0 50.0, "
+                "50.0 a 50.0,50.0 0 0 0 -50.0, -50.0 z"
+            ),
         )
 
 
@@ -483,16 +535,31 @@ class NamedViewTest(ElementTestCase):
 
     def test_guides(self):
         """Create a guide and see a list of them"""
-        self.svg.namedview.add(Guide().move_to(0, 0, 0))
-        self.svg.namedview.add(Guide().move_to(0, 0, "90"))
+        self.svg.namedview.add_guide(0, False, 0)
+        self.svg.namedview.add_guide(0, False, "90")
         self.assertEqual(len(self.svg.namedview.get_guides()), 2)
+        self.svg.namedview.add_guide((1, 1), (1, 0))
+        guides = self.svg.namedview.get_guides()
+        self.assertAlmostEqual(
+            guides[2].raw_position.y, self.svg.viewport_height - 1, 2
+        )
+        self.assertAlmostEqual(guides[2].raw_position.x, 1, 2)
+        self.assertAlmostEqual(guides[2].position.y, 1, 2)
+        self.assertAlmostEqual(guides[2].position.x, 1, 2)
+        # Test angle specifications
+
+    def test_guide_angles(self):
+        g = self.svg.namedview.add_guide((1, 1), 30)
+        self.assertAlmostEqual(g.angle, 30, 4)
+        g = self.svg.namedview.add_guide((1, 1), (2.5, -5 * math.sqrt(3) / 2))
+        self.assertAlmostEqual(g.angle, 30, 4)
 
     def test_guides_coincident(self):
         """Test the detection of coincident guides"""
 
         def coincidence_test(data, result):
-            guide1 = Guide().move_to(*data[0], angle=data[1])
-            guide2 = Guide().move_to(*data[2], angle=data[3])
+            guide1 = self.svg.namedview.add_guide(data[0], orient=data[1])
+            guide2 = self.svg.namedview.add_guide(data[2], orient=data[3])
             self.assertEqual(Guide.guides_coincident(guide1, guide2), result)
 
         # both are good
@@ -513,8 +580,7 @@ class NamedViewTest(ElementTestCase):
 
     def test_pages(self):
         """Create some extra pages and see a list of them"""
-        self.assertEqual(len(self.svg.namedview.get_pages()), 0)
-        self.svg.namedview.add(Page(width="210", height="297", x="0", y="0"))
+        self.assertEqual(len(self.svg.namedview.get_pages()), 1)
         self.svg.namedview.new_page(
             x="220", y="0", width="147.5", height="210", label="TEST"
         )
@@ -524,9 +590,26 @@ class NamedViewTest(ElementTestCase):
             self.svg.namedview.get_pages()[1].get("inkscape:label"), "TEST"
         )
         self.assertEqual(self.svg.namedview.get_pages()[1].attrib["width"], "147.5")
-        self.assertEqual(self.svg.namedview.get_pages()[0].attrib["height"], "297")
+        self.assertAlmostEqual(
+            float(self.svg.namedview.get_pages()[0].attrib["height"]),
+            297 * convert_unit("1mm", "px"),
+        )
         self.assertEqual(self.svg.namedview.get_pages()[1].attrib["x"], "220")
         self.assertEqual(self.svg.namedview.get_pages()[1].attrib["y"], "0")
+
+    def test_get_page_bbox(self):
+        self.assertEqual(
+            self.svg.get_page_bbox(),
+            BoundingBox(
+                (0, 210 * convert_unit("1mm", "px")),
+                (0, 297 * convert_unit("1mm", "px")),
+            ),
+        )
+        self.svg.namedview.add(Page(width="210", height="297", x="0", y="0"))
+        self.svg.namedview.new_page(x="220", y="0", width="147.5", height="210")
+        self.assertEqual(self.svg.get_page_bbox(), BoundingBox((0, 210), (0, 297)))
+        self.assertEqual(self.svg.get_page_bbox(0), BoundingBox((0, 210), (0, 297)))
+        self.assertEqual(self.svg.get_page_bbox(1), BoundingBox((220, 367.5), (0, 210)))
 
     def test_center(self):
         """Test that the center in mm based documents is correctly computed"""
@@ -569,8 +652,10 @@ class UseTest(ElementTestCase):
     tag = "use"
 
     def test_path(self):
-        """Use path follows ref"""
+        """Use path follows ref (including refs transform)"""
         self.assertEqual(str(self.elem.path), "M 0 0 L 10 10 Z")
+        self.elem.href.transform = Transform("translate(100, 100)")
+        self.assertEqual(str(self.elem.path), "M 100 100 L 110 110 Z")
 
     def test_empty_ref(self):
         """An empty ref or None ref doesn't cause an error"""
@@ -584,6 +669,47 @@ class UseTest(ElementTestCase):
         elem.set("xlink:href", "#badref")
         self.assertEqual(elem.href, None)
         elem.set("xlink:href", self.elem.get("xlink:href"))
+        self.assertEqual(elem.href.get("id"), "path1")
+
+    def test_href_compat_xlink_getElementsByHref(self):
+        """Test attribute `href` is used according to SVG2 spec
+        while considering `xlink:href` for SVG1.1 compatibility"""
+        # test getElementsByHref `href`
+        elem = self.svg.add(Use())
+        elem.set("href", "#path1")
+        href = self.svg.getElementsByHref("path1")[-1]
+        self.assertEqual(href.TAG, elem.TAG)
+        self.assertEqual(href.get_id(), elem.get_id())
+        # test getElementsByHref `xlink:href`
+        elem = self.svg.add(Use())
+        elem.set("xlink:href", "#path2")
+        href = self.svg.getElementsByHref("path2")[-1]
+        self.assertEqual(href.TAG, elem.TAG)
+        self.assertEqual(href.get_id(), elem.get_id())
+
+    def test_href_compat_xlink_create_read_update(self):
+        """Test attribute `href` is read and updated according to SVG2 spec
+        while creating defaults to `xlink:href` for SVG1.1 compatibility"""
+        # test setter (create) `xlink:href`
+        elem = self.svg.add(Use())
+        elem.href = self.elem.href
+        self.assertEqual(elem.get("xlink:href"), "#path1")
+        self.assertEqual(elem.href.get("id"), "path1")
+        # test setter (update existing) `href` [SVG2]
+        elem = self.svg.add(Use())
+        elem.set("href", "#path2")
+        elem.href = self.elem.href
+        self.assertEqual(elem.get("href"), "#path1")
+        self.assertEqual(elem.href.get("id"), "path1")
+        # test getter (read existing) `href` [SVG2]
+        elem = self.svg.add(Use())
+        elem.set("href", "#path1")
+        self.assertEqual(elem.get("href"), "#path1")
+        self.assertEqual(elem.href.get("id"), "path1")
+        # test getter (read existing) `xlink:href`
+        elem = self.svg.add(Use())
+        elem.set("xlink:href", "#path1")
+        self.assertEqual(elem.get("xlink:href"), "#path1")
         self.assertEqual(elem.href.get("id"), "path1")
 
     def test_unlink(self):

@@ -16,25 +16,25 @@
 #include <glibmm/ustring.h>
 
 #include "document-subset.h"
-#include "inkgc/gc-soft-ptr.h"
 #include "object/sp-item-group.h"
 
 class SPDesktop;
 class SPDocument;
 
 namespace Inkscape {
-    class ObjectHierarchy;
+
+class ObjectHierarchy;
 
 class LayerManager : public DocumentSubset
 {
 public:
     LayerManager(SPDesktop *desktop);
-    ~LayerManager() override;
+    ~LayerManager();
 
     void renameLayer( SPObject* obj, char const *label, bool uniquify );
     Glib::ustring getNextLayerName( SPObject* obj, char const *label);
 
-    sigc::connection connectCurrentLayerChanged(const sigc::slot<void, SPGroup *> & slot) {
+    sigc::connection connectCurrentLayerChanged(const sigc::slot<void (SPGroup *)> & slot) {
         return _layer_changed_signal.connect(slot);
     }
 
@@ -76,22 +76,23 @@ private:
     SPDocument *_document;
 
     std::unique_ptr<Inkscape::ObjectHierarchy> _layer_hierarchy;
-    sigc::signal<void, SPGroup *> _layer_changed_signal;
+    sigc::signal<void (SPGroup *)> _layer_changed_signal;
 };
 
 enum LayerRelativePosition {
     LPOS_ABOVE,
-    LPOS_BELOW,
     LPOS_CHILD,
+    LPOS_BELOW,
 };
     
 SPObject *create_layer(SPObject *root, SPObject *layer, LayerRelativePosition position);
 SPObject *next_layer(SPObject *root, SPObject *layer);
 SPObject *previous_layer(SPObject *root, SPObject *layer);
 
-}
+} // namespace Inkscape
 
-#endif
+#endif // SEEN_INKSCAPE_LAYER_MANAGER_H
+
 /*
   Local Variables:
   mode:c++

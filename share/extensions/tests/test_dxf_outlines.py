@@ -7,7 +7,7 @@ from inkex.elements._parser import load_svg
 
 from inkex.utils import AbortExtension
 from inkex.base import SvgOutputMixin
-from inkex.elements import Rectangle
+from inkex.elements import Rectangle, Circle
 
 
 class DFXOutlineBasicTest(ComparisonMixin, InkscapeExtensionTestMixin, TestCase):
@@ -17,6 +17,17 @@ class DFXOutlineBasicTest(ComparisonMixin, InkscapeExtensionTestMixin, TestCase)
         ("--id=p1", "--id=r3"),
         ("--POLY=true",),
         ("--ROBO=true",),
+    ]
+    compare_filters = [WindowsTextCompat()]
+
+
+class DXFOutlineTestPxUnit(ComparisonMixin, TestCase):
+    """Test for https://gitlab.com/inkscape/extensions/-/issues/542"""
+
+    effect_class = DxfOutlines
+    compare_file = ["svg/units_pt.svg"]
+    comparisons = [
+        (),
     ]
     compare_filters = [WindowsTextCompat()]
 
@@ -31,6 +42,20 @@ def run_extension(document, *args) -> str:
     ext.save(output)
     output.seek(0)
     return output.read()
+
+
+class CommentTest(TestCase):
+    """Check that a svg with comments is exported correctly"""
+
+    def test_comment(self):
+        """Test that the comments are removed and do not raise an exception"""
+        svg = load_svg('<svg xmlns="http://www.w3.org/2000/svg"><!-- comment --></svg>')
+        out1 = run_extension(svg)
+
+        svg = load_svg('<svg xmlns="http://www.w3.org/2000/svg"></svg>')
+        out2 = run_extension(svg)
+
+        self.assertEqual(out1, out2)
 
 
 class DXFDeeplyNestedTest(TestCase):
@@ -74,3 +99,16 @@ class TestDxfUnits(TestCase):
         out3 = run_extension(document, "--unit_from_document=False", "--units=mm")
 
         self.assertEqual(out1, out3)
+
+
+class TestFlattenBez(TestCase):
+    """Test that beziers are flattened"""
+
+    def test_mm(self):
+        """Test when FLATTENBEZ is enabled, splines are not present in the output"""
+        document = SvgOutputMixin.get_template(width=210, height=297, unit="mm")
+        document.getroot().namedview.set("inkscape:document-units", "mm")
+        document.getroot().add(Circle.new(center=(105, 25), radius=15))
+        out = run_extension(document, "-F=True")
+        # If -F was False/not set, there will be a SPLINE in the output
+        self.assertFalse("SPLINE" in str(out))

@@ -11,12 +11,11 @@
 #include <glib/gi18n.h>
 #include "desktop.h"
 #include "ui/tool/control-point-selection.h"
-#include "ui/tool/event-utils.h"
 #include "ui/tool/multi-path-manipulator.h"
 #include "ui/tool/path-manipulator.h"
+#include "ui/widget/events/canvas-event.h"
 
 #include "object/sp-namedview.h"
-#include "object/sp-path.h"
 
 namespace Inkscape {
 namespace UI {
@@ -28,14 +27,14 @@ bool CurveDragPoint::_segment_was_degenerate = false;
 CurveDragPoint::CurveDragPoint(PathManipulator &pm) :
     ControlPoint(pm._multi_path_manipulator._path_data.node_data.desktop, Geom::Point(), SP_ANCHOR_CENTER,
                  Inkscape::CANVAS_ITEM_CTRL_TYPE_INVISIPOINT,
-                 invisible_cset, pm._multi_path_manipulator._path_data.dragpoint_group),
+                 pm._multi_path_manipulator._path_data.dragpoint_group),
       _pm(pm)
 {
     _canvas_item_ctrl->set_name("CanvasItemCtrl:CurveDragPoint");
     setVisible(false);
 }
 
-bool CurveDragPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, GdkEvent *event)
+bool CurveDragPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context, CanvasEvent const &event)
 {
     // do not process any events when the manipulator is empty
     if (_pm.empty()) {
@@ -45,7 +44,7 @@ bool CurveDragPoint::_eventHandler(Inkscape::UI::Tools::ToolBase *event_context,
     return ControlPoint::_eventHandler(event_context, event);
 }
 
-bool CurveDragPoint::grabbed(GdkEventMotion */*event*/)
+bool CurveDragPoint::grabbed(MotionEvent const &/*event*/)
 {
     _pm._selection.hideTransformHandles();
     NodeList::iterator second = first.next();
@@ -57,7 +56,7 @@ bool CurveDragPoint::grabbed(GdkEventMotion */*event*/)
         // delta is a vector equal 1/3 of distance from first to second
         Geom::Point delta = (second->position() - first->position()) / 3.0;
         // only update the nodes if the mode is bspline
-        if(!_pm._isBSpline()){
+        if (!_pm._isBSpline()) {
             first->front()->move(first->front()->position() + delta);
             second->back()->move(second->back()->position() - delta);
         }
@@ -68,7 +67,7 @@ bool CurveDragPoint::grabbed(GdkEventMotion */*event*/)
     return false;
 }
 
-void CurveDragPoint::dragged(Geom::Point &new_pos, GdkEventMotion *event)
+void CurveDragPoint::dragged(Geom::Point &new_pos, MotionEvent const &event)
 {
     if (!first || !first.next()) return;
     NodeList::iterator second = first.next();
@@ -81,8 +80,8 @@ void CurveDragPoint::dragged(Geom::Point &new_pos, GdkEventMotion *event)
         return;
     }
 
-    if (_drag_initiated && !(event->state & GDK_SHIFT_MASK)) {
-        SnapManager &m = _desktop->namedview->snap_manager;
+    if (_drag_initiated && !(event.modifiers & GDK_SHIFT_MASK)) {
+        auto &m = _desktop->getNamedView()->snap_manager;
         SPItem *path = static_cast<SPItem *>(_pm._path);
         m.setup(_desktop, true, path); // We will not try to snap to "path" itself
         Inkscape::SnapCandidatePoint scp(new_pos, Inkscape::SNAPSOURCE_OTHER_HANDLE);
@@ -105,50 +104,50 @@ void CurveDragPoint::dragged(Geom::Point &new_pos, GdkEventMotion *event)
     Geom::Point offset1 = (weight/(3*t*t*(1-t))) * delta;
 
     //modified so that, if the trace is bspline, it only acts if the SHIFT key is pressed
-    if(!_pm._isBSpline()){
+    if (!_pm._isBSpline()) {
         first->front()->move(first->front()->position() + offset0);
         second->back()->move(second->back()->position() + offset1);
-    }else if(weight>=0.8){
-        if(held_shift(*event)){
+    } else if (weight >= 0.8) {
+        if (held_shift(event)) {
             second->back()->move(new_pos);
         } else {
             second->move(second->position() + delta);
         }
-    }else if(weight<=0.2){
-        if(held_shift(*event)){
+    } else if (weight <= 0.2) {
+        if (held_shift(event)) {
             first->back()->move(new_pos);
         } else {
             first->move(first->position() + delta);
         }
-    }else{
+    } else {
         first->move(first->position() + delta);
         second->move(second->position() + delta);
     }
     _pm.update();
 }
 
-void CurveDragPoint::ungrabbed(GdkEventButton *)
+void CurveDragPoint::ungrabbed(ButtonReleaseEvent const *)
 {
     _pm._updateDragPoint(_desktop->d2w(position()));
     _pm._commit(_("Drag curve"));
     _pm._selection.restoreTransformHandles();
 }
 
-bool CurveDragPoint::clicked(GdkEventButton *event)
+bool CurveDragPoint::clicked(ButtonReleaseEvent const &event)
 {
     // This check is probably redundant
-    if (!first || event->button != 1) return false;
+    if (!first || event.button != 1) return false;
     // the next iterator can be invalid if we click very near the end of path
     NodeList::iterator second = first.next();
     if (!second) return false;
 
     // insert nodes on Ctrl+Alt+click
-    if (held_control(*event) && held_alt(*event)) {
+    if (held_ctrl(event) && held_alt(event)) {
         _insertNode(false);
         return true;
     }
 
-    if (held_shift(*event)) {
+    if (held_shift(event)) {
         // if both nodes of the segment are selected, deselect;
         // otherwise add to selection
         if (first->selected() && second->selected())  {
@@ -163,23 +162,23 @@ bool CurveDragPoint::clicked(GdkEventButton *event)
         _pm._selection.clear();
         _pm._selection.insert(first.ptr());
         _pm._selection.insert(second.ptr());
-        if (held_control(*event)) {
-            _pm.setSegmentType(Inkscape::UI::SEGMENT_STRAIGHT);
-            _pm.update(true);
-            _pm._commit(_("Straighten segments"));
-        }
     }
     return true;
 }
 
-bool CurveDragPoint::doubleclicked(GdkEventButton *event)
+bool CurveDragPoint::doubleclicked(ButtonReleaseEvent const &event)
 {
-    if (event->button != 1 || !first || !first.next()) return false;
-    if (held_control(*event)) {
+    if (event.button != 1 || !first || !first.next()) return false;
+    if (held_ctrl(event)) {
         _pm.deleteSegments();
         _pm.update(true);
         _pm._commit(_("Remove segment"));
+    } else if (held_alt(event)) {
+        _pm.setSegmentType(Inkscape::UI::SEGMENT_STRAIGHT);
+        _pm.update(true);
+        _pm._commit(_("Straighten segments"));
     } else {
+        _pm._updateDragPoint(_desktop->d2w(position()));
         _insertNode(true);
     }
     return true;
@@ -200,7 +199,7 @@ Glib::ustring CurveDragPoint::_getTip(unsigned state) const
     if (_pm.empty()) return "";
     if (!first || !first.next()) return "";
     bool linear = first->front()->isDegenerate() && first.next()->back()->isDegenerate();
-    if(state_held_shift(state) && _pm._isBSpline()){
+    if (state_held_shift(state) && _pm._isBSpline()) {
         return C_("Path segment tip",
             "<b>Shift</b>: drag to open or move BSpline handles");
     }
@@ -208,27 +207,23 @@ Glib::ustring CurveDragPoint::_getTip(unsigned state) const
         return C_("Path segment tip",
             "<b>Shift</b>: click to toggle segment selection");
     }
-    if (state_held_control(state) && state_held_alt(state)) {
+    if (state_held_ctrl(state) && state_held_alt(state)) {
         return C_("Path segment tip",
             "<b>Ctrl+Alt</b>: click to insert a node");
     }
-    if (state_held_control(state)) {
-        return C_("Path segment tip",
-            "<b>Ctrl</b>: click to change line type");
+    if (state_held_alt(state)) {
+        return C_("Path segment tip", "<b>Alt</b>: double click to change line type");
     }
-    if(_pm._isBSpline()){
-        return C_("Path segment tip",
-            "<b>BSpline segment</b>: drag to shape the segment, doubleclick to insert node, "
-            "click to select (more: Shift, Ctrl+Alt)");
+    if (_pm._isBSpline()) {
+        return C_("Path segment tip", "<b>BSpline segment</b>: drag to shape the segment, doubleclick to insert node, "
+                                      "click to select (more: Alt, Shift, Ctrl+Alt)");
     }
     if (linear) {
-        return C_("Path segment tip",
-            "<b>Linear segment</b>: drag to convert to a Bezier segment, "
-            "doubleclick to insert node, click to select (more: Shift, Ctrl+Alt)");
+        return C_("Path segment tip", "<b>Linear segment</b>: drag to convert to a Bezier segment, "
+                                      "doubleclick to insert node, click to select (more: Alt, Shift, Ctrl+Alt)");
     } else {
-        return C_("Path segment tip",
-            "<b>Bezier segment</b>: drag to shape the segment, doubleclick to insert node, "
-            "click to select (more: Shift, Ctrl+Alt)");
+        return C_("Path segment tip", "<b>Bezier segment</b>: drag to shape the segment, doubleclick to insert node, "
+                                      "click to select (more: Alt, Shift, Ctrl+Alt)");
     }
 }
 

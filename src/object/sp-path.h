@@ -26,10 +26,11 @@ class SPCurve;
 /**
  * SVG <path> implementation
  */
-class SPPath : public SPShape {
+class SPPath final : public SPShape {
 public:
     SPPath();
     ~SPPath() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     int nodesInPath() const;
     friend class SPConnEndPair;
@@ -47,13 +48,11 @@ public:
     const char* displayName() const override;
     char* description() const override;
     Geom::Affine set_transform(Geom::Affine const &transform) override;
+    void removeTransformsRecursively(SPObject const *root) override;
     void convert_to_guides() const override;
 private:
     SPStyleSrc d_source;  // Source of 'd' value, saved for output.
 };
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_PATH, SPPath)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_PATH, SPPath)
 
 #endif // SEEN_SP_PATH_H
 

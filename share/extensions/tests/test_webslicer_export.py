@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from webslicer_export import Export
 from inkex.tester import ComparisonMixin, TestCase
 

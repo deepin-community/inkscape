@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /** \file
  * LPE <perspective-envelope> implementation
-
  */
 /*
  * Authors:
@@ -15,19 +14,25 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <gtkmm.h>
-#include "live_effects/lpe-perspective-envelope.h"
-#include "helper/geom.h"
-#include "display/curve.h"
+#include "lpe-perspective-envelope.h"
+
+#include <glibmm/i18n.h>
+#include <gtkmm/box.h>
+#include <gtkmm/button.h>
+#include <gtkmm/label.h>
+#include <gtkmm/separator.h>
+#include <gtkmm/widget.h>
 #include <gsl/gsl_linalg.h>
 
-// TODO due to internal breakage in glibmm headers, this must be last:
-#include <glibmm/i18n.h>
+#include "display/curve.h"
+#include "helper/geom.h"
+#include "object/sp-lpe-item.h"
+#include "ui/pack.h"
+#include "ui/util.h"
 
 using namespace Geom;
 
-namespace Inkscape {
-namespace LivePathEffect {
+namespace Inkscape::LivePathEffect {
 
 enum DeformationType {
     DEFORMATION_PERSPECTIVE,
@@ -64,8 +69,7 @@ LPEPerspectiveEnvelope::LPEPerspectiveEnvelope(LivePathEffectObject *lpeobject) 
     apply_to_clippath_and_mask = true;
 }
 
-LPEPerspectiveEnvelope::~LPEPerspectiveEnvelope()
-= default;
+LPEPerspectiveEnvelope::~LPEPerspectiveEnvelope() = default;
 
 void LPEPerspectiveEnvelope::transform_multiply(Geom::Affine const &postmul, bool /*set*/)
 {
@@ -166,7 +170,7 @@ void LPEPerspectiveEnvelope::doEffect(SPCurve *curve)
         if (path_it.empty())
             continue;
         //Itreadores
-        auto nCurve = std::make_unique<SPCurve>();
+        SPCurve nCurve;
         Geom::Path::const_iterator curve_it1 = path_it.begin();
         Geom::Path::const_iterator curve_endit = path_it.end_default();
 
@@ -177,9 +181,9 @@ void LPEPerspectiveEnvelope::doEffect(SPCurve *curve)
             }
         }
         if(deform_type == DEFORMATION_PERSPECTIVE) {
-            nCurve->moveto(projectPoint(curve_it1->initialPoint(), projmatrix));
+            nCurve.moveto(projectPoint(curve_it1->initialPoint(), projmatrix));
         } else {
-            nCurve->moveto(projectPoint(curve_it1->initialPoint()));
+            nCurve.moveto(projectPoint(curve_it1->initialPoint()));
         }
         while (curve_it1 != curve_endit) {
             cubic = dynamic_cast<Geom::CubicBezier const *>(&*curve_it1);
@@ -201,18 +205,18 @@ void LPEPerspectiveEnvelope::doEffect(SPCurve *curve)
                 point_at3 = projectPoint(point_at3);
             }
             if (cubic) {
-                nCurve->curveto(point_at1, point_at2, point_at3);
+                nCurve.curveto(point_at1, point_at2, point_at3);
             } else {
-                nCurve->lineto(point_at3);
+                nCurve.lineto(point_at3);
             }
             ++curve_it1;
         }
         //y cerramos la curva
         if (path_it.closed()) {
-            nCurve->move_endpoints(point_at3, point_at3);
-            nCurve->closepath_current();
+            nCurve.move_endpoints(point_at3, point_at3);
+            nCurve.closepath_current();
         }
-        curve->append(*nCurve);
+        curve->append(std::move(nCurve));
     }
 }
 
@@ -256,87 +260,68 @@ LPEPerspectiveEnvelope::pointAtRatio(Geom::Coord ratio,Geom::Point A, Geom::Poin
     return Point(x, y);
 }
 
-
 Gtk::Widget *
 LPEPerspectiveEnvelope::newWidget()
 {
     // use manage here, because after deletion of Effect object, others might still be pointing to this widget.
-    Gtk::Box *vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
+    auto const vbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL, 6);
+    vbox->property_margin().set_value(5);
 
-    vbox->set_border_width(5);
-    vbox->set_homogeneous(false);
-    vbox->set_spacing(6);
-    std::vector<Parameter *>::iterator it = param_vector.begin();
-    Gtk::Box * hbox_up_handles = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
-    Gtk::Box * hbox_down_handles = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
-    while (it != param_vector.end()) {
-        if ((*it)->widget_is_visible) {
-            Parameter * param = *it;
-            Gtk::Widget * widg = dynamic_cast<Gtk::Widget *>(param->param_newWidget());
-            if (param->param_key == "up_left_point" ||
-                    param->param_key == "up_right_point" ||
-                    param->param_key == "down_left_point" ||
-                    param->param_key == "down_right_point") {
-                Gtk::Box * point_hbox = dynamic_cast<Gtk::Box *>(widg);
-                std::vector< Gtk::Widget* > child_list = point_hbox->get_children();
-                Gtk::Box * point_hboxHBox = dynamic_cast<Gtk::Box *>(child_list[0]);
-                std::vector< Gtk::Widget* > child_list2 = point_hboxHBox->get_children();
-                point_hboxHBox->remove(child_list2[0][0]);
-                Glib::ustring * tip = param->param_getTooltip();
-                if (widg) {
-                    if(param->param_key == "up_left_point") {
-                        Gtk::Label* handles = Gtk::manage(new Gtk::Label(Glib::ustring(_("Handles:")),Gtk::ALIGN_START));
-                        vbox->pack_start(*handles, false, false, 2);
-                        hbox_up_handles->pack_start(*widg, true, true, 2);
-                        hbox_up_handles->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_VERTICAL)), Gtk::PACK_EXPAND_WIDGET);
-                    } else if(param->param_key == "up_right_point") {
-                        hbox_up_handles->pack_start(*widg, true, true, 2);
-                    } else if(param->param_key == "down_left_point") {
-                        hbox_down_handles->pack_start(*widg, true, true, 2);
-                        hbox_down_handles->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_VERTICAL)), Gtk::PACK_EXPAND_WIDGET);
-                    } else {
-                        hbox_down_handles->pack_start(*widg, true, true, 2);
-                    }
-                    if (tip) {
-                        widg->set_tooltip_markup(*tip);
-                    } else {
-                        widg->set_tooltip_text("");
-                        widg->set_has_tooltip(false);
-                    }
-                }
+    auto const hbox_up_handles = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL,0);
+    auto const hbox_down_handles = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL,0);
+
+    for (auto const param: param_vector) {
+        if (!param->widget_is_visible) continue;
+
+        auto const widg = param->param_newWidget();
+        if (!widg) continue;
+
+        if (param->param_key == "up_left_point" ||
+            param->param_key == "up_right_point" ||
+            param->param_key == "down_left_point" ||
+            param->param_key == "down_right_point")
+        {
+            auto &point_hbox = dynamic_cast<Gtk::Box &>(*widg);
+            auto const child_list = UI::get_children(point_hbox);
+            auto &point_hboxHBox = dynamic_cast<Gtk::Box &>(*child_list.at(0));
+            auto const child_list2 = UI::get_children(point_hboxHBox);
+            point_hboxHBox.remove(*child_list2.at(0));
+
+            if (param->param_key == "up_left_point") {
+                auto const handles = Gtk::make_managed<Gtk::Label>(Glib::ustring(_("Handles:")),Gtk::ALIGN_START);
+                UI::pack_start(*vbox, *handles, false, false, 2);
+                UI::pack_start(*hbox_up_handles, *widg, true, true, 2);
+                UI::pack_start(*hbox_up_handles, *Gtk::make_managed<Gtk::Separator>(Gtk::ORIENTATION_VERTICAL),
+                               UI::PackOptions::expand_padding);
+            } else if (param->param_key == "up_right_point") {
+                UI::pack_start(*hbox_up_handles, *widg, true, true, 2);
+            } else if (param->param_key == "down_left_point") {
+                UI::pack_start(*hbox_down_handles, *widg, true, true, 2);
+                UI::pack_start(*hbox_down_handles, *Gtk::make_managed<Gtk::Separator>(Gtk::ORIENTATION_VERTICAL),
+                               UI::PackOptions::expand_padding);
             } else {
-                Glib::ustring * tip = param->param_getTooltip();
-                if (widg) {
-                    vbox->pack_start(*widg, true, true, 2);
-                    if (tip) {
-                        widg->set_tooltip_text(*tip);
-                    } else {
-                        widg->set_tooltip_text("");
-                        widg->set_has_tooltip(false);
-                    }
-                }
+                UI::pack_start(*hbox_down_handles, *widg, true, true, 2);
+            }
+
+            if (auto const tip = param->param_getTooltip()) {
+                widg->set_tooltip_markup(*tip);
+            } else {
+                widg->set_tooltip_text({});
+                widg->set_has_tooltip(false);
             }
         }
-
-        ++it;
     }
-    vbox->pack_start(*hbox_up_handles,true, true, 2);
-    Gtk::Box * hbox_middle = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,2));
-    hbox_middle->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)), Gtk::PACK_EXPAND_WIDGET);
-    hbox_middle->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)), Gtk::PACK_EXPAND_WIDGET);
-    vbox->pack_start(*hbox_middle, false, true, 2);
-    vbox->pack_start(*hbox_down_handles, true, true, 2);
-    Gtk::Box * hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL,0));
-    Gtk::Button* reset_button = Gtk::manage(new Gtk::Button(_("_Clear"), true));
+
+    UI::pack_start(*vbox, *hbox_up_handles,true, true, 2);
+    UI::pack_start(*vbox, *Gtk::make_managed<Gtk::Separator>(Gtk::ORIENTATION_HORIZONTAL), UI::PackOptions::expand_widget);
+    UI::pack_start(*vbox, *hbox_down_handles, true, true, 2);
+    auto const reset_button = Gtk::make_managed<Gtk::Button>(_("_Clear"), true);
     reset_button->set_image_from_icon_name("edit-clear");
     reset_button->signal_clicked().connect(sigc::mem_fun (*this,&LPEPerspectiveEnvelope::resetGrid));
     reset_button->set_size_request(140,30);
-    vbox->pack_start(*hbox, true,true,2);
-    hbox->pack_start(*reset_button, false, false,2);
-    if(Gtk::Widget* widg = defaultParamSet()) {
-        vbox->pack_start(*widg, true, true, 2);
-    }
-    return dynamic_cast<Gtk::Widget *>(vbox);
+    reset_button->set_halign(Gtk::ALIGN_START);
+    UI::pack_start(*vbox, *reset_button, false, false, 2);
+    return vbox;
 }
 
 void
@@ -556,7 +541,7 @@ void
 LPEPerspectiveEnvelope::resetDefaults(SPItem const* item)
 {
     Effect::resetDefaults(item);
-    original_bbox(SP_LPE_ITEM(item), false, true);
+    original_bbox(cast<SPLPEItem>(item), false, true);
     setDefaults();
     resetGrid();
 }
@@ -566,23 +551,16 @@ LPEPerspectiveEnvelope::addCanvasIndicators(SPLPEItem const */*lpeitem*/, std::v
 {
     hp_vec.clear();
 
-    auto c = std::make_unique<SPCurve>();
-    c->moveto(up_left_point);
-    c->lineto(up_right_point);
-    c->lineto(down_right_point);
-    c->lineto(down_left_point);
-    c->lineto(up_left_point);
-    hp_vec.push_back(c->get_pathvector());
+    SPCurve c;
+    c.moveto(up_left_point);
+    c.lineto(up_right_point);
+    c.lineto(down_right_point);
+    c.lineto(down_left_point);
+    c.lineto(up_left_point);
+    hp_vec.push_back(c.get_pathvector());
 }
 
-
-/* ######################## */
-
-} //namespace LivePathEffect
-} /* namespace Inkscape */
-
-
-
+} // namespace Inkscape::LivePathEffect
 
 /*
   Local Variables:

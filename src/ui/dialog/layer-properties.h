@@ -13,24 +13,31 @@
 #ifndef INKSCAPE_DIALOG_LAYER_PROPERTIES_H
 #define INKSCAPE_DIALOG_LAYER_PROPERTIES_H
 
+#include <gdk/gdk.h> // GdkModifierType
+#include <gtk/gtk.h> // GtkEventControllerKey
+#include <glibmm/refptr.h>
+#include <gtkmm/combobox.h>
 #include <gtkmm/dialog.h>
 #include <gtkmm/entry.h>
-#include <gtkmm/label.h>
+#include <gtkmm/gesture.h> // Gtk::EventSequenceState
 #include <gtkmm/grid.h>
-
-#include <gtkmm/combobox.h>
+#include <gtkmm/label.h>
+#include <gtkmm/box.h>
+#include <gtkmm/radiobutton.h>
 #include <gtkmm/liststore.h>
-#include <gtkmm/treeview.h>
-#include <gtkmm/treestore.h>
 #include <gtkmm/scrolledwindow.h>
+#include <gtkmm/treestore.h>
+#include <gtkmm/treeview.h>
 
 #include "layer-manager.h"
 
+namespace Gtk {
+class GestureMultiPress;
+}
+
 class SPDesktop;
 
-namespace Inkscape {
-namespace UI {
-namespace Dialogs {
+namespace Inkscape::UI::Dialog {
 
 /* FIXME: split the LayerPropertiesDialog class into three separate dialogs */
 enum class LayerPropertiesDialogType
@@ -41,10 +48,11 @@ enum class LayerPropertiesDialogType
     RENAME
 };
 
-class LayerPropertiesDialog : public Gtk::Dialog {
+class LayerPropertiesDialog final : public Gtk::Dialog {
 public:
     LayerPropertiesDialog(LayerPropertiesDialogType type);
-    ~LayerPropertiesDialog() override;
+    ~LayerPropertiesDialog() final;
+
     LayerPropertiesDialog(LayerPropertiesDialog const &) = delete; // no copy
     LayerPropertiesDialog &operator=(LayerPropertiesDialog const &) = delete; // no assign
 
@@ -78,7 +86,7 @@ private:
     Gtk::Label        _layer_name_label;
     Gtk::Entry        _layer_name_entry;
     Gtk::Label        _layer_position_label;
-    Gtk::ComboBox     _layer_position_combo;
+    Gtk::RadioButton  _layer_position_radio[3];
     Gtk::Grid         _layout_table;
 
     bool              _position_visible = false;
@@ -86,7 +94,6 @@ private:
     class ModelColumns : public Gtk::TreeModel::ColumnRecord
     {
     public:
-
         ModelColumns()
         {
             add(_colObject);
@@ -107,15 +114,11 @@ private:
     Glib::RefPtr<Gtk::TreeStore> _store;
     Gtk::ScrolledWindow _scroller;
 
-
     PositionDropdownColumns _dropdown_columns;
     Gtk::CellRendererText _label_renderer;
-    Glib::RefPtr<Gtk::ListStore> _dropdown_list;
 
     Gtk::Button _close_button;
     Gtk::Button _apply_button;
-
-    sigc::connection _destroy_connection;
 
     void _setDesktop(SPDesktop *desktop) { _desktop = desktop; };
     void _setLayer(SPObject *layer);
@@ -130,8 +133,12 @@ private:
 
     void _addLayer(SPObject* layer, Gtk::TreeModel::Row* parentRow, SPObject* target, int level);
     SPObject* _selectedLayer();
-    bool _handleKeyEvent(GdkEventKey *event);
-    void _handleButtonEvent(GdkEventButton* event);
+
+    gboolean on_key_pressed(GtkEventControllerKey const *controller,
+                        unsigned keyval, unsigned keycode,
+                        GdkModifierType state);
+    Gtk::EventSequenceState on_click_pressed(Gtk::GestureMultiPress const &click,
+                                             int n_press, double x, double y);
 
     void _doCreate();
     void _doMove();
@@ -139,10 +146,7 @@ private:
     void _setup();
 };
 
-} // namespace
-} // namespace
-} // namespace
-
+} // namespace Inkscape::UI::Dialog
 
 #endif //INKSCAPE_DIALOG_LAYER_PROPERTIES_H
 

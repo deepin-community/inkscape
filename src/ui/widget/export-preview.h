@@ -7,73 +7,96 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef SP_EXPORT_PREVIEW_H
-#define SP_EXPORT_PREVIEW_H
+#ifndef INKSCAPE_UI_WIDGET_EXPORT_PREVIEW_H
+#define INKSCAPE_UI_WIDGET_EXPORT_PREVIEW_H
 
-#include <gtkmm.h>
+#include <cstdint>
+#include <memory>
+#include <vector>
+#include <2geom/rect.h>
+#include <glibmm/refptr.h>
+#include <gtkmm/image.h>
 
-#include "desktop.h"
-#include "document.h"
+#include "async/channel.h"
+#include "display/drawing.h"
+#include "helper/auto-connection.h"
 
+namespace Gtk {
+class Builder;
+} // namespace Gtk
+
+class SPDocument;
 class SPObject;
 class SPItem;
 
-namespace Glib {
-class Timer;
-}
-
 namespace Inkscape {
-class Drawing;
-namespace UI {
-namespace Dialog {
 
-class ExportPreview : public Gtk::Image
+class Drawing;
+
+namespace UI::Dialog {
+
+class ExportPreview;
+
+class PreviewDrawing final
 {
 public:
-    ExportPreview() {};
+    PreviewDrawing(SPDocument *document);
+    ~PreviewDrawing();
+
+    bool render(ExportPreview *widget, std::uint32_t bg, SPItem const *item, unsigned size, Geom::OptRect const &dboxIn, bool only_item = false);
+    void set_shown_items(std::vector<SPItem const *> &&list = {});
+
+private:
+    void destruct();
+    void construct();
+
+    SPDocument *_document = nullptr;
+    std::shared_ptr<Inkscape::Drawing> _drawing;
+    unsigned _visionkey = 0;
+    bool _to_destruct = false;
+
+    std::vector<SPItem const *> _shown_items;
+    Inkscape::auto_connection _construct_idle;
+};
+
+class ExportPreview final : public Gtk::Image
+{
+public:
+    ExportPreview() = default;
+    ExportPreview(BaseObjectType *cobj, Glib::RefPtr<Gtk::Builder> const &) : Gtk::Image(cobj) {}
+
     ~ExportPreview() override;
 
-    ExportPreview(BaseObjectType* cobject, const Glib::RefPtr<Gtk::Builder>& refGlade):Gtk::Image(cobject){};
+    void setDrawing(std::shared_ptr<PreviewDrawing> drawing);
+    void setItem(SPItem const *item, bool is_layer = false);
+    void setBox(Geom::Rect const &bbox);
+    void queueRefresh();
+    void resetPixels(bool new_size = false);
+    void setSize(int newSize);
+    void setPreview(Cairo::RefPtr<Cairo::ImageSurface>);
+    void setBackgroundColor(std::uint32_t bg_color);
+
+    static std::shared_ptr<Inkscape::Drawing> makeDrawing(SPDocument *doc);
+
 private:
     int size = 128; // size of preview image
-    bool isLastHide = false;
-    SPDocument *_document = nullptr;
-    SPItem *_item = nullptr;
+    sigc::connection refresh_conn;
+
+    bool _is_layer = false;
+    SPItem const *_item = nullptr;
     Geom::OptRect _dbox;
 
-    Drawing *drawing = nullptr;
-    unsigned int visionkey = 0;
-    Glib::Timer *timer = nullptr;
-    Glib::Timer *renderTimer = nullptr;
-    bool pending = false;
-    gdouble minDelay = 0.1;
+    std::shared_ptr<PreviewDrawing> _drawing;
+    std::uint32_t _bg_color = 0;
 
-    std::vector<SPItem *> _hidden_excluded;
-    bool _hidden_requested = false;
-public:
-    void setDocument(SPDocument *document);
-    void refreshHide(const std::vector<SPItem *> &list = {});
-    void hide_other_items_recursively(SPObject *o, const std::vector<SPItem *> &list);
-    void setItem(SPItem *item);
-    void setDbox(double x0, double x1, double y0, double y1);
-    void queueRefresh();
-    void resetPixels();
-
-    void setSize(int newSize)
-    {
-        size = newSize;
-        resetPixels();
-    }
-private:
-    void refreshPreview();
-    void renderPreview();
-    bool refreshCB();
-    void performHide(const std::vector<SPItem *> *list);
+    Inkscape::auto_connection _render_idle;
 };
-} // namespace Dialog
-} // namespace UI
+
+} // namespace UI::Dialog
+
 } // namespace Inkscape
-#endif
+
+#endif // INKSCAPE_UI_WIDGET_EXPORT_PREVIEW_H
 
 /*
   Local Variables:

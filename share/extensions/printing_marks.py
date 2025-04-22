@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 #
 # Authors:
@@ -229,17 +229,7 @@ class PrintingMarks(inkex.EffectExtension):
                 group.add(rect)
                 i += 0.1
 
-    def effect(self):
-        self.mark_size = self.svg.viewport_to_unit("1cm")
-        self.min_mark_margin = self.svg.viewport_to_unit("3mm")
-
-        if self.options.where == "selection":
-            bbox = self.svg.selection.bounding_box()
-            if bbox is None:
-                raise inkex.AbortExtension(_("Selection is empty"))
-        else:
-            bbox = self.svg.get_page_bbox()
-
+    def draw_effect(self, bbox, name=""):
         # Get SVG document dimensions
         # self.width must be replaced by bbox.right. same to others.
         svg = self.document.getroot()
@@ -284,22 +274,24 @@ class PrintingMarks(inkex.EffectExtension):
         middle_vertical = bbox.top + (bbox.height / 2)
         middle_horizontal = bbox.left + (bbox.width / 2)
 
-        # Test if printing-marks layer existis
-        layer = self.svg.xpath(
-            '//*[@id="printing-marks" and @inkscape:groupmode="layer"]'
-        )
-        if layer:
-            svg.remove(layer[0])  # remove if it existis
+        # Construct layer id and layer name
+        layer_id = "printing-marks"
+        layer_name = "Printing Marks"
+        if name != "":
+            layer_id += "-" + name
+            layer_name += " " + name
+
         # Create a new layer
-        layer = svg.add(inkex.Layer.new("Printing Marks"))
-        layer.set("id", "printing-marks")
+        layer = svg.add(inkex.Layer.new(layer_name))
+        layer.set("id", layer_id)
         layer.set("sodipodi:insensitive", "true")
 
         # Crop Mark
         if self.options.crop_marks:
             # Create a group for Crop Mark
-            g_crops = layer.add(inkex.Group(id="CropMarks"))
+            g_crops = layer.add(inkex.Group())
             g_crops.label = "CropMarks"
+            g_crops.set("id", "CropMarks" + name)
 
             # Top left Mark
             self.draw_crop_line(
@@ -378,7 +370,7 @@ class PrintingMarks(inkex.EffectExtension):
             # Create a group for Bleed Mark
             g_bleed = layer.add(inkex.Group())
             g_bleed.label = "BleedMarks"
-            g_bleed.set("id", "BleedMarks")
+            g_bleed.set("id", "BleedMarks" + name)
 
             # Top left Mark
             self.draw_bleed_line(
@@ -457,7 +449,7 @@ class PrintingMarks(inkex.EffectExtension):
             # Create a group for Registration Mark
             g_center = layer.add(inkex.Group())
             g_center.label = "RegistrationMarks"
-            g_center.set("id", "RegistrationMarks")
+            g_center.set("id", "RegistrationMarks" + name)
             # Left Mark
             cx = max(bml + offset, self.min_mark_margin)
             self.draw_reg_marks(
@@ -503,7 +495,7 @@ class PrintingMarks(inkex.EffectExtension):
             # Create a group for Star Target
             g_center = layer.add(inkex.Group())
             g_center.label = "StarTarget"
-            g_center.set("id", "StarTarget")
+            g_center.set("id", "StarTarget" + name)
 
             if bbox.height < bbox.width:
                 # Left Star
@@ -545,7 +537,7 @@ class PrintingMarks(inkex.EffectExtension):
             # Create a group for Colour Bars
             g_center = layer.add(inkex.Group())
             g_center.label = "ColourBars"
-            g_center.set("id", "PrintingColourBars")
+            g_center.set("id", "PrintingColourBars" + name)
 
             if bbox.height > bbox.width:
                 # Left Bars
@@ -595,7 +587,7 @@ class PrintingMarks(inkex.EffectExtension):
             # Create a group for Page Information
             g_pag_info = layer.add(inkex.Group())
             g_pag_info.label = "PageInformation"
-            g_pag_info.set("id", "PageInformation")
+            g_pag_info.set("id", "PageInformation" + name)
             y_margin = max(bmb + offset, self.min_mark_margin)
             font_size = self.svg.viewport_to_unit("9pt")
             txt_attribs = {
@@ -616,6 +608,37 @@ class PrintingMarks(inkex.EffectExtension):
                 + " "
                 + self.options.unit
             )
+
+    def remove_layers(self):
+        # Find layers with id starting with "printing-marks" and remove them
+        layers = self.svg.xpath(
+            '//*[starts-with(@id, "printing-marks") and @inkscape:groupmode="layer"]'
+        )
+        for layer in layers:
+            self.document.getroot().remove(layer)
+
+    def effect(self):
+        self.mark_size = self.svg.viewport_to_unit("1cm")
+        self.min_mark_margin = self.svg.viewport_to_unit("3mm")
+
+        if self.options.where == "selection":
+            bbox = self.svg.selection.bounding_box()
+            if bbox is None:
+                raise inkex.AbortExtension(_("Selection is empty"))
+
+            self.remove_layers()
+            self.draw_effect(bbox)
+        else:
+            pages = self.svg.namedview.get_pages()
+
+            self.remove_layers()
+
+            # Handle single-page document
+            if len(pages) < 2:
+                self.draw_effect(self.svg.get_page_bbox(), "0")
+            else:
+                for p, page in enumerate(pages):
+                    self.draw_effect(page.bounding_box, str(p))
 
 
 if __name__ == "__main__":

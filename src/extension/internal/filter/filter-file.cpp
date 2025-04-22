@@ -8,21 +8,18 @@
 
 #include "filter.h"
 
-#include "io/sys.h"
+/* System includes */
+#include <glibmm/i18n.h>
+
+/* Inkscape */
 #include "io/resource.h"
 #include "io/stream/inkscapestream.h"
-
-/* Directory includes */
-#include "path-prefix.h"
-#include "inkscape.h"
+#include "xml/repr.h"  // sp_repr_read_file
 
 /* Extension */
 #include "extension/extension.h"
 #include "extension/system.h"
 
-/* System includes */
-#include <glibmm/i18n.h>
-#include <glibmm/fileutils.h>
 
 using namespace Inkscape::IO::Resource;
 
@@ -66,6 +63,9 @@ filters_load_file (Glib::ustring filename, gchar * menuname)
 void Filter::filters_all_files()
 {
     for(auto &filename: get_filenames(USER, FILTERS, {".svg"})) {
+        filters_load_file(filename, _("Personal"));
+    }
+    for(auto &filename: get_filenames(SHARED, FILTERS, {".svg"})) {
         filters_load_file(filename, _("Personal"));
     }
     for(auto &filename: get_filenames(SYSTEM, FILTERS, {".svg"})) {
@@ -127,7 +127,7 @@ Filter::filters_load_node (Inkscape::XML::Node *node, gchar * menuname)
 	mywriter writer;
 	sp_repr_write_stream(node, writer, 0, FALSE, g_quark_from_static_string("svg"), 0, 0);
 
-    Inkscape::Extension::build_from_mem(xml_str, new Filter(g_strdup(writer.c_str())));
+    Inkscape::Extension::build_from_mem(xml_str, std::make_unique<Filter>(g_strdup(writer.c_str())));
 	g_free(xml_str);
     return;
 }

@@ -7,27 +7,21 @@
 
 #include "colorpicker.h"
 
-#include <gtkmm.h>
-
-#include "color.h"
-#include "document-undo.h"
-#include "document.h"
-#include "inkscape.h"
-
-#include "live_effects/effect.h"
-#include "live_effects/parameter/colorpicker.h"
-
-#include "svg/stringstream.h"
-#include "svg/svg-color.h"
-#include "svg/svg.h"
-
-#include "ui/icon-names.h"
-#include "ui/widget/registered-widget.h"
-
 #include <glibmm/i18n.h>
+#include <gtkmm/box.h>
+
+#include "document-undo.h"                       // for DocumentUndo
+#include "live_effects/effect.h"                 // for Effect
+#include "live_effects/parameter/colorpicker.h"  // for ColorPickerParam
+#include "svg/svg-color.h"                       // for guint32
+#include "ui/icon-names.h"                       // for INKSCAPE_ICON
+#include "ui/pack.h"                             // for pack_start
+#include "ui/widget/registered-widget.h"         // for RegisteredColorPicker
+#include "util/safe-printf.h"                    // for safeprintf
+
+class SPDocument;
 
 namespace Inkscape {
-
 namespace LivePathEffect {
 
 ColorPickerParam::ColorPickerParam( const Glib::ustring& label, const Glib::ustring& tip,
@@ -37,7 +31,6 @@ ColorPickerParam::ColorPickerParam( const Glib::ustring& label, const Glib::ustr
       value(default_color),
       defvalue(default_color)
 {
-
 }
 
 void
@@ -91,7 +84,7 @@ Glib::ustring
 ColorPickerParam::param_getSVGValue() const
 {
     gchar c[32];
-    sprintf(c, "#%08x", value);
+    safeprintf(c, "#%08x", value);
     return c;
 }
 
@@ -99,35 +92,35 @@ Glib::ustring
 ColorPickerParam::param_getDefaultSVGValue() const
 {
     gchar c[32];
-    sprintf(c, "#%08x", defvalue);
+    safeprintf(c, "#%08x", defvalue);
     return c;
 }
 
 Gtk::Widget *
 ColorPickerParam::param_newWidget()
 {
-    Gtk::Box *hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
+    auto const hbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL, 2);
+    hbox->property_margin().set_value(5);
 
-    hbox->set_border_width(5);
-    hbox->set_homogeneous(false);
-    hbox->set_spacing(2);
-    Inkscape::UI::Widget::RegisteredColorPicker * colorpickerwdg =
-        new Inkscape::UI::Widget::RegisteredColorPicker( param_label,
-                                                         param_label,
-                                                         param_tooltip,
-                                                         param_key,
-                                                         param_key + "_opacity_LPE",
-                                                        *param_wr,
-                                                         param_effect->getRepr(),
-                                                         param_effect->getSPDoc() );
-    SPDocument *document = param_effect->getSPDoc();
-    bool saved = DocumentUndo::getUndoSensitive(document);
-    DocumentUndo::setUndoSensitive(document, false);
-    colorpickerwdg->setRgba32(value);
-    DocumentUndo::setUndoSensitive(document, saved);
+    auto const colorpickerwdg = Gtk::make_managed<UI::Widget::RegisteredColorPicker>( param_label,
+                                                                                      param_label,
+                                                                                      param_tooltip,
+                                                                                      param_key,
+                                                                                      param_key + "_opacity_LPE",
+                                                                                     *param_wr,
+                                                                                      param_effect->getRepr(),
+                                                                                      param_effect->getSPDoc() );
+
+    {
+        SPDocument *document = param_effect->getSPDoc();
+        DocumentUndo::ScopedInsensitive _no_undo(document);
+        colorpickerwdg->setRgba32(value);
+    }
+
     colorpickerwdg->set_undo_parameters(_("Change color button parameter"), INKSCAPE_ICON("dialog-path-effects"));
-    hbox->pack_start(*dynamic_cast<Gtk::Widget *> (colorpickerwdg), true, true);
-    return dynamic_cast<Gtk::Widget *> (hbox);
+
+    UI::pack_start(*hbox, *colorpickerwdg, true, true);
+    return hbox;
 }
 
 void
@@ -136,9 +129,7 @@ ColorPickerParam::param_setValue(const guint32 newvalue)
     value = newvalue;
 }
 
-
 } /* namespace LivePathEffect */
-
 } /* namespace Inkscape */
 
 /*

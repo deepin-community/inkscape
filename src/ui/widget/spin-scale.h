@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+/** \file
+ * Derived from and replaces SpinSlider
+ */
 /*
  * Author:
  *
@@ -8,22 +11,19 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-/*
- * Derived from and replaces SpinSlider
- */
-
 #ifndef INKSCAPE_UI_WIDGET_SPIN_SCALE_H
 #define INKSCAPE_UI_WIDGET_SPIN_SCALE_H
 
+#include <glibmm/refptr.h>
 #include <gtkmm/adjustment.h>
 #include <gtkmm/box.h>
 #include <gtkmm/togglebutton.h>
+#include <sigc++/signal.h>
+
 #include "attr-widget.h"
 #include "ink-spinscale.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 /**
  * Wrap the InkSpinScale class and attach an attribute.
@@ -31,23 +31,22 @@ namespace Widget {
  */
 class SpinScale : public Gtk::Box, public AttrWidget
 {
-
 public:
-    SpinScale(const Glib::ustring label, double value,
+    SpinScale(Glib::ustring label, double value,
               double lower, double upper,
               double step_increment, double page_increment, int digits,
-              const SPAttr a = SPAttr::INVALID, const Glib::ustring tip_text = "");
+              SPAttr a = SPAttr::INVALID, Glib::ustring const &tip_text = {});
 
     // Used by extensions
-    SpinScale(const Glib::ustring label,
+    SpinScale(Glib::ustring label,
               Glib::RefPtr<Gtk::Adjustment> adjustment, int digits,
-              const SPAttr a = SPAttr::INVALID, const Glib::ustring tip_text = "");
+              SPAttr a = SPAttr::INVALID, Glib::ustring const &tip_text = {});
 
     Glib::ustring get_as_attribute() const override;
     void set_from_attribute(SPObject*) override;
 
     // Shortcuts to _adjustment
-    Glib::SignalProxy0<void> signal_value_changed();
+    Glib::SignalProxy<void> signal_value_changed();
     double get_value() const;
     void set_value(const double);
     void set_focuswidget(GtkWidget *widget);
@@ -57,10 +56,8 @@ private:
     InkSpinScale _inkspinscale;
 
 public:
-    const decltype(_adjustment) get_adjustment() const;
-    decltype(_adjustment) get_adjustment();
+    decltype(_adjustment) const &get_adjustment();
 };
-
 
 /**
  * Contains two SpinScales for controlling number-opt-number attributes.
@@ -73,13 +70,13 @@ public:
     DualSpinScale(const Glib::ustring label1, const Glib::ustring label2,
                   double value, double lower, double upper,
                   double step_increment, double page_increment, int digits,
-                  const SPAttr a,
-                  const Glib::ustring tip_text1, const Glib::ustring tip_text2);
+                  SPAttr a,
+                  Glib::ustring const &tip_text1, Glib::ustring const &tip_text2);
 
     Glib::ustring get_as_attribute() const override;
     void set_from_attribute(SPObject*) override;
 
-    sigc::signal<void>& signal_value_changed();
+    sigc::signal<void ()>& signal_value_changed();
 
     const SpinScale& get_SpinScale1() const;
     SpinScale& get_SpinScale1();
@@ -91,14 +88,14 @@ public:
 private:
     void link_toggled();
     void update_linked();
-    sigc::signal<void> _signal_value_changed;
+    void set_link_active(bool link);
+    sigc::signal<void ()> _signal_value_changed;
     SpinScale _s1, _s2;
-    Gtk::ToggleButton _link;
+    bool _linked = true;
+    Gtk::Button _link;
 };
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 #endif // INKSCAPE_UI_WIDGET_SPIN_SCALE_H
 

@@ -11,13 +11,15 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "xml/repr.h"
-#include "attributes.h"
 #include "sp-font.h"
-#include "sp-glyph.h"
-#include "document.h"
 
-#include "display/nr-svgfonts.h"
+#include "attributes.h"                              // for SPAttr
+#include "document.h"                                // for SPDocument
+#include "sp-glyph.h"                                // for SPGlyph
+
+#include "object/sp-object.h"                        // for SPObject, SP_OBJ...
+#include "xml/document.h"                            // for Document
+#include "xml/node.h"                                // for Node
 
 
 //I think we should have extra stuff here and in the set method in order to set default value as specified at http://www.w3.org/TR/SVG/fonts.html
@@ -208,10 +210,9 @@ SPGlyph* SPFont::create_new_glyph(const char* name, const char* unicode) {
     Inkscape::GC::release(grepr);
 
     // get corresponding object
-    SPGlyph* g = SP_GLYPH(document->getObjectByRepr(grepr));
+    auto g = cast<SPGlyph>(document->getObjectByRepr(grepr));
 
     g_assert(g != nullptr);
-    g_assert(SP_IS_GLYPH(g));
 
     g->setCollectionPolicy(SPObject::COLLECT_WITH_PARENT);
 
@@ -227,7 +228,7 @@ void SPFont::sort_glyphs() {
 
     // collect all glyphs (SPGlyph and their representations) 
     for (auto&& node : children) {
-        if (auto g = dynamic_cast<SPGlyph*>(&node)) {
+        if (auto g = cast<SPGlyph>(&node)) {
             glyphs.emplace_back(g, g->getRepr());
             // keep representation around as it gets removed
             g->getRepr()->anchor();

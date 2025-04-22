@@ -17,40 +17,49 @@
 
 #include <unistd.h>
 
+#include <fstream>
 #include <map>
-
+#include <boost/stacktrace.hpp>
 #include <glibmm/regex.h>
-
-#include <gtkmm/icontheme.h>
-#include <gtkmm/messagedialog.h>
-
 #include <glibmm/i18n.h>
 #include <glibmm/miscutils.h>
 #include <glibmm/convert.h>
+#include <gtkmm/icontheme.h>
+#include <gtkmm/label.h>
+#include <gtkmm/messagedialog.h>
+#include <gtkmm/recentmanager.h>
+#include <gtkmm/textbuffer.h>
 
 #include "desktop.h"
-#include "device-manager.h"
 #include "document.h"
 #include "inkscape.h"
+#include "inkscape-application.h"
+#include "inkscape-version-info.h"
+#include "inkscape-window.h"
 #include "message-stack.h"
 #include "path-prefix.h"
+#include "selection.h"
 
+#include "color/cms-system.h"
 #include "debug/simple-event.h"
 #include "debug/event-tracker.h"
-
 #include "io/resource.h"
 #include "io/sys.h"
-
-#include "libnrtype/FontFactory.h"
-
+#include "libnrtype/font-factory.h"
 #include "object/sp-item-group.h"
 #include "object/sp-root.h"
-
+#include "io/resource.h"
+#include "ui/builder-utils.h"
 #include "ui/themes.h"
-#include "ui/dialog/debug.h"
+#include "ui/dialog-events.h"
+#include "ui/dialog-run.h"
+#include "ui/dialog/dialog-manager.h"
+#include "ui/dialog/dialog-window.h"
+#include "ui/themes.h"
 #include "ui/tools/tool-base.h"
-
-#include <fstream>
+#include "ui/util.h"
+#include "util/font-discovery.h"
+#include "util/units.h"
 
 // Inkscape::Application static members
 Inkscape::Application * Inkscape::Application::_S_inst = nullptr;
@@ -66,7 +75,7 @@ static void (* ill_handler)  (int) = SIG_DFL;
 static void (* bus_handler)  (int) = SIG_DFL;
 #endif
 
-#define SP_INDENT 8
+static constexpr int SP_INDENT = 8;
 
 /**  C++ification TODO list
  * - _S_inst should NOT need to be assigned inside the constructor, but if it isn't the Filters+Extensions menus break.
@@ -91,7 +100,7 @@ public:
         if (_useGui) {
             Gtk::MessageDialog err(primary, false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_OK, true);
             err.set_secondary_text(secondary);
-            err.run();
+            Inkscape::UI::dialog_run(err);
         } else {
             g_message("%s", primary.data());
             g_message("%s", secondary.data());
@@ -168,6 +177,14 @@ Application::instance()
     return *Application::_S_inst;
 }
 
+// create font-related singletons in the order in which they will be destroyed
+void create_singletons() {
+    // font discovery first, because it depends on font factory, so it needs to be destroyed first
+    FontDiscovery::get();
+    // font factory next, so it is destroyed after font discovery is stopped
+    FontFactory::get();
+}
+
 /* \brief Constructor for the application.
  *  Creates a new Inkscape::Application.
  *
@@ -180,6 +197,16 @@ Application::Application(bool use_gui) :
     using namespace Inkscape::IO::Resource;
     /* fixme: load application defaults */
 
+    // we need a app runing to know shared path
+    auto extensiondir_shared = get_path_string(SHARED, EXTENSIONS);
+    if (!extensiondir_shared.empty()) {
+        std::string pythonpath = extensiondir_shared;
+        auto pythonpath_old = Glib::getenv("PYTHONPATH");
+        if (!pythonpath_old.empty()) {
+            pythonpath += G_SEARCHPATH_SEPARATOR + pythonpath_old;
+        }
+        Glib::setenv("PYTHONPATH", pythonpath);
+    }
     segv_handler = signal (SIGSEGV, Application::crash_handler);
     abrt_handler = signal (SIGABRT, Application::crash_handler);
     fpe_handler  = signal (SIGFPE,  Application::crash_handler);
@@ -187,6 +214,8 @@ Application::Application(bool use_gui) :
 #ifndef _WIN32
     bus_handler  = signal (SIGBUS,  Application::crash_handler);
 #endif
+
+    create_singletons();
 
     // \TODO: this belongs to Application::init but if it isn't here
     // then the Filters and Extensions menus don't work.
@@ -206,13 +235,14 @@ Application::Application(bool use_gui) :
     if (use_gui) {
         using namespace Inkscape::IO::Resource;
         auto icon_theme = Gtk::IconTheme::get_default();
-        icon_theme->prepend_search_path(get_path_ustring(SYSTEM, ICONS));
-        icon_theme->prepend_search_path(get_path_ustring(USER, ICONS));
+        icon_theme->prepend_search_path(get_path_string(SYSTEM, ICONS));
+        icon_theme->prepend_search_path(get_path_string(SHARED, ICONS));
+        icon_theme->prepend_search_path(get_path_string(USER, ICONS));
         themecontext = new Inkscape::UI::ThemeContext();
         themecontext->add_gtk_css(false);
-        auto scale = prefs->getDoubleLimited("/theme/fontscale", 100, 50, 150);
-        themecontext->adjust_global_font_scale(scale / 100.0);
-        Inkscape::DeviceManager::getManager().loadConfig();
+        auto scale = prefs->getDoubleLimited(UI::ThemeContext::get_font_scale_pref_path(), 100, 50, 150);
+        themecontext->adjustGlobalFontScale(scale / 100.0);
+        Inkscape::UI::ThemeContext::initialize_source_syntax_styles();
     }
 
     /* set language for user interface according setting in preferences */
@@ -229,20 +259,6 @@ Application::Application(bool use_gui) :
 #endif
     }
 
-    /* DebugDialog redirection.  On Linux, default to OFF, on Win32, default to ON.
-     * Use only if use_gui is enabled
-     */
-#ifdef _WIN32
-#define DEFAULT_LOG_REDIRECT true
-#else
-#define DEFAULT_LOG_REDIRECT false
-#endif
-
-    if (use_gui && prefs->getBool("/dialogs/debug/redirect", DEFAULT_LOG_REDIRECT))
-    {
-        Inkscape::UI::Dialog::DebugDialog::getInstance()->captureLogMessages();
-    }
-
     if (use_gui)
     {
         Inkscape::UI::Tools::init_latin_keys_group();
@@ -251,27 +267,30 @@ Application::Application(bool use_gui) :
         trackalt(guint(prefs->getInt("/options/trackalt/value", 0)));
 
         /* update highlight colors when theme changes */
-        themecontext->getChangeThemeSignal().connect([=](){
-            if (auto desktop = active_desktop()) {
-                set_default_highlight_colors(themecontext->getHighlightColors(desktop->getToplevel()));
-            }
+        themecontext->getChangeThemeSignal().connect([this](){
+            themecontext->themechangecallback();
         });
     }
 
     /* Initialize font factory */
-    font_factory *factory = font_factory::Default();
+    auto &factory = FontFactory::get();
     if (prefs->getBool("/options/font/use_fontsdir_system", true)) {
         char const *fontsdir = get_path(SYSTEM, FONTS);
-        factory->AddFontsDir(fontsdir);
+        factory.AddFontsDir(fontsdir);
     }
+    // we keep user font dir for simplicity
     if (prefs->getBool("/options/font/use_fontsdir_user", true)) {
+        char const *fontsdirshared = get_path(SHARED, FONTS);
+        if (fontsdirshared) {
+            factory.AddFontsDir(fontsdirshared);
+        }
         char const *fontsdir = get_path(USER, FONTS);
-        factory->AddFontsDir(fontsdir);
+        factory.AddFontsDir(fontsdir);
     }
     Glib::ustring fontdirs_pref = prefs->getString("/options/font/custom_fontdirs");
     std::vector<Glib::ustring> fontdirs = Glib::Regex::split_simple("\\|", fontdirs_pref);
     for (auto &fontdir : fontdirs) {
-        factory->AddFontsDir(fontdir.c_str());
+        factory.AddFontsDir(fontdir.c_str());
     }
 }
 
@@ -282,11 +301,11 @@ Application::~Application()
     }
 
     Inkscape::Preferences::unload();
+    Inkscape::CMSSystem::unload();
 
     _S_inst = nullptr; // this will probably break things
 
     refCount = 0;
-    // gtk_main_quit ();
 }
 
 /** Sets the keyboard modifier to map to Alt.
@@ -416,6 +435,21 @@ Application::crash_handler (int /*signum*/)
                 sp_repr_save_stream (repr->document(), file, SP_SVG_NS_URI);
                 savednames.push_back(g_strdup (c));
                 fclose (file);
+
+                // Attempt to add the emergency save to the recent files, so users can find it on restart
+                auto recentmanager = Gtk::RecentManager::get_default();
+                if (recentmanager && Glib::path_is_absolute(c)) {
+                    Glib::ustring uri = Glib::filename_to_uri(c);
+                    recentmanager->add_item(uri, {
+                        docname,                 // Name
+                        "Emergency Saved Image", // Description
+                        "image/svg+xml",         // Mime type
+                        "org.inkscape.Inkscape", // App name
+                        "",                      // Execute
+                        {"Crash"},               // Groups
+                        true,                    // Private
+                    });
+                }
             } else {
                 failednames.push_back((doc->getDocumentName()) ? g_strdup(doc->getDocumentName()) : g_strdup (_("Untitled document")));
             }
@@ -446,7 +480,7 @@ Application::crash_handler (int /*signum*/)
 
     /* Show nice dialog box */
 
-    char const *istr = _("Inkscape encountered an internal error and will close now.\n");
+    char const *istr = "";
     char const *sstr = _("Automatic backups of unsaved documents were done to the following locations:\n");
     char const *fstr = _("Automatic backup of the following documents failed:\n");
     gint nllen = strlen ("\n");
@@ -494,13 +528,20 @@ Application::crash_handler (int /*signum*/)
     *(b + pos) = '\0';
 
     if ( exists() && instance().use_gui() ) {
-        GtkWidget *msgbox = gtk_message_dialog_new (nullptr, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s", b);
-        gtk_dialog_run (GTK_DIALOG (msgbox));
-        gtk_widget_destroy (msgbox);
-    }
-    else
-    {
+        try {
+            auto builder = UI::create_builder("dialog-crash.glade");
+            UI::get_widget<Gtk::Label>(builder, "message").set_label(b);
+            UI::get_object<Gtk::TextBuffer>(builder, "stacktrace")->set_text("<pre>\n" + boost::stacktrace::to_string(boost::stacktrace::stacktrace()) + "</pre>\n<details><summary>System info</summary>\n" + debug_info() + "\n</details>");
+            Gtk::MessageDialog &m = UI::get_widget<Gtk::MessageDialog>(builder, "crash_dialog");
+            sp_transientize(m.Gtk::Widget::gobj());
+            UI::dialog_run(m);
+        } catch (const Glib::Error &ex) {
+            g_message("Glade file loading failed for crash handler... Anyway, error was: %s", b);
+            std::cerr << boost::stacktrace::stacktrace();
+        }
+    } else {
         g_message( "Error: %s", b );
+        std::cerr << boost::stacktrace::stacktrace();
     }
     g_free (b);
 
@@ -806,15 +847,6 @@ Application::sole_desktop_for_document(SPDesktop const &desktop) {
 # HELPERS
 #####################*/
 
-void
-Application::refresh_display ()
-{
-    for (auto & _desktop : *_desktops) {
-        _desktop->requestRedraw();
-    }
-}
-
-
 /**
  *  Handler for Inkscape's Exit verb.  This emits the shutdown signal,
  *  saves the preferences if appropriate, and quits.
@@ -826,7 +858,6 @@ Application::exit ()
     signal_shut_down.emit();
 
     Inkscape::Preferences::unload();
-    //gtk_main_quit ();
 }
 
 void

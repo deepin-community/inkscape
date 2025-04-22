@@ -20,34 +20,15 @@
 
 #include <glibmm/ustring.h>
 
-typedef struct _GtkWidget GtkWidget;
+class SPDesktop;
 
-namespace Inkscape {
-class Verb;
+void sp_ui_new_view();
+void sp_ui_close_view();
+void sp_ui_import_files(char *buffer);
+void sp_ui_error_dialog(char const *message);
+bool sp_ui_overwrite_file(std::string const &filename);
 
-namespace UI {
-namespace View {
-class View;
-} // namespace View
-} // namespace UI
-} // namespace Inkscape
-
-/**
- * \param widget unused
- */
-void sp_ui_close_view (GtkWidget *widget);
-
-void sp_ui_new_view ();
-
-void sp_ui_import_files(gchar *buffer);
-
-Glib::ustring getLayoutPrefPath( Inkscape::UI::View::View *view );
-
-/**
- *
- */
-void sp_ui_error_dialog (char const* message);
-bool sp_ui_overwrite_file (char const* filename);
+Glib::ustring getLayoutPrefPath(SPDesktop *desktop);
 
 #endif // SEEN_SP_INTERFACE_H
 

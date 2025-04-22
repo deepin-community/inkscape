@@ -32,6 +32,8 @@
 
 #include <2geom/transforms.h>
 #include <2geom/pathvector.h>
+#include <2geom/point.h>
+#include <2geom/rect.h>
 #include <cairo.h>
 #include <glib.h>
 #include <glibmm/i18n.h>
@@ -52,30 +54,23 @@
 #include "style-internal.h"
 #include "display/cairo-utils.h"
 #include "display/curve.h"
-#include "extension/system.h"
 #include "filter-chemistry.h"
 #include "helper/pixbuf-ops.h"
 #include "helper/png-write.h"
-
-#include "io/sys.h"
-
 #include "include/source_date_epoch.h"
-
 #include "libnrtype/Layout-TNG.h"
 
 #include "object/sp-anchor.h"
 #include "object/sp-clippath.h"
-#include "object/sp-defs.h"
 #include "object/sp-flowtext.h"
 #include "object/sp-hatch-path.h"
 #include "object/sp-image.h"
 #include "object/sp-item-group.h"
 #include "object/sp-item.h"
-#include "object/sp-linear-gradient.h"
 #include "object/sp-marker.h"
+#include "object/sp-marker-loc.h"
 #include "object/sp-mask.h"
 #include "object/sp-page.h"
-#include "object/sp-pattern.h"
 #include "object/sp-radial-gradient.h"
 #include "object/sp-root.h"
 #include "object/sp-shape.h"
@@ -137,100 +132,158 @@ Here comes the rendering part which could be put into the 'render' methods of SP
 */
 
 /* The below functions are copy&pasted plus slightly modified from *_invoke_print functions. */
-static void sp_item_invoke_render(SPItem *item, CairoRenderContext *ctx, SPItem *origin = nullptr, SPPage *page = nullptr);
-static void sp_group_render(SPGroup *group, CairoRenderContext *ctx, SPItem *origin = nullptr, SPPage *page = nullptr);
-static void sp_anchor_render(SPAnchor *a, CairoRenderContext *ctx);
-static void sp_use_render(SPUse *use, CairoRenderContext *ctx, SPPage *page = nullptr);
-static void sp_shape_render(SPShape *shape, CairoRenderContext *ctx, SPItem *origin = nullptr);
-static void sp_text_render(SPText *text, CairoRenderContext *ctx);
-static void sp_flowtext_render(SPFlowtext *flowtext, CairoRenderContext *ctx);
-static void sp_image_render(SPImage *image, CairoRenderContext *ctx);
-static void sp_symbol_render(SPSymbol *symbol, CairoRenderContext *ctx, SPItem *origin, SPPage *page);
-static void sp_asbitmap_render(SPItem *item, CairoRenderContext *ctx, SPPage *page = nullptr);
+static void sp_item_invoke_render(SPItem const *item, CairoRenderContext *ctx, SPItem const *origin = nullptr, SPPage const *page = nullptr);
+static void sp_group_render(SPGroup const *group, CairoRenderContext *ctx, SPItem const *origin = nullptr, SPPage const *page = nullptr);
+static void sp_anchor_render(SPAnchor const *a, CairoRenderContext *ctx, SPItem const *origin, SPPage const *page);
+static void sp_use_render(SPUse const *use, CairoRenderContext *ctx, SPPage const *page = nullptr);
+static void sp_shape_render(SPShape const *shape, CairoRenderContext *ctx, SPItem const *origin = nullptr);
+static void sp_text_render(SPText const *text, CairoRenderContext *ctx);
+static void sp_flowtext_render(SPFlowtext const *flowtext, CairoRenderContext *ctx);
+static void sp_image_render(SPImage const *image, CairoRenderContext *ctx);
+static void sp_symbol_render(SPSymbol const *symbol, CairoRenderContext *ctx, SPItem const *origin, SPPage const *page);
+static void sp_asbitmap_render(SPItem const *item, CairoRenderContext *ctx, SPPage const *page = nullptr);
 
-static void sp_shape_render_invoke_marker_rendering(SPMarker* marker, Geom::Affine tr, SPStyle* style, CairoRenderContext *ctx, SPItem *origin)
+static void sp_shape_render_invoke_marker_rendering(SPMarker *marker, Geom::Affine tr, CairoRenderContext *ctx, SPItem const *origin)
 {
-    bool render = true;
-    if (marker->markerUnits == SP_MARKER_UNITS_STROKEWIDTH) {
-        if (style->stroke_width.computed > 1e-9) {
-            tr = Geom::Scale(style->stroke_width.computed) * tr;
-        } else {
-            render = false; // stroke width zero and marker is thus scaled down to zero, skip
-        }
-    }
-
-    if (render) {
-        SPItem* marker_item = sp_item_first_item_child(marker);
-        if (marker_item) {
-            tr = (Geom::Affine)marker_item->transform * (Geom::Affine)marker->c2p * tr;
-            Geom::Affine old_tr = marker_item->transform;
-            marker_item->transform = tr;
-            ctx->getRenderer()->renderItem (ctx, marker_item, origin);
-            marker_item->transform = old_tr;
-        }
+    if (auto marker_item = sp_item_first_item_child(marker)) {
+        tr = marker_item->transform * marker->c2p * tr;
+        Geom::Affine old_tr = marker_item->transform;
+        marker_item->transform = tr;
+        ctx->getRenderer()->renderItem(ctx, marker_item, origin);
+        marker_item->transform = old_tr;
     }
 }
 
-static void sp_shape_render(SPShape *shape, CairoRenderContext *ctx, SPItem *origin)
+/** Compute the final page dimensions in the resulting PS or PDF.
+ *
+ * Cairo PS and PDF surfaces only work with integer dimensions, taking ceil() of the doubles
+ * passed as arguments. To work around this limitation, we want to "lie" about page dimensions.
+ *
+ * -> If the page dimension is very very slightly larger than an integer (within an epsilon),
+ *    we snap it to that integer. This can happen due to rounding errors in transforms.
+ * -> Otherwise, we round the page dimension up to the next integer.
+ */
+static Geom::Point compute_final_page_dimensions(Geom::Rect const &page_rect) {
+    Geom::Point result;
+    auto const dims = page_rect.dimensions();
+
+    for (auto const axis : {Geom::X, Geom::Y}) {
+        double const floor_size = std::floor(dims[axis]);
+        result[axis] = (dims[axis] > floor_size + Geom::EPSILON) ? floor_size + 1.0 : floor_size;
+    }
+    return result;
+}
+
+/** A helper RAII class to manage the temporary rewriting of styles
+ * needed to support context-fill and context-stroke values for fill
+ * and stroke paints. The destructor restores the old values.
+ */
+class ContextPaintManager
+{
+public:
+    ContextPaintManager(SPStyle *target_style, SPItem const *style_origin)
+        : _managed_style{target_style}
+        , _origin{style_origin}
+    {
+        auto const fill_origin = target_style->fill.paintOrigin;
+        if (fill_origin == SP_CSS_PAINT_ORIGIN_CONTEXT_FILL) {
+            _copyPaint(&target_style->fill, _findContextPaint(true));
+        } else if (fill_origin == SP_CSS_PAINT_ORIGIN_CONTEXT_STROKE) {
+            _copyPaint(&target_style->fill, _findContextPaint(false));
+        }
+
+        auto const stroke_origin = target_style->stroke.paintOrigin;
+        if (stroke_origin == SP_CSS_PAINT_ORIGIN_CONTEXT_FILL) {
+            _copyPaint(&target_style->stroke, _findContextPaint(true));
+        } else if (stroke_origin == SP_CSS_PAINT_ORIGIN_CONTEXT_STROKE) {
+            _copyPaint(&target_style->stroke, _findContextPaint(false));
+        }
+    }
+
+    ~ContextPaintManager()
+    {
+        // Restore rewritten paints.
+        if (_rewrote_fill) {
+            _managed_style->fill = _old_fill;
+        }
+        if (_rewrote_stroke) {
+            _managed_style->stroke = _old_stroke;
+        }
+    }
+
+private:
+    /** @brief Find the paint that context-fill or context-stroke is referring to.
+     *
+     * @param is_fill If true, handle context-fill, otherwise context-stroke.
+     * @return The paint relevant to the specified context.
+     */
+    SPIPaint _findContextPaint(bool is_fill) const
+    {
+        if (auto *clone = cast<SPUse>(_origin); clone && clone->child) {
+            // Copy the paint of the child and merge with the parent's. This is similar
+            // to style merge operations performed when unlinking a clone, but here it's
+            // done only for a paint.
+            SPIPaint paint = *clone->child->style->getFillOrStroke(is_fill);
+            paint.merge(clone->style->getFillOrStroke(is_fill));
+            return paint;
+        }
+        return *_origin->style->getFillOrStroke(is_fill);
+    }
+
+    /** Copy paint from origin to destination, saving a copy of the old paint. */
+    template<typename PainT>
+    void _copyPaint(PainT *destination, SPIPaint paint)
+    {
+        // Keep a copy of the old paint
+        if constexpr (std::is_same<PainT, decltype(_old_fill)>::value) {
+            _rewrote_fill = true;
+            _old_fill = *destination;
+        } else if constexpr (std::is_same<PainT, decltype(_old_stroke)>::value) {
+            _rewrote_stroke = true;
+            _old_stroke = *destination;
+        }
+        static_assert(std::is_same_v<PainT, decltype(_old_fill)> || std::is_same_v<PainT, decltype(_old_stroke)>,
+                      "ContextPaintManager::_copyPaint() instantiated with neither fill nor stroke type.");
+        PainT new_value;
+        new_value.upcast()->operator=(paint);
+        *destination = new_value;
+    }
+
+    SPStyle *_managed_style;
+    SPItem const *_origin;
+    decltype(_managed_style->fill) _old_fill;
+    decltype(_managed_style->stroke) _old_stroke;
+    bool _rewrote_fill = false;
+    bool _rewrote_stroke = false;
+};
+
+static void sp_shape_render(SPShape const *shape, CairoRenderContext *ctx, SPItem const *origin)
 {
     if (!shape->curve()) {
         return;
     }
 
+    Geom::PathVector const &pathv = shape->curve()->get_pathvector();
+    if (pathv.empty()) {
+        return;
+    }
+
     Geom::OptRect pbox = shape->geometricBounds();
-    
     SPStyle* style = shape->style;
-    auto fill_origin = style->fill.paintOrigin;
-    auto stroke_origin = style->stroke.paintOrigin;
+    std::unique_ptr<ContextPaintManager> context_fs_manager;
 
     if (origin) {
         // If the shape is a child of a marker, we must set styles from the origin.
-        SPMarker *marker = nullptr;
         auto parentobj = shape->parent;
         while (parentobj) {
-            if (marker = dynamic_cast<SPMarker *>(parentobj)) {
+            if (is<SPMarker>(parentobj)) {
+                // Create a manager to temporarily rewrite any fill/stroke properties
+                // set to context-fill/context-stroke with usable values.
+                context_fs_manager = std::make_unique<ContextPaintManager>(style, origin);
                 break;
             }
             parentobj = parentobj->parent;
         }
-        if (marker) {
-            // Origin will ultimately be either the original object the marker
-            // was added to OR a use tag. See sp_use_render for where this object
-            // comes from when it's a clone.
-            SPStyle *styleorig   = origin->style;
-            bool iscolorfill     = styleorig->fill.isColor() || (styleorig->fill.isPaintserver() && !styleorig->getFillPaintServer()->isValid());
-            bool iscolorstroke   = styleorig->stroke.isColor() || (styleorig->stroke.isPaintserver() && !styleorig->getStrokePaintServer()->isValid());
-            bool fillctxfill     = style->fill.paintOrigin == SP_CSS_PAINT_ORIGIN_CONTEXT_FILL;
-            bool fillctxstroke   = style->fill.paintOrigin == SP_CSS_PAINT_ORIGIN_CONTEXT_STROKE;
-            bool strokectxfill   = style->stroke.paintOrigin == SP_CSS_PAINT_ORIGIN_CONTEXT_FILL;
-            bool strokectxstroke = style->stroke.paintOrigin == SP_CSS_PAINT_ORIGIN_CONTEXT_STROKE;
-
-            if (fillctxfill || fillctxstroke) {
-                if (fillctxfill ? iscolorfill : iscolorstroke) {
-                    style->fill.setColor(fillctxfill ? styleorig->fill.value.color : styleorig->stroke.value.color);
-                } else if (fillctxfill ? styleorig->fill.isPaintserver() : styleorig->stroke.isPaintserver()) {
-                    style->fill.value.href = fillctxfill ? styleorig->fill.value.href : styleorig->stroke.value.href;
-                } else {
-                    style->fill.setNone();
-                }
-            }
-            if (strokectxfill || strokectxstroke) {
-                if (strokectxfill ? iscolorfill : iscolorstroke) {
-                    style->stroke.setColor(strokectxfill ? styleorig->fill.value.color : styleorig->stroke.value.color);
-                } else if (strokectxfill ? styleorig->fill.isPaintserver() : styleorig->stroke.isPaintserver()) {
-                    style->stroke.value.href = strokectxfill ? styleorig->fill.value.href : styleorig->stroke.value.href;
-                } else {
-                    style->stroke.setNone();
-                }
-            }
-            style->fill.paintOrigin = SP_CSS_PAINT_ORIGIN_NORMAL;
-            style->stroke.paintOrigin = SP_CSS_PAINT_ORIGIN_NORMAL;
-        }
-    }
-
-    Geom::PathVector const &pathv = shape->curve()->get_pathvector();
-    if (pathv.empty()) {
-        return;
     }
 
     if (style->paint_order.layer[0] == SP_CSS_PAINT_ORDER_NORMAL ||
@@ -248,37 +301,32 @@ static void sp_shape_render(SPShape *shape, CairoRenderContext *ctx, SPItem *ori
         ctx->renderPathVector(pathv, style, pbox, CairoRenderContext::FILL_ONLY);
     }
 
+    // TODO: Factor marker rendering out into a separate function; reduce code duplication.
     // START marker
-    for (int i = 0; i < 2; i++) {  // SP_MARKER_LOC and SP_MARKER_LOC_START
-        if ( shape->_marker[i] ) {
-            SPMarker* marker = shape->_marker[i];
-            Geom::Affine tr;
-            if (marker->orient_mode == MARKER_ORIENT_AUTO) {
-                tr = sp_shape_marker_get_transform_at_start(pathv.begin()->front());
-            } else if (marker->orient_mode == MARKER_ORIENT_AUTO_START_REVERSE) {
-                tr = Geom::Rotate::from_degrees( 180.0 ) * sp_shape_marker_get_transform_at_start(pathv.begin()->front());
-            } else {
-                tr = Geom::Rotate::from_degrees(marker->orient.computed) * Geom::Translate(pathv.begin()->front().pointAt(0));
-            }
-            sp_shape_render_invoke_marker_rendering(marker, tr, style, ctx, origin ? origin : shape);
+    bool has_stroke = style->stroke_width.computed > 0.0;
+    for (int marker_type : {SP_MARKER_LOC, SP_MARKER_LOC_START}) {
+        if (!has_stroke)
+            continue;
+        if (SPMarker *marker = shape->_marker[marker_type]) {
+            Geom::Affine tr(sp_shape_marker_get_transform_at_start(pathv.begin()->front()));
+            tr = marker->get_marker_transform(tr, style->stroke_width.computed, true);
+            sp_shape_render_invoke_marker_rendering(marker, tr, ctx, origin ? origin : shape);
         }
     }
     // MID marker
-    for (int i = 0; i < 3; i += 2) {  // SP_MARKER_LOC and SP_MARKER_LOC_MID
-        if ( !shape->_marker[i] ) continue;
-        SPMarker* marker = shape->_marker[i];
+    for (int marker_type : {SP_MARKER_LOC, SP_MARKER_LOC_MID}) {
+        SPMarker *marker = shape->_marker[marker_type];
+        if (!marker || !has_stroke) {
+            continue;
+        }
         for(Geom::PathVector::const_iterator path_it = pathv.begin(); path_it != pathv.end(); ++path_it) {
             // START position
             if ( path_it != pathv.begin()
                  && ! ((path_it == (pathv.end()-1)) && (path_it->size_default() == 0)) ) // if this is the last path and it is a moveto-only, there is no mid marker there
             {
-                Geom::Affine tr;
-                if (marker->orient_mode != MARKER_ORIENT_ANGLE) {
-                    tr = sp_shape_marker_get_transform_at_start(path_it->front());
-                } else {
-                    tr = Geom::Rotate::from_degrees(marker->orient.computed) * Geom::Translate(path_it->front().pointAt(0));
-                }
-                sp_shape_render_invoke_marker_rendering(marker, tr, style, ctx, origin ? origin : shape);
+                Geom::Affine tr(sp_shape_marker_get_transform_at_start(path_it->front()));
+                tr = marker->get_marker_transform(tr, style->stroke_width.computed, false);
+                sp_shape_render_invoke_marker_rendering(marker, tr, ctx, origin ? origin : shape);
             }
             // MID position
             if (path_it->size_default() > 1) {
@@ -289,14 +337,9 @@ static void sp_shape_render(SPShape *shape, CairoRenderContext *ctx, SPItem *ori
                     /* Put marker between curve_it1 and curve_it2.
                      * Loop to end_default (so including closing segment), because when a path is closed,
                      * there should be a midpoint marker between last segment and closing straight line segment */
-                    Geom::Affine tr;
-                    if (marker->orient_mode != MARKER_ORIENT_ANGLE) {
-                        tr = sp_shape_marker_get_transform(*curve_it1, *curve_it2);
-                    } else {
-                        tr = Geom::Rotate::from_degrees(marker->orient.computed) * Geom::Translate(curve_it1->pointAt(1));
-                    }
-
-                    sp_shape_render_invoke_marker_rendering(marker, tr, style, ctx, origin ? origin : shape);
+                    Geom::Affine tr(sp_shape_marker_get_transform(*curve_it1, *curve_it2));
+                    tr = marker->get_marker_transform(tr, style->stroke_width.computed, false);
+                    sp_shape_render_invoke_marker_rendering(marker, tr, ctx, origin ? origin : shape);
 
                     ++curve_it1;
                     ++curve_it2;
@@ -305,21 +348,17 @@ static void sp_shape_render(SPShape *shape, CairoRenderContext *ctx, SPItem *ori
             // END position
             if ( path_it != (pathv.end()-1) && !path_it->empty()) {
                 Geom::Curve const &lastcurve = path_it->back_default();
-                Geom::Affine tr;
-                if (marker->orient_mode != MARKER_ORIENT_ANGLE) {
-                    tr = sp_shape_marker_get_transform_at_end(lastcurve);
-                } else {
-                    tr = Geom::Rotate::from_degrees(marker->orient.computed) * Geom::Translate(lastcurve.pointAt(1));
-                }
-                sp_shape_render_invoke_marker_rendering(marker, tr, style, ctx, origin ? origin : shape);
+                Geom::Affine tr = sp_shape_marker_get_transform_at_end(lastcurve);
+                tr = marker->get_marker_transform(tr, style->stroke_width.computed, false);
+                sp_shape_render_invoke_marker_rendering(marker, tr, ctx, origin ? origin : shape);
             }
         }
     }
     // END marker
-    for (int i = 0; i < 4; i += 3) {  // SP_MARKER_LOC and SP_MARKER_LOC_END
-        if ( shape->_marker[i] ) {
-            SPMarker* marker = shape->_marker[i];
-
+    for (int marker_type : {SP_MARKER_LOC, SP_MARKER_LOC_END}) {
+        if (!has_stroke)
+            continue;
+        if (SPMarker *marker = shape->_marker[marker_type]) {
             /* Get reference to last curve in the path.
              * For moveto-only path, this returns the "closing line segment". */
             Geom::Path const &path_last = pathv.back();
@@ -328,15 +367,9 @@ static void sp_shape_render(SPShape *shape, CairoRenderContext *ctx, SPItem *ori
                 index--;
             }
             Geom::Curve const &lastcurve = path_last[index];
-
-            Geom::Affine tr;
-            if (marker->orient_mode != MARKER_ORIENT_ANGLE) {
-                tr = sp_shape_marker_get_transform_at_end(lastcurve);
-            } else {
-                tr = Geom::Rotate::from_degrees(marker->orient.computed) * Geom::Translate(lastcurve.pointAt(1));
-            }
-
-            sp_shape_render_invoke_marker_rendering(marker, tr, style, ctx, origin ? origin : shape);
+            Geom::Affine tr = sp_shape_marker_get_transform_at_end(lastcurve);
+            tr = marker->get_marker_transform(tr, style->stroke_width.computed, false);
+            sp_shape_render_invoke_marker_rendering(marker, tr, ctx, origin ? origin : shape);
         }
     }
 
@@ -353,24 +386,19 @@ static void sp_shape_render(SPShape *shape, CairoRenderContext *ctx, SPItem *ori
                style->paint_order.layer[1] == SP_CSS_PAINT_ORDER_MARKER ) {
         ctx->renderPathVector(pathv, style, pbox, CairoRenderContext::FILL_ONLY);
     }
-
-    // Put the style's paint origin back, in case this shape is a marker
-    // which is rendered multple times.
-    style->fill.paintOrigin = fill_origin;
-    style->stroke.paintOrigin = stroke_origin;
 }
 
-static void sp_group_render(SPGroup *group, CairoRenderContext *ctx, SPItem *origin, SPPage *page)
+static void sp_group_render(SPGroup const *group, CairoRenderContext *ctx, SPItem const *origin, SPPage const *page)
 {
     CairoRenderer *renderer = ctx->getRenderer();
-    for (auto obj : group->childList(false)) {
-        if (SPItem *item = dynamic_cast<SPItem *>(obj)) {
+    for (auto &obj : group->children) {
+        if (auto item = cast<SPItem>(&obj)) {
             renderer->renderItem(ctx, item, origin, page);
         }
     }
 }
 
-static void sp_use_render(SPUse *use, CairoRenderContext *ctx, SPPage *page)
+static void sp_use_render(SPUse const *use, CairoRenderContext *ctx, SPPage const *page)
 {
     bool translated = false;
     CairoRenderer *renderer = ctx->getRenderer();
@@ -395,67 +423,79 @@ static void sp_use_render(SPUse *use, CairoRenderContext *ctx, SPPage *page)
     }
 }
 
-static void sp_text_render(SPText *text, CairoRenderContext *ctx)
+static void sp_text_render(SPText const *text, CairoRenderContext *ctx)
 {
     text->layout.showGlyphs(ctx);
 }
 
-static void sp_flowtext_render(SPFlowtext *flowtext, CairoRenderContext *ctx)
+static void sp_flowtext_render(SPFlowtext const *flowtext, CairoRenderContext *ctx)
 {
     flowtext->layout.showGlyphs(ctx);
 }
 
-static void sp_image_render(SPImage *image, CairoRenderContext *ctx)
+static void sp_image_render(SPImage const *image, CairoRenderContext *ctx)
 {
     if (!image->pixbuf) {
         return;
     }
-    if ((image->width.computed <= 0.0) || (image->height.computed <= 0.0)) {
+
+    double width = image->width.computed;
+    double height = image->height.computed;
+    if (width <= 0.0 || height <= 0.0) {
         return;
     }
 
-    int w = image->pixbuf->width();
-    int h = image->pixbuf->height();
-
+    double const w = static_cast<double>(image->pixbuf->width());
+    double const h = static_cast<double>(image->pixbuf->height());
     double x = image->x.computed;
     double y = image->y.computed;
-    double width = image->width.computed;
-    double height = image->height.computed;
 
     if (image->aspect_align != SP_ASPECT_NONE) {
-        calculatePreserveAspectRatio (image->aspect_align, image->aspect_clip, (double)w, (double)h,
-                                                     &x, &y, &width, &height);
+        calculatePreserveAspectRatio(image->aspect_align, image->aspect_clip, w, h, &x, &y, &width, &height);
     }
 
     if (image->aspect_clip == SP_ASPECT_SLICE && !ctx->getCurrentState()->has_overflow) {
         ctx->addClippingRect(image->x.computed, image->y.computed, image->width.computed, image->height.computed);
     }
 
-    Geom::Translate tp(x, y);
-    Geom::Scale s(width / (double)w, height / (double)h);
-    Geom::Affine t(s * tp);
-
-    ctx->renderImage(image->pixbuf, t, image->style);
+    Geom::Affine const transform = Geom::Scale(width / w, height / h) * Geom::Translate(x, y);
+    ctx->renderImage(image->pixbuf.get(), transform, image->style);
 }
 
-static void sp_anchor_render(SPAnchor *a, CairoRenderContext *ctx)
+static void sp_anchor_render(SPAnchor const *a, CairoRenderContext *ctx, SPItem const *origin, SPPage const *page)
 {
-    CairoRenderer *renderer = ctx->getRenderer();
+    if (a->href) {
+        // Raw linking, whatever the user said they wanted
+        auto link = Glib::ustring::compose("uri='%1'", a->href);
+        if (a->local_link) {
+            if (auto obj = a->local_link->getObject()) {
+                // We wanted to use the syntax page=%d here to link to pages, but
+                // cairo has an odd bug that only allows linking to previous pages
+                // So we link everything with a dest link instead.
+                link = Glib::ustring::compose("dest='%1'", obj->getId());
+            }
+        }
+        // Write a box for this hyperlink so it's contained and positioned correctly.
+        if (auto vbox = a->visualBounds()) {
+            // Convert from 92dpi (svg) to 72dpi (pdf) and apply item transforms as we are writing out the box directly.
+            auto static doc_scale = Geom::Scale(72.0 / 96.0);
+            auto bbox = *vbox * ctx->getItemTransform() * doc_scale;
+            link += Glib::ustring::compose(" rect=[%1 %2 %3 %4]", bbox.left(), bbox.top(), bbox.width(), bbox.height());
+        }
+        ctx->tagBegin(link.c_str());
+    }
 
-    std::vector<SPObject*> l(a->childList(false));
-    if (a->href)
-        ctx->tagBegin(a->href);
-    for(auto x : l){
-        SPItem *item = dynamic_cast<SPItem*>(x);
-        if (item) {
-            renderer->renderItem(ctx, item);
+    CairoRenderer *renderer = ctx->getRenderer();
+    for (auto const &object : a->children) {
+        if (auto item = cast<SPItem>(&object)) {
+            renderer->renderItem(ctx, item, origin, page);
         }
     }
     if (a->href)
         ctx->tagEnd();
 }
 
-static void sp_symbol_render(SPSymbol *symbol, CairoRenderContext *ctx, SPItem *origin, SPPage *page)
+static void sp_symbol_render(SPSymbol const *symbol, CairoRenderContext *ctx, SPItem const *origin, SPPage const *page)
 {
     if (!symbol->cloned) {
         return;
@@ -495,7 +535,7 @@ static void sp_symbol_render(SPSymbol *symbol, CairoRenderContext *ctx, SPItem *
     ctx->popState();
 }
 
-static void sp_root_render(SPRoot *root, CairoRenderContext *ctx)
+static void sp_root_render(SPRoot const *root, CairoRenderContext *ctx)
 {
     CairoRenderer *renderer = ctx->getRenderer();
 
@@ -513,17 +553,16 @@ static void sp_root_render(SPRoot *root, CairoRenderContext *ctx)
     This function converts the item to a raster image and includes the image into the cairo renderer.
     It is only used for filters and then only when rendering filters as bitmaps is requested.
 */
-static void sp_asbitmap_render(SPItem *item, CairoRenderContext *ctx, SPPage *page)
+static void sp_asbitmap_render(SPItem const *item, CairoRenderContext *ctx, SPPage const *page)
 {
 
     // The code was adapted from sp_selection_create_bitmap_copy in selection-chemistry.cpp
 
     // Calculate resolution
-    double res;
     /** @TODO reimplement the resolution stuff   (WHY?)
     */
-    res = ctx->getBitmapResolution();
-    if(res == 0) {
+    double res = ctx->getBitmapResolution();
+    if (res == 0) {
         res = Inkscape::Util::Quantity::convert(1, "in", "px");
     }
     TRACE(("sp_asbitmap_render: resolution: %f\n", res ));
@@ -561,88 +600,69 @@ static void sp_asbitmap_render(SPItem *item, CairoRenderContext *ctx, SPPage *pa
     // Calculate the matrix that will be applied to the image so that it exactly overlaps the source objects
 
     // Matrix to put bitmap in correct place on document
-    Geom::Affine t_on_document = (Geom::Affine)(Geom::Scale (scale_x, scale_y)) *
-                                 (Geom::Affine)(Geom::Translate (shift_x, shift_y));
+    Geom::Affine t_on_document = Geom::Scale(scale_x, scale_y) * Geom::Translate(shift_x, shift_y);
 
     // ctx matrix already includes item transformation. We must substract.
     Geom::Affine t_item =  item->i2doc_affine();
     Geom::Affine t = t_on_document * t_item.inverse();
 
     // Do the export
-    SPDocument *document = item->document;
-
-    std::vector<SPItem*> items;
-    items.push_back(item);
-
-    std::unique_ptr<Inkscape::Pixbuf> pb(sp_generate_internal_bitmap(document, *bbox, res, items, true));
+    std::unique_ptr<Inkscape::Pixbuf> pb(sp_generate_internal_bitmap(item->document, *bbox, res, {item}, true));
 
     if (pb) {
         //TEST(gdk_pixbuf_save( pb, "bitmap.png", "png", NULL, NULL ));
-
         ctx->renderImage(pb.get(), t, item->style);
     }
 }
 
-
-static void sp_item_invoke_render(SPItem *item, CairoRenderContext *ctx, SPItem *origin, SPPage *page)
+static void sp_item_invoke_render(SPItem const *item, CairoRenderContext *ctx, SPItem const *origin, SPPage const *page)
 {
-    SPRoot *root = dynamic_cast<SPRoot *>(item);
-    if (root) {
+    bool is_linked = false;
+    for (auto link : item->getLinked(SPObject::LinkedObjectNature::DEPENDENT)) {
+        is_linked |= is<SPAnchor>(link);
+    }
+
+    // Test to see if the objects would be invisible on this page and hide them if so.
+    if (page && !origin && !page->itemOnPage(item, false, false))
+        return;
+
+    if (is_linked)
+        ctx->destBegin(item->getId());
+
+    if (auto root = cast<SPRoot>(item)) {
         TRACE(("root\n"));
         sp_root_render(root, ctx);
-    } else {
-        SPSymbol *symbol = dynamic_cast<SPSymbol *>(item);
-        if (symbol) {
-            TRACE(("symbol\n"));
-            sp_symbol_render(symbol, ctx, origin, page);
-        } else {
-            SPAnchor *anchor = dynamic_cast<SPAnchor *>(item);
-            if (anchor) {
-                TRACE(("<a>\n"));
-                sp_anchor_render(anchor, ctx);
-            } else {
-                SPShape *shape = dynamic_cast<SPShape *>(item);
-                if (shape) {
-                    TRACE(("shape\n"));
-                    sp_shape_render(shape, ctx, origin);
-                } else {
-                    SPUse *use = dynamic_cast<SPUse *>(item);
-                    if (use) {
-                        TRACE(("use begin---\n"));
-                        sp_use_render(use, ctx, page);
-                        TRACE(("---use end\n"));
-                    } else {
-                        SPText *text = dynamic_cast<SPText *>(item);
-                        if (text) {
-                            TRACE(("text\n"));
-                            sp_text_render(text, ctx);
-                        } else {
-                            SPFlowtext *flowtext = dynamic_cast<SPFlowtext *>(item);
-                            if (flowtext) {
-                                TRACE(("flowtext\n"));
-                                sp_flowtext_render(flowtext, ctx);
-                            } else {
-                                SPImage *image = dynamic_cast<SPImage *>(item);
-                                if (image) {
-                                    TRACE(("image\n"));
-                                    sp_image_render(image, ctx);
-                                } else if (dynamic_cast<SPMarker *>(item)) {
-                                    // Marker contents shouldn't be rendered, even outside of <defs>.
-                                    return;
-                                } else {
-                                    SPGroup *group = dynamic_cast<SPGroup *>(item);
-                                    if (group) {
-                                        TRACE(("<g>\n"));
-                                        sp_group_render(group, ctx, origin, page);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    } else if (auto symbol = cast<SPSymbol>(item)) {
+        TRACE(("symbol\n"));
+        sp_symbol_render(symbol, ctx, origin, page);
+    } else if (auto anchor = cast<SPAnchor>(item)) {
+        TRACE(("<a>\n"));
+        sp_anchor_render(anchor, ctx, origin, page);
+    } else if (auto shape = cast<SPShape>(item)) {
+        TRACE(("shape\n"));
+        sp_shape_render(shape, ctx, origin);
+    } else if (auto use = cast<SPUse>(item)) {
+        TRACE(("use begin---\n"));
+        sp_use_render(use, ctx, page);
+        TRACE(("---use end\n"));
+    } else if (auto text = cast<SPText>(item)) {
+        TRACE(("text\n"));
+        sp_text_render(text, ctx);
+    } else if (auto flowtext = cast<SPFlowtext>(item)) {
+        TRACE(("flowtext\n"));
+        sp_flowtext_render(flowtext, ctx);
+    } else if (auto image = cast<SPImage>(item)) {
+        TRACE(("image\n"));
+        sp_image_render(image, ctx);
+    } else if (is<SPMarker>(item)) {
+        // Marker contents shouldn't be rendered, even outside of <defs>.
+    } else if (auto group = cast<SPGroup>(item)) {
+        TRACE(("<g>\n"));
+        sp_group_render(group, ctx, origin, page);
     }
+
+    if (is_linked)
+        ctx->destEnd();
 }
 
 void
@@ -653,14 +673,14 @@ CairoRenderer::setStateForItem(CairoRenderContext *ctx, SPItem const *item)
     CairoRenderState *state = ctx->getCurrentState();
     state->clip_path = item->getClipObject();
     state->mask = item->getMaskObject();
-    state->item_transform = Geom::Affine (item->transform);
+    state->item_transform = item->transform;
 
     // If parent_has_userspace is true the parent state's transform
     // has to be used for the mask's/clippath's context.
     // This is so because we use the image's/(flow)text's transform for positioning
     // instead of explicitly specifying it and letting the renderer do the
     // transformation before rendering the item.
-    if (dynamic_cast<SPText const *>(item) || dynamic_cast<SPFlowtext const *>(item) || dynamic_cast<SPImage const *>(item)) {
+    if (is<SPText>(item) || is<SPFlowtext>(item) || is<SPImage>(item)) {
         state->parent_has_userspace = TRUE;
     }
     TRACE(("setStateForItem opacity: %f\n", state->opacity));
@@ -673,7 +693,7 @@ bool CairoRenderer::_shouldRasterize(CairoRenderContext *ctx, SPItem const *item
     // TODO: might apply to some degree to masks with filtered elements as well;
     //       we need to figure out where in the stack it would be safe to rasterize
     if (ctx->getFilterToBitmap() && !item->isInClipPath()) {
-        if (auto const *clone = dynamic_cast<SPUse const *>(item)) {
+        if (auto const *clone = cast<SPUse>(item)) {
             return clone->anyInChain([](SPItem const *i) { return i && i->isFiltered(); });
         } else {
             return item->isFiltered();
@@ -682,7 +702,7 @@ bool CairoRenderer::_shouldRasterize(CairoRenderContext *ctx, SPItem const *item
     return false;
 }
 
-void CairoRenderer::_doRender(SPItem *item, CairoRenderContext *ctx, SPItem *origin, SPPage *page)
+void CairoRenderer::_doRender(SPItem const *item, CairoRenderContext *ctx, SPItem const *origin, SPPage const *page)
 {
     // Check item's visibility
     if (item->isHidden() || has_hidder_filter(item)) {
@@ -696,8 +716,7 @@ void CairoRenderer::_doRender(SPItem *item, CairoRenderContext *ctx, SPItem *ori
     }
 }
 
-// TODO change this to accept a const SPItem:
-void CairoRenderer::renderItem(CairoRenderContext *ctx, SPItem *item, SPItem *origin, SPPage *page)
+void CairoRenderer::renderItem(CairoRenderContext *ctx, SPItem const *item, SPItem const *origin, SPPage const *page)
 {
     ctx->pushState();
     setStateForItem(ctx, item);
@@ -705,12 +724,12 @@ void CairoRenderer::renderItem(CairoRenderContext *ctx, SPItem *item, SPItem *or
     CairoRenderState *state = ctx->getCurrentState();
     state->need_layer = ( state->mask || state->clip_path || state->opacity != 1.0 );
     SPStyle* style = item->style;
-    SPGroup * group = dynamic_cast<SPGroup *>(item);
+    auto group = cast<SPGroup>(item);
     bool blend = false;
     if (group && style->mix_blend_mode.set && style->mix_blend_mode.value != SP_CSS_BLEND_NORMAL) {
         state->need_layer = true;
         blend = true;
-    } 
+    }
     // Draw item on a temporary surface so a mask, clip-path, or opacity can be applied to it.
     if (state->need_layer) {
         state->merge_opacity = FALSE;
@@ -736,8 +755,8 @@ void CairoRenderer::renderHatchPath(CairoRenderContext *ctx, SPHatchPath const &
     ctx->setStateForStyle(hatchPath.style);
     ctx->transform(Geom::Translate(hatchPath.offset.computed, 0));
 
-    std::unique_ptr<SPCurve> curve = hatchPath.calculateRenderCurve(key);
-    Geom::PathVector const & pathv =curve->get_pathvector();
+    auto curve = hatchPath.calculateRenderCurve(key);
+    Geom::PathVector const & pathv =curve.get_pathvector();
     if (!pathv.empty()) {
         ctx->renderPathVector(pathv, hatchPath.style, Geom::OptRect());
     }
@@ -790,7 +809,7 @@ void CairoRenderer::setMetadata(CairoRenderContext *ctx, SPDocument *doc) {
 }
 
 bool
-CairoRenderer::setupDocument(CairoRenderContext *ctx, SPDocument *doc, bool pageBoundingBox, double bleedmargin_px, SPItem *base)
+CairoRenderer::setupDocument(CairoRenderContext *ctx, SPDocument *doc, SPItem const *base)
 {
 // PLEASE note when making changes to the boundingbox and transform calculation, corresponding changes should be made to LaTeXTextRenderer::setupDocument !!!
 
@@ -800,19 +819,8 @@ CairoRenderer::setupDocument(CairoRenderContext *ctx, SPDocument *doc, bool page
         base = doc->getRoot();
     }
 
-    Geom::Rect d;
-    if (pageBoundingBox) {
-        d = Geom::Rect::from_xywh(Geom::Point(0,0), doc->getDimensions());
-    } else {
-        Geom::OptRect bbox = base->documentVisualBounds();
-        if (!bbox) {
-            g_message("CairoRenderer: empty bounding box.");
-            return false;
-        }
-        d = *bbox;
-    }
-    d.expandBy(bleedmargin_px);
-
+    // Most pages will ignore this setup, but we still want to initialise something useful.
+    Geom::Rect d = Geom::Rect::from_xywh(Geom::Point(0,0), doc->getDimensions());
     double px_to_ctx_units = 1.0;
     if (ctx->_vector_based_target) {
         // convert from px to pt
@@ -825,21 +833,86 @@ CairoRenderer::setupDocument(CairoRenderContext *ctx, SPDocument *doc, bool page
     setMetadata(ctx, doc);
 
     TRACE(("setupDocument: %f x %f\n", width, height));
-    bool ret = ctx->setupSurface(width, height);
+    return ctx->setupSurface(width, height);
+}
 
-    if (ret) {
-        if (pageBoundingBox) {
-            // translate to set bleed/margin
-            Geom::Affine tp( Geom::Translate( bleedmargin_px, bleedmargin_px ) );
-            ctx->transform(tp);
-        } else {
-            // this transform translates the export drawing to a virtual page (0,0)-(width,height)
-            Geom::Affine tp(Geom::Translate(-d.min()));
-            ctx->transform(tp);
-        }
+/**
+ * Handle multiple pages, pushing each out to cairo as needed using renderItem()
+ */
+bool
+CairoRenderer::renderPages(CairoRenderContext *ctx, SPDocument *doc, bool stretch_to_fit)
+{
+    auto pages = doc->getPageManager().getPages();
+    if (pages.size() == 0) {
+        // Output the page bounding box as already set up in the initial setupDocument.
+        renderItem(ctx, doc->getRoot());
+        return true;
     }
 
-    return ret;
+    for (auto &page : pages) {
+        ctx->pushState();
+        if (!renderPage(ctx, doc, page, stretch_to_fit)) {
+            return false;
+        }
+        // Create a page dest for any anchor tags that link to this page.
+        ctx->destBegin(page->getId());
+        ctx->destEnd();
+
+        if (!ctx->finishPage()) {
+            g_warning("Couldn't render page in output!");
+            return false;
+        }
+        ctx->popState();
+    }
+    return true;
+}
+
+bool
+CairoRenderer::renderPage(CairoRenderContext *ctx, SPDocument *doc, SPPage const *page, bool stretch_to_fit)
+{
+    // Calculate exact page rectangle in PostScript points:
+    auto const scale = doc->getDocumentScale();
+    auto const unit_conversion = Geom::Scale(Inkscape::Util::Quantity::convert(1, "px", "pt"));
+
+    auto const rect = page->getBleed();
+    auto const exact_rect = rect * scale * unit_conversion;
+    auto const [final_width, final_height] = compute_final_page_dimensions(exact_rect);
+
+    if (stretch_to_fit) {
+        // Calculate distortion from rounding (only really matters for small paper sizes):
+        auto distortion = Geom::Scale(final_width / exact_rect.width(),
+                                      final_height / exact_rect.height());
+
+        // Scale the drawing a tiny bit so that it still fills the rounded page:
+        ctx->transform(scale * distortion);
+    } else {
+        ctx->transform(scale);
+    }
+
+    SPRoot *root = doc->getRoot();
+    ctx->transform(root->transform);
+    ctx->nextPage(final_width, final_height, page->label());
+
+    // Set up page transformation which pushes objects back into the 0,0 location
+    ctx->transform(Geom::Translate(rect.corner(0)).inverse());
+
+    for (auto &child : page->getOverlappingItems(false, true, false)) {
+        ctx->pushState();
+
+        // This process does not return layers, so those affines are added manually.
+        for (auto anc : child->ancestorList(true)) {
+            if (auto layer = cast<SPItem>(anc)) {
+                if (layer != child && layer != root) {
+                    ctx->transform(layer->transform);
+                }
+            }
+        }
+
+        // Render the page into the context in the new location.
+        renderItem(ctx, child, nullptr, page);
+        ctx->popState();
+    }
+    return true;
 }
 
 // Apply an SVG clip path
@@ -856,8 +929,8 @@ CairoRenderer::applyClipPath(CairoRenderContext *ctx, SPClipPath const *cp)
 
     // FIXME: the access to the first clippath view to obtain the bbox is completely bogus
     Geom::Affine saved_ctm;
-    if (cp->clipPathUnits == SP_CONTENT_UNITS_OBJECTBOUNDINGBOX && cp->display->bbox) {
-        Geom::Rect clip_bbox = *cp->display->bbox;
+    if (cp->clippath_units() == SP_CONTENT_UNITS_OBJECTBOUNDINGBOX && cp->get_last_bbox()) {
+        Geom::Rect clip_bbox = *cp->get_last_bbox();
         Geom::Affine t(Geom::Scale(clip_bbox.dimensions()));
         t[4] = clip_bbox.left();
         t[5] = clip_bbox.top();
@@ -869,7 +942,7 @@ CairoRenderer::applyClipPath(CairoRenderContext *ctx, SPClipPath const *cp)
     TRACE(("BEGIN clip\n"));
     SPObject const *co = cp;
     for (auto& child: co->children) {
-        SPItem const *item = dynamic_cast<SPItem const *>(&child);
+        SPItem const *item = cast<SPItem>(&child);
         if (item) {
 
             // combine transform of the item in clippath and the item using clippath:
@@ -879,8 +952,7 @@ CairoRenderer::applyClipPath(CairoRenderContext *ctx, SPClipPath const *cp)
             ctx->pushState();
             ctx->transform(tempmat);
             setStateForItem(ctx, item);
-            // TODO fix this call to accept const items
-            _doRender(const_cast<SPItem *>(item), ctx);
+            _doRender(item, ctx);
             ctx->popState();
         }
     }
@@ -891,7 +963,7 @@ CairoRenderer::applyClipPath(CairoRenderContext *ctx, SPClipPath const *cp)
         && saved_mode == CairoRenderContext::RENDER_MODE_NORMAL)
         cairo_clip(ctx->_cr);
 
-    if (cp->clipPathUnits == SP_CONTENT_UNITS_OBJECTBOUNDINGBOX)
+    if (cp->clippath_units() == SP_CONTENT_UNITS_OBJECTBOUNDINGBOX)
         ctx->setTransform(saved_ctm);
 
     ctx->setRenderMode(saved_mode);
@@ -908,8 +980,8 @@ CairoRenderer::applyMask(CairoRenderContext *ctx, SPMask const *mask)
 
     // FIXME: the access to the first mask view to obtain the bbox is completely bogus
     // TODO: should the bbox be transformed if maskUnits != userSpaceOnUse ?
-    if (mask->maskContentUnits == SP_CONTENT_UNITS_OBJECTBOUNDINGBOX && mask->display->bbox) {
-        Geom::Rect mask_bbox = *mask->display->bbox;
+    if (mask->mask_content_units() == SP_CONTENT_UNITS_OBJECTBOUNDINGBOX && mask->get_last_bbox()) {
+        Geom::Rect mask_bbox = *mask->get_last_bbox();
         Geom::Affine t(Geom::Scale(mask_bbox.dimensions()));
         t[4] = mask_bbox.left();
         t[5] = mask_bbox.top();
@@ -925,12 +997,9 @@ CairoRenderer::applyMask(CairoRenderContext *ctx, SPMask const *mask)
     ctx->pushState();
 
     TRACE(("BEGIN mask\n"));
-    SPObject const *co = mask;
-    for (auto& child: co->children) {
-        SPItem const *item = dynamic_cast<SPItem const *>(&child);
-        if (item) {
-            // TODO fix const correctness:
-            renderItem(ctx, const_cast<SPItem*>(item));
+    for (auto const &child : mask->children) {
+        if (auto item = cast<SPItem>(&child)) {
+            renderItem(ctx, item);
         }
     }
     TRACE(("END mask\n"));

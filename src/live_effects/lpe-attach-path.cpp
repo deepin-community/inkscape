@@ -5,10 +5,16 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "lpe-attach-path.h"
+
 #include <cmath>
-#include "live_effects/lpe-attach-path.h"
-#include "display/curve.h"
+
 #include "2geom/path-sink.h"
+
+#include "object/sp-lpe-item.h"
+#include "display/curve.h"
+
+
 // TODO due to internal breakage in glibmm headers, this must be last:
 #include <glibmm/i18n.h>
 
@@ -44,11 +50,11 @@ LPEAttachPath::LPEAttachPath(LivePathEffectObject *lpeobject) :
     end_path.setUpdating(true);
 }
 
-LPEAttachPath::~LPEAttachPath()
-= default;
+LPEAttachPath::~LPEAttachPath() = default;
 
 void LPEAttachPath::resetDefaults(SPItem const * /*item*/)
 {
+    Effect::resetDefaults(nullptr);
     curve_start_previous_origin = start_path_curve_end.getOrigin();
     curve_end_previous_origin = end_path_curve_end.getOrigin();
 }
@@ -63,11 +69,10 @@ LPEAttachPath::doBeforeEffect (SPLPEItem const* lpeitem)
         end_path.setUpdating(false);
         end_path.start_listening(end_path.getObject());
         end_path.connect_selection_changed();
-        SPItem * item = nullptr;
-        if (( item = dynamic_cast<SPItem *>(end_path.getObject()) )) {
+        if (auto item = end_path.getObject()) {
             item->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         }
-        if (( item = dynamic_cast<SPItem *>(start_path.getObject()) )) {
+        if (auto item = start_path.getObject()) {
             item->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
         }
     }
@@ -112,7 +117,7 @@ void LPEAttachPath::doEffect (SPCurve * curve)
                 
                 for (unsigned deriv_n = 1; deriv_n < derivs.size(); deriv_n++) {
                     Geom::Coord length = derivs[deriv_n].length();
-                    if ( ! Geom::are_near(length, 0) && !start_path.getObject()->_successor) {
+                    if ( ! Geom::are_near(length, 0) && !start_path.getObject()->_tmpsuccessor) {
                         if (set_start_end) {
                             start_path_position.param_set_value(transformedpath.nearestTime(start_path_curve_end.getOrigin()).asFlatTime());
                         }
@@ -166,7 +171,7 @@ void LPEAttachPath::doEffect (SPCurve * curve)
                 std::vector<Geom::Point> derivs = last_seg_reverse->pointAndDerivatives(0, 3);
                 for (unsigned deriv_n = 1; deriv_n < derivs.size(); deriv_n++) {
                     Geom::Coord length = derivs[deriv_n].length();
-                    if ( ! Geom::are_near(length, 0) && !end_path.getObject()->_successor) {
+                    if ( ! Geom::are_near(length, 0) && !end_path.getObject()->_tmpsuccessor) {
                         if (set_end_end) {
                             end_path_position.param_set_value(transformedpath.nearestTime(end_path_curve_end.getOrigin()).asFlatTime());
                         }

@@ -23,23 +23,25 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
 #include <glibmm/regex.h>
+#include <glibmm/ustring.h>
 
+#include "style-enums.h"
 #include "style-internal.h"
 #include "style.h"
 
 #include "bad-uri-exception.h"
 #include "extract-uri.h"
-#include "inkscape.h"
 #include "preferences.h"
 #include "streq.h"
 #include "strneq.h"
 
-#include "object/sp-text.h"
 #include "object/object-set.h"
 
 #include "svg/svg.h"
-#include "svg/svg-color.h"
 #include "svg/css-ostringstream.h"
 
 #include "util/units.h"
@@ -236,9 +238,9 @@ SPIFloat::merge( const SPIBase* const parent ) {
 }
 
 bool
-SPIFloat::operator==(const SPIBase& rhs) const {
+SPIFloat::equals(const SPIBase& rhs) const {
     if( const SPIFloat* r = dynamic_cast<const SPIFloat*>(&rhs) ) {
-        return (value == r->value && SPIBase::operator==(rhs));
+        return (value == r->value && SPIBase::equals(rhs));
     } else {
         return false;
     }
@@ -294,7 +296,7 @@ SPIScale24::merge( const SPIBase* const parent ) {
         } else {
             // Needed only for 'opacity' and 'stop-opacity' which do not inherit. See comment at bottom of file.
             if (id() != SPAttr::OPACITY && id() != SPAttr::STOP_OPACITY)
-                std::cerr << "SPIScale24::merge: unhandled property: " << name() << std::endl;
+                std::cerr << "SPIScale24::merge: unhandled property: " << name().raw() << std::endl;
             if( !set || (!inherit && value == SP_SCALE24_MAX) ) {
                 value = p->value;
                 set = (value != SP_SCALE24_MAX);
@@ -311,9 +313,9 @@ SPIScale24::merge( const SPIBase* const parent ) {
 }
 
 bool
-SPIScale24::operator==(const SPIBase& rhs) const {
+SPIScale24::equals(const SPIBase& rhs) const {
     if( const SPIScale24* r = dynamic_cast<const SPIScale24*>(&rhs) ) {
-        return (value == r->value && SPIBase::operator==(rhs));
+        return (value == r->value && SPIBase::equals(rhs));
     } else {
         return false;
     }
@@ -526,7 +528,7 @@ const Glib::ustring SPILength::toString(bool wname) const
 }
 
 bool
-SPILength::operator==(const SPIBase& rhs) const {
+SPILength::equals(const SPIBase& rhs) const {
     if( const SPILength* r = dynamic_cast<const SPILength*>(&rhs) ) {
 
         if( unit != r->unit ) return false;
@@ -595,11 +597,11 @@ SPILengthOrNormal::merge( const SPIBase* const parent ) {
 }
 
 bool
-SPILengthOrNormal::operator==(const SPIBase& rhs) const {
+SPILengthOrNormal::equals(const SPIBase& rhs) const {
     if( const SPILengthOrNormal* r = dynamic_cast<const SPILengthOrNormal*>(&rhs) ) {
         if( normal && r->normal ) { return true; }
         if( normal != r->normal ) { return false; }
-        return SPILength::operator==(rhs);
+        return SPILength::equals(rhs);
     } else {
         return false;
     }
@@ -688,7 +690,7 @@ SPIFontVariationSettings::merge( const SPIBase* const parent ) {
 }
 
 bool
-SPIFontVariationSettings::operator==(const SPIBase& rhs) const {
+SPIFontVariationSettings::equals(const SPIBase& rhs) const {
     if( const SPIFontVariationSettings* r = dynamic_cast<const SPIFontVariationSettings*>(&rhs) ) {
         if( normal && r->normal ) { return true; }
         if( normal != r->normal ) { return false; }
@@ -797,6 +799,61 @@ void SPIEnum<T>::read(gchar const *str)
     }
 }
 
+// special read() version for font-weight attribute to handle numerical values,
+// values which Pango supports and some fonts require
+template <>
+void SPIEnum<SPCSSFontWeight>::read(gchar const *str) {
+    if (!str) return;
+
+    if (!strcmp(str, "inherit")) {
+        set = true;
+        inherit = true;
+    } else {
+        auto const *enums = get_enums<SPCSSFontWeight>();
+        bool translated = false;
+        for (unsigned i = 0; enums[i].key; i++) {
+            if (!strcmp(str, enums[i].key)) {
+                set = true;
+                inherit = false;
+                value = static_cast<SPCSSFontWeight>(enums[i].value);
+                translated = true;
+                break;
+            }
+        }
+        // translate numbers only; no leading spaces or trailing characters accepted
+        // to make it as strict as key matching above
+        if (!translated && isdigit(*str)) {
+            char* end = nullptr;
+            auto weight = strtol(str, &end, 10);
+            if (end && (*end == '\0' || *end == ' ') && weight > 0 && weight <= 1000) {
+                set = true;
+                inherit = false;
+                value = static_cast<SPCSSFontWeight>(weight);
+            }
+        }
+
+        // type-specialized subroutine
+        update_computed();
+    }
+}
+
+template <>
+const Glib::ustring SPIEnum<SPCSSFontWeight>::get_value() const {
+    if (this->inherit) return Glib::ustring("inherit");
+    auto const *enums = get_enums<SPCSSFontWeight>();
+    auto val = static_cast<int>(value);
+    for (unsigned i = 0; enums[i].key; ++i) {
+        if (enums[i].value == val) {
+            return Glib::ustring(enums[i].key);
+        }
+    }
+    if (val > 0 && val <= 1000) {
+        return Glib::ustring::format(val);
+    }
+    return Glib::ustring("");
+}
+
+
 template <typename T>
 const Glib::ustring SPIEnum<T>::get_value() const
 {
@@ -817,9 +874,9 @@ void SPIEnum<SPCSSFontWeight>::update_computed_cascade(SPCSSFontWeight const &p_
     // expressible in the current font family, but that's difficult to
     // find out, so jumping by 3 seems an appropriate approximation
     if (value == SP_CSS_FONT_WEIGHT_LIGHTER) {
-        computed = static_cast<SPCSSFontWeight>(std::max<int>(SP_CSS_FONT_WEIGHT_100, int(p_computed) - 3));
+        computed = static_cast<SPCSSFontWeight>(std::max<int>(SP_CSS_FONT_WEIGHT_100, int(p_computed) - 3 * 100));
     } else if (value == SP_CSS_FONT_WEIGHT_BOLDER) {
-        computed = static_cast<SPCSSFontWeight>(std::min<int>(SP_CSS_FONT_WEIGHT_900, p_computed + 3));
+        computed = static_cast<SPCSSFontWeight>(std::min<int>(SP_CSS_FONT_WEIGHT_900, p_computed + 3 * 100));
     }
 }
 
@@ -900,10 +957,10 @@ void SPIEnum<T>::merge(const SPIBase *const parent)
 }
 
 template <typename T>
-bool SPIEnum<T>::operator==(const SPIBase &rhs) const
+bool SPIEnum<T>::equals(const SPIBase &rhs) const
 {
     if (auto *r = dynamic_cast<const SPIEnum<T> *>(&rhs)) {
-        return (computed == r->computed && SPIBase::operator==(rhs));
+        return (computed == r->computed && SPIBase::equals(rhs));
     } else {
         return false;
     }
@@ -1283,9 +1340,9 @@ SPIString::merge( const SPIBase* const parent ) {
 }
 
 bool
-SPIString::operator==(const SPIBase& rhs) const {
+SPIString::equals(const SPIBase& rhs) const {
     if( const SPIString* r = dynamic_cast<const SPIString*>(&rhs) ) {
-        return g_strcmp0(_value, r->_value) == 0 && SPIBase::operator==(rhs);
+        return g_strcmp0(_value, r->_value) == 0 && SPIBase::equals(rhs);
     } else {
         return false;
     }
@@ -1341,7 +1398,7 @@ SPIShapes::read( gchar const *str) {
     // The object/repr this property is connected to..
     SPObject* object = style->object;
     if (!object) {
-        std::cout << "  No object" << std::endl;
+        std::cerr << "  No object" << std::endl;
         return;
     }
 
@@ -1351,7 +1408,7 @@ SPIShapes::read( gchar const *str) {
     std::vector<Glib::ustring> shapes_url = Glib::Regex::split_simple(" ", str);
     for (auto shape_url : shapes_url) {
         if ( shape_url.compare(0,5,"url(#") != 0 || shape_url.compare(shape_url.size()-1,1,")") != 0 ){
-            std::cerr << "SPIShapes::read: Invalid shape value: " << shape_url << std::endl;
+            std::cerr << "SPIShapes::read: Invalid shape value: " << shape_url.raw() << std::endl;
         } else {
             auto uri = extract_uri(shape_url.c_str()); // Do before we erase "url(#"
 
@@ -1411,11 +1468,7 @@ void SPIColor::read( gchar const *str ) {
             std::cerr << "SPIColor::read(): value is 'currentColor' but 'color' not available." << std::endl;
         }
     } else {
-        guint32 const rgb0 = sp_svg_read_color(str, 0xff);
-        if (rgb0 != 0xff) {
-            setColor(rgb0);
-            set = true;
-        }
+        set = value.color.fromString(str);
     }
 }
 
@@ -1457,19 +1510,15 @@ SPIColor::merge( const SPIBase* const parent ) {
 }
 
 bool
-SPIColor::operator==(const SPIBase& rhs) const {
+SPIColor::equals(const SPIBase& rhs) const {
     if( const SPIColor* r = dynamic_cast<const SPIColor*>(&rhs) ) {
 
-        if ( (this->currentcolor    != r->currentcolor    ) ||
-             (this->value.color     != r->value.color     ) ||
-             (this->value.color.icc != r->value.color.icc ) ||
-             (this->value.color.icc && r->value.color.icc &&
-              this->value.color.icc->colorProfile != r->value.color.icc->colorProfile &&
-              this->value.color.icc->colors       != r->value.color.icc->colors ) ) {
+        // ICC support is handled by SPColor==
+        if (currentcolor != r->currentcolor || value.color != r->value.color) {
             return false;
         }
 
-        return SPIBase::operator==(rhs);
+        return SPIBase::equals(rhs);
 
     } else {
         return false;
@@ -1485,14 +1534,6 @@ SPIColor::operator==(const SPIBase& rhs) const {
 // It is needed for computed value when value is 'currentColor'. It is also needed to
 // find the object for creating an href (this is done through document but should be done
 // directly so document not needed.. FIXME).
-
-SPIPaint::~SPIPaint() {
-    if( value.href ) {
-        clear();
-        delete value.href;
-        value.href = nullptr;
-    }
-}
 
 /**
  * Set SPIPaint object from string.
@@ -1531,7 +1572,12 @@ SPIPaint::read( gchar const *str ) {
             // FIXME: THE FOLLOWING CODE SHOULD BE PUT IN A PRIVATE FUNCTION FOR REUSE
             auto uri = extract_uri(str, &str); // std::string
             if(uri.empty()) {
-                std::cerr << "SPIPaint::read: url is empty or invalid" << std::endl;
+                if (!str) {
+                    std::cerr << "SPIPaint::read: url is invalid" << std::endl;
+                    return;
+                } else {
+                    std::cerr << "SPIPaint::read: url is empty" << std::endl;
+                }
             } else if (!style ) {
                 std::cerr << "SPIPaint::read: url with empty SPStyle pointer" << std::endl;
             } else {
@@ -1542,9 +1588,9 @@ SPIPaint::read( gchar const *str ) {
                 if (!value.href) {
 
                     if (style->object) {
-                        value.href = new SPPaintServerReference(style->object);
+                        value.href = std::make_shared<SPPaintServerReference>(style->object);
                     } else if (document) {
-                        value.href = new SPPaintServerReference(document);
+                        value.href = std::make_shared<SPPaintServerReference>(document);
                     } else {
                         std::cerr << "SPIPaint::read: No valid object or document!" << std::endl;
                         return;
@@ -1588,24 +1634,9 @@ SPIPaint::read( gchar const *str ) {
         } else if (streq(str, "none")) {
             set = true;
             noneSet = true;
-        } else {
-            guint32 const rgb0 = sp_svg_read_color(str, &str, 0xff);
-            if (rgb0 != 0xff) {
-                setColor( rgb0 );
-                set = true;
-
-                while (g_ascii_isspace(*str)) {
-                    ++str;
-                }
-                if (strneq(str, "icc-color(", 10)) {
-                    SVGICCColor* tmp = new SVGICCColor();
-                    if ( ! sp_svg_read_icc_color( str, &str, tmp ) ) {
-                        delete tmp;
-                        tmp = nullptr;
-                    }
-                    value.color.icc = tmp;
-                }
-            }
+        } else if (value.color.fromString(str)) {
+            set = true;
+            colorSet = true;
         }
     }
 }
@@ -1643,18 +1674,8 @@ const Glib::ustring SPIPaint::get_value() const
             break;
         case SP_CSS_PAINT_ORIGIN_NORMAL:
             if (this->colorSet) {
-                char color_buf[8];
-                sp_svg_write_color(color_buf, sizeof(color_buf), this->value.color.toRGBA32(0));
                 if (!ret.empty()) ret += " ";
-                ret += color_buf;
-            }
-            if (this->value.color.icc) {
-                ret += " icc-color(";
-                ret += this->value.color.icc->colorProfile;
-                for(auto i: this->value.color.icc->colors) {
-                    ret += ", " + Glib::ustring::format(i);
-                }
-                ret += ")";
+                ret += value.color.toString();
             }
             break;
     }
@@ -1675,20 +1696,13 @@ SPIPaint::reset( bool init ) {
     paintOrigin = SP_CSS_PAINT_ORIGIN_NORMAL;
     colorSet = false;
     noneSet = false;
-    value.color.set( false );
+    value.color.set(0x0);
+    value.color.unsetColorProfile();
     tag = nullptr;
-    if (value.href){
-        if (value.href->getObject()) {
-            value.href->detach();
-        }
-    }
-    if( init ) {
-        if (id() == SPAttr::FILL) {
-            // 'black' is default for 'fill'
-            setColor(0.0, 0.0, 0.0);
-        } else if (id() == SPAttr::TEXT_DECORATION_COLOR) {
-            // currentcolor = true;
-        }
+    value.href.reset();
+
+    if (init && id() == SPAttr::FILL) {
+        setColor(0.0, 0.0, 0.0); // 'black' is default for 'fill'
     }
 }
 
@@ -1746,7 +1760,7 @@ SPIPaint::merge( const SPIBase* const parent ) {
 }
 
 bool
-SPIPaint::operator==(const SPIBase& rhs) const {
+SPIPaint::equals(const SPIBase& rhs) const {
 
     if( const SPIPaint* r = dynamic_cast<const SPIPaint*>(&rhs) ) {
 
@@ -1764,16 +1778,13 @@ SPIPaint::operator==(const SPIBase& rhs) const {
         }
 
         if ( this->isColor() ) {
-            if ( (this->value.color     != r->value.color     ) ||
-                 (this->value.color.icc != r->value.color.icc ) ||
-                 (this->value.color.icc && r->value.color.icc &&
-                  this->value.color.icc->colorProfile != r->value.color.icc->colorProfile &&
-                  this->value.color.icc->colors       != r->value.color.icc->colors ) ) {
+            // ICC handled by SPColor==
+            if (value.color != r->value.color) {
                 return false;
             }
         }
 
-        return SPIBase::operator==(rhs);
+        return SPIBase::equals(rhs);
 
     } else {
         return false;
@@ -1852,6 +1863,19 @@ SPIPaintOrder::read( gchar const *str ) {
     }
 }
 
+/**
+ * Return the index of the given paint order.
+ */
+unsigned SPIPaintOrder::get_order(SPPaintOrderLayer paint_order) const
+{
+    for( unsigned i = 0; i < PAINT_ORDER_LAYERS; ++i) {
+        if (layer[i] == paint_order)
+            return i;
+    }
+    // Default/normal (see SPIPaintOrder::read for expected state)
+    return paint_order - 1;
+}
+
 const Glib::ustring SPIPaintOrder::get_value() const
 {
     if (this->inherit) return Glib::ustring("inherit");
@@ -1910,14 +1934,14 @@ SPIPaintOrder::merge( const SPIBase* const parent ) {
 }
 
 bool
-SPIPaintOrder::operator==(const SPIBase& rhs) const {
+SPIPaintOrder::equals(const SPIBase& rhs) const {
     if( const SPIPaintOrder* r = dynamic_cast<const SPIPaintOrder*>(&rhs) ) {
         if( layer[0] == SP_CSS_PAINT_ORDER_NORMAL &&
-            r->layer[0] == SP_CSS_PAINT_ORDER_NORMAL ) return SPIBase::operator==(rhs);
+            r->layer[0] == SP_CSS_PAINT_ORDER_NORMAL ) return SPIBase::equals(rhs);
         for (unsigned i = 0; i < PAINT_ORDER_LAYERS; ++i ) {
             if( layer[i] != r->layer[i] ) return false;
         }
-        return SPIBase::operator==(rhs);
+        return SPIBase::equals(rhs);
     } else {
         return false;
     }
@@ -2057,7 +2081,7 @@ SPIFilter::merge( const SPIBase* const parent ) {
 
 // FIXME
 bool
-SPIFilter::operator==(const SPIBase& rhs) const {
+SPIFilter::equals(const SPIBase& rhs) const {
     if( const SPIFilter* r = dynamic_cast<const SPIFilter*>(&rhs) ) {
         (void)r;
         return true;
@@ -2143,7 +2167,7 @@ SPIDashArray::merge( const SPIBase* const parent ) {
 }
 
 bool
-SPIDashArray::operator==(const SPIBase& rhs) const {
+SPIDashArray::equals(const SPIBase& rhs) const {
     if (const SPIDashArray *r = dynamic_cast<const SPIDashArray *>(&rhs)) {
         if (values.size() != r->values.size()) {
             return false;
@@ -2154,9 +2178,18 @@ SPIDashArray::operator==(const SPIBase& rhs) const {
             }
         }
     }
-    return SPIBase::operator==(rhs);
+    return SPIBase::equals(rhs);
 }
 
+bool SPIDashArray::is_valid() const {
+    // If any value in the list is negative, the <dasharray> value is invalid.
+    // https://svgwg.org/svg2-draft/painting.html#StrokeDashing
+
+    bool invalid = std::any_of(values.begin(), values.end(), [](const SPILength& len){
+        return len.value < 0 || !std::isfinite(len.value);
+    });
+    return !invalid;
+}
 
 // SPIFontSize ----------------------------------------------------------
 
@@ -2386,7 +2419,7 @@ SPIFontSize::merge( const SPIBase* const parent ) {
 
 // What about different SVG units?
 bool
-SPIFontSize::operator==(const SPIBase& rhs) const {
+SPIFontSize::equals(const SPIBase& rhs) const {
     if( const SPIFontSize* r = dynamic_cast<const SPIFontSize*>(&rhs) ) {
         if( type != r->type ) { return false;}
         if( type == SP_FONT_SIZE_LENGTH ) {
@@ -2396,7 +2429,7 @@ SPIFontSize::operator==(const SPIBase& rhs) const {
         } else {
             if( value != r->value ) { return false;}
         }
-        return SPIBase::operator==(rhs);
+        return SPIBase::equals(rhs);
     } else {
         return false;
     }
@@ -2531,9 +2564,9 @@ const Glib::ustring SPIFont::get_value() const
 
 // Does nothing...
 bool
-SPIFont::operator==(const SPIBase& rhs) const {
+SPIFont::equals(const SPIBase& rhs) const {
     if( /* const SPIFont* r = */ dynamic_cast<const SPIFont*>(&rhs) ) {
-        return SPIBase::operator==(rhs);
+        return SPIBase::equals(rhs);
     } else {
         return false;
     }
@@ -2673,7 +2706,7 @@ SPIBaselineShift::merge( const SPIBase* const parent ) {
 
 // This is not used but we have it for completeness, it has not been tested.
 bool
-SPIBaselineShift::operator==(const SPIBase& rhs) const {
+SPIBaselineShift::equals(const SPIBase& rhs) const {
     if( const SPIBaselineShift* r = dynamic_cast<const SPIBaselineShift*>(&rhs) ) {
         if( type != r->type ) return false;
         if( type == SP_BASELINE_SHIFT_LENGTH ) {
@@ -2683,7 +2716,7 @@ SPIBaselineShift::operator==(const SPIBase& rhs) const {
         } else {
             if( value != r->value ) return false;
         }
-        return SPIBase::operator==(rhs);
+        return SPIBase::equals(rhs);
     } else {
         return false;
     }
@@ -2815,14 +2848,14 @@ SPITextDecorationLine::merge( const SPIBase* const parent ) {
 }
 
 bool
-SPITextDecorationLine::operator==(const SPIBase& rhs) const {
+SPITextDecorationLine::equals(const SPIBase& rhs) const {
     if( const SPITextDecorationLine* r = dynamic_cast<const SPITextDecorationLine*>(&rhs) ) {
         return
             (underline    == r->underline    ) &&
             (overline     == r->overline     ) &&
             (line_through == r->line_through ) &&
             (blink        == r->blink        ) &&
-            SPIBase::operator==(rhs);
+            SPIBase::equals(rhs);
     } else {
         return false;
     }
@@ -2935,7 +2968,7 @@ SPITextDecorationStyle::merge( const SPIBase* const parent ) {
 }
 
 bool
-SPITextDecorationStyle::operator==(const SPIBase& rhs) const {
+SPITextDecorationStyle::equals(const SPIBase& rhs) const {
     if( const SPITextDecorationStyle* r = dynamic_cast<const SPITextDecorationStyle*>(&rhs) ) {
         return
             (solid    == r->solid    ) &&
@@ -2943,7 +2976,7 @@ SPITextDecorationStyle::operator==(const SPIBase& rhs) const {
             (dotted   == r->dotted   ) &&
             (dashed   == r->dashed   ) &&
             (wavy     == r->wavy     ) &&
-            SPIBase::operator==(rhs);
+            SPIBase::equals(rhs);
     } else {
         return false;
     }
@@ -3074,10 +3107,10 @@ SPITextDecoration::merge( const SPIBase* const parent ) {
 
 // Use CSS2 value
 bool
-SPITextDecoration::operator==(const SPIBase& rhs) const {
+SPITextDecoration::equals(const SPIBase& rhs) const {
     if( const SPITextDecoration* r = dynamic_cast<const SPITextDecoration*>(&rhs) ) {
         return (style->text_decoration_line == r->style->text_decoration_line &&
-                SPIBase::operator==(rhs));
+                SPIBase::equals(rhs));
     } else {
         return false;
     }
@@ -3172,14 +3205,14 @@ const Glib::ustring SPIVectorEffect::get_value() const
 // }
 
 bool
-SPIVectorEffect::operator==(const SPIBase& rhs) const {
+SPIVectorEffect::equals(const SPIBase& rhs) const {
     if( const SPIVectorEffect* r = dynamic_cast<const SPIVectorEffect*>(&rhs) ) {
         return
             (stroke    == r->stroke) &&
             (size      == r->size  ) &&
             (rotate    == r->rotate) &&
             (fixed     == r->fixed ) &&
-            SPIBase::operator==(rhs);
+            SPIBase::equals(rhs);
     } else {
         return false;
     }
@@ -3219,11 +3252,11 @@ const Glib::ustring SPIStrokeExtensions::get_value() const
 // }
 
 bool
-SPIStrokeExtensions::operator==(const SPIBase& rhs) const {
+SPIStrokeExtensions::equals(const SPIBase& rhs) const {
     if( const SPIStrokeExtensions* r = dynamic_cast<const SPIStrokeExtensions*>(&rhs) ) {
         return
             (hairline == r->hairline  ) &&
-            SPIBase::operator==(rhs);
+            SPIBase::equals(rhs);
     } else {
         return false;
     }

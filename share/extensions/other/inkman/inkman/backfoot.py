@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
 # Copyright 2021 Martin Owens <doctormo@gmail.com>
@@ -40,7 +40,7 @@ def update_pip_package(package):
         log = call(pip, "install", "--upgrade", package).decode("utf8")
         logs = [line for line in log.split("\n") if "skip" not in line]
         return "\n".join(logs)
-    except ProgramRunError as err:
+    except ProgramRunError:
         raise IOError(f"Failed to update the package {package}")
 
 
@@ -60,7 +60,9 @@ def attempt_to_recover():
 
     try:
         update_log = update_pip_package(__pkgname__)
-        sys.stderr.write("Updated!\n\nPlease try and reload the program again.\n\n")
+        sys.stderr.write(
+            "Updated!\n\nPlease try and reload the program again.\n\n"
+        )
     except Exception:
         sys.stderr.write(
             "Failed to update!\n\nPlease delete the package manually! (see location below)\n\n"

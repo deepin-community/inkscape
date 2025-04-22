@@ -33,9 +33,9 @@ opcije:
         --user-data-directory
 
     -p, --pipe
-        --pdf-page=STRANICA
+    -n, --pages=PAGE[,PAGE]
         --pdf-poppler
-        --convert-dpi-method=METODA
+        --convert-dpi-method=METHOD
         --no-convert-text-baseline-spacing
 
     -o, --export-filename=FILENAME
@@ -52,10 +52,13 @@ opcije:
     -h, --export-height=VISINA
         --export-margin=MARGINA
 
+        --export-page=all|n[,a-b]
     -i, --export-id=OBJECT-ID[;OBJECT-ID]*
     -j, --export-id-only
     -l, --export-plain-svg
         --export-png-color-mode=COLORMODE
+        --export_png_compression=LEVEL
+        --export_png_antialias=LEVEL
         --export-png-use-dithering=BOOLEAN
         --export-ps-level=LEVEL
         --export-pdf-version=VERSION
@@ -77,8 +80,10 @@ opcije:
         --select=OBJECT-ID[,OBJECT-ID]*
         --actions=ACTION(:ARG)[;ACTION(:ARG)]*
         --action-list
+        --actions-file=FILENAME
 
     -g, --with-gui
+    -q, --active-window
         --display=DISPLAY
         --app-id-tag=TAG
         --batch-process
@@ -88,18 +93,18 @@ opcije:
 
 =head1 OPIS
 
-B<Inkscape> is a Free and open source vector graphics editor. It offers a
-rich set of features and is widely used for both artistic and technical
-illustrations such as cartoons, clip art, logos, typography, diagramming and
-flowcharting.  It uses vector graphics to allow for sharp printouts and
-renderings at unlimited resolution and is not bound to a fixed number of
-pixels like raster graphics. Inkscape uses the standardized B<SVG> file
-format as its main format, which is supported by many other applications
-including web browsers.
+B<Inkscape> je besplatni uređivač vektorskih grafika otvorenog koda. Nudi
+bogat skup značajki i naširoko se koristi za umjetničke i tehničke
+ilustracije kao što su crtani filmovi, crteži, logotipi, tipografija,
+dijagrami i dijagrami toka. Koristi vektorsku grafiku kako bi omogućio oštre
+ispise i prikaze u neograničenoj rezoluciji i nije vezan na fiksni broj
+piksela kao rasterska grafika. Inkscape koristi standardizirani B<SVG>
+format datoteke kao glavni format, koji podržavaju mnoge druge aplikacije
+uključujući web preglednike.
 
-The interface is designed to be comfortable and efficient for skilled users,
-while remaining conformant to B<GNOME> standards so that users familiar with
-other GNOME applications can learn its interface rapidly.
+Sučelje je osmišljeno da bude udobno i učinkovito za vješte korisnike, u
+skladu s B<GNOME>standardima, kako bi korisnici koji su upoznati s drugim
+GNOME aplikacijama brzo naučili njegovo sučelje.
 
 B<SVG> je standardni XML format za 2D vektorsko crtanje, koji je definirao
 W3C. Omogućuje definiranje objekata u crtežu, koristeći staze i jednostavne
@@ -124,15 +129,15 @@ Prikazuje poruku pomoći.
 
 =item B<--help-all>
 
-Shows all help options.
+Prikazuje sve opcije pomoći.
 
 =item B<--help-gapplication>
 
-Shows the GApplication options.
+Prikazuje GApplication opcije.
 
 =item B<--help-gtk>
 
-Shows the GTK+ options.
+Prikzujei GTK+ opcije.
 
 =item B<-V>, B<--version>
 
@@ -140,9 +145,10 @@ Prikazuje Inkscape verziju i datum izgradnje.
 
 =item B<--debug-info>
 
-Prints technical information including Inkscape version, dependency versions
-and operating system.  This Information is useful when debugging issues with
-Inkscape and should be included whenever filing a bug report.
+Ispisuje tehničke informacije uključujući verziju Inkscapea, verzije
+ovisnosti i operacijski sustav. Ove su informacije korisne prilikom
+ispravljanja grešaka u Inkscapeu i trebale bi se uključiti u izvješćima o
+greškama.
 
 =item B<--system-data-directory>
 
@@ -172,9 +178,12 @@ okruženja L <INKSCAPE_PROFILE_DIR>.
 
 Čita ulaznu datoteku iz standardnog ulaza (stdin).
 
-=item B<--pdf-page>=I<STRANICA>
+=item B<--pages>=I<PAGE>
 
-Uvozi zadanu stranicu pdf datoteke. Brojenje započinje s brojem 1.
+Imports the given comma separated list of pages from a PDF, or multi page
+SVG file.
+
+This replaces the I<--pdf-page> from previous Inkscape versions.
 
 =item B<--pdf-poppler>
 
@@ -220,9 +229,9 @@ Prepisuje datoteku unosa.
 
 =item B<--export-type>=I<VRSTA[,VRSTA]*>
 
-Specify the file type to export. Possible values: svg, png, ps, eps, pdf,
-emf, wmf and every file type for which an export extension exists. It is
-possible to export more than one file type at a time.
+Odredi vrstu datoteke za izvoz. Moguće vrijednosti su: svg, png, ps, eps,
+pdf, emf, wmf, xaml i svaka vrsta datoteke za koju postoji proširenje za
+izvoz. Moguće je izvesti više od jedne vrste istovremeno.
 
 Misli na to, da PostScript ne dozvoljava transparenciju, tako da će svi
 transparentni objekti u originalnom SVG formatu biti izvezeni
@@ -234,11 +243,11 @@ Misli na to, da PDF format zadržava transparentnost u izvornom SVG-u.
 
 =item B<--export-extension>=I<EXTENSION-ID>
 
-Allows to specify an output extension that will be used for exporting, which
-is especially relevant if there is more than one export option for a given
-file type. If set, the file extension in --export-filename and --export-type
-may be omitted. Additionally, if set, only one file type may be given in
---export-type.
+Omogućuje određivanje ekstenzije rezultata koja će se koristiti za izvoz,
+što je posebno važno ako postoji više od jedne opcije izvoza za određenu
+vrstu datoteke. Ako je postavljeno, ekstenzija datoteke u --export-filename
+i --export-type može biti izostavljena. Osim toga, ako je postavljeno, može
+se zadati samo jedna vrsta datoteke u --export-type.
 
 =item B<-C>, B<--export-area-page>
 
@@ -258,18 +267,18 @@ može koristiti zajedno s L<--export-use-hints>.
 
 =item B<-a> I<x0:y0:x1:y1>, B<--export-area>=I<x0:y0:x1:y1>
 
-In PNG export, set the exported area of the document, specified in px (1/96
-in). The default is to export the entire document page. The point (0,0) is
-the lower-left corner.
+U PNG izvozu postavi izvezeno područje dokumenta, navedeno u px (1/96
+in). Standardno se izvozi cijela stranica dokumenta. Točka (0,0) se nalazi u
+donjem lijevom uglu.
 
 =item B<--export-area-snap>
 
-For PNG export, snap the export area outwards to the nearest integer px
-values. If you are using the default export resolution of 96 dpi and your
-graphics are pixel-snapped to minimize antialiasing, this switch allows you
-to preserve this alignment even if you are exporting some object's bounding
-box (with L<--export-id> or L<--export-area-drawing>) which is itself not
-pixel-aligned.
+Za PNG izvoz, privuci područje izvoza prema van na najbližu vrijednost
+cijelog broja piksela. Ako koristiš zadanu rezoluciju za izvoz od 96 DPI, i
+ako tvoje grafike koriste privlačenje piksela kako bi se umanjila primjena
+zaglađivanja, ovaj prekidač dozvoljava zadržavanje tog poravnanja piksela,
+čak i ako izvoziš granični okvir nekog objekta (pomoću L<--export-id> ili
+L<--export-area-drawing>), koji sam po sebi ne koristi poravnanje piksela.
 
 =item B<-d> I<DPI>, B<--export-dpi>=I<DPI>
 
@@ -299,6 +308,15 @@ Dodaje marginu okolo područja izvoza. Veličina margine određena je u
 jedinicama veličine stranice (za SVG) ili milimetrima (za PS/PDF). Opcija
 trenutačno nema efekta na druge formate izvoza.
 
+=item B<-i> I<ID>, B<--export-page>=I<all|n[,a-b]*>
+
+Exports the selected pages only. If more than one page is specified then the
+resulting document may contain multiple pages if the format supports it.
+
+Value can be a comma separated list of page numbers, or page ranges of two
+numbers separated by a dash. The keyword 'all' can be used to indicate all
+pages would be exported.
+
 =item B<-i> I<ID>, B<--export-id>=I<ID-OBJEKTA[;ID-OBJEKTA]*>
 
 Za izvoz u PNG, PS, EPS, PDF i običan SVG format, ovo je ID vrijednost
@@ -314,10 +332,9 @@ se izvesti zasebno. U tom će se slučaju izvezene datoteke zvati ovako:
 =item B<-j>, B<--export-id-only>
 
 Za PNG i obični SVG format, izvezi samo objekte, čiji ID je zadan u
-L<--export-id>. Svi ostali objekti bit će sakriveni i neće biti prikazani u
-izvozu, čak ni u slučaju da prekrivaju izvezeni objekt. Bez upotrebe
-L<--export-id>, ova će opcija biti zanemarena. U slučaju izvoza u PDF
-format, ovo je zadano, tako da ova opcija nema utjecaja.
+L<--export-id>. Svi ostali objekti će se sakriti i neće se prikazaii u
+izvozu, čak ni u slučaju da prekrivaju izvezeni objekt. Bez L<--export-id>,
+ova se opcija zanemaruje.
 
 =item B<-l>, B<--export-plain-svg>
 
@@ -327,13 +344,21 @@ datoteke.
 
 =item B<--export-png-color-mode>=I<COLORMODE>
 
-Sets the color mode (bit depth and color type) for exported bitmaps
+Set the color mode (bit depth and color type) for exported bitmaps
 (Gray_1/Gray_2/Gray_4/Gray_8/Gray_16/RGB_8/RGB_16/GrayAlpha_8/GrayAlpha_16/RGBA_8/RGBA_16)
+
+=item B<--export_png_compression>=I<LEVEL>
+
+Set the compression level for PNG export (0 to 9); default is 6.
+
+=item B<--export_png_antialias>=I<LEVEL>
+
+Set the antialiasing level for PNG export (0 to 3); default is 2.
 
 =item B<--export-png-use-dithering>=I<false|true>
 
-Forces dithering or disables it (the Inkscape build must support dithering
-for this).
+Prisilno koristi točkanje ili ga deaktivira (za ovo Inkscape izgradnja mora
+podržati točkanje).
 
 =item B<--export-ps-level>=I<RAZINA>
 
@@ -392,22 +417,22 @@ iz naredbenog retka.
 
 =item B<-b> I<BOJA>, B<--export-background>=I<BOJA>
 
-Background color of exported PNG.  This may be any SVG supported color
-string, for example "#ff007f" or "rgb(255, 0, 128)".  If not set, then the
-page color set in Inkscape in the Document Properties dialog will be used
-(stored in the pagecolor= attribute of sodipodi:namedview).
+Boja pozadine za izvezenu PNG datoteku. Može biti bilo koja SCV podržana
+boja, npr. „#ff007f” ili „rgb(255, 0, 128)”. Ako se boja ne zada, postavlja
+se boja stranice koja je određena u Inkscape postavkama dokumenta
+(spremljena u pagecolor= svojstvu za sodipodi:namedview).
 
 
 
 =item B<-y> I<VRIJEDNOST>, B<--export-background-opacity>=I<VRIJEDNOST>
 
-Opacity of the background of exported PNG.  This may be a value either
-between 0.0 and 1.0 (0.0 meaning full transparency, 1.0 full opacity) or
-greater than 1 up to 255 (255 meaning full opacity).  If not set and the -b
-option is not used, then the page opacity set in Inkscape in the Document
-Properties dialog will be used (stored in the inkscape:pageopacity=
-attribute of sodipodi:namedview).  If not set but the -b option is used,
-then the value of 255 (full opacity) will be used.
+Neprozirnost pozadine izvezene PNG datoteke. Vrijedonst može biti između 0.0
+i 1.0 (0.0 = prozirno, 1.0 = neprozirno) ili veća od 1, sve do 255 (255 =
+neprozirno). Ako nije zadano, i ako se opcija -b ne koristi, koristit će se
+neprozirnost stranice kako je zadana u Inkscapeovim postavkama za dokument
+(spremljene u inkscape:pageopacity= svojstvo od sodipodi:namedview). Ako
+nije zadano, ali se koristi opcija -b, tada će se koristiti vrijednost 255
+(potpuno neprozirno).
 
 =item B<-I>, B<--query-id>=I<ID-OBJEKTA[,ID-OBJEKTA]*>
 
@@ -484,21 +509,32 @@ izvoz iz jedne datoteke.
 
 Ispisuje popis svih dostupnih radnji.
 
+=item B<--actions-file>=I<FILENAME>
+
+Izvrši sve radnje navedene u datoteci. Sadržaj datoteke mora biti formatiran
+pomoću sintakse L<--actions>. Ova opcija poništava argument L<--actions>
+kada je oboje zadano.
+
 =item B<-g>, B<--with-gui>
 
 Pokušaj koristiti grafičko sučelje(GUI) (na Unix sustavu koristi X server,
 čak i ako $DISPLAY nije postavljen).
 
+=item B<-q>, B<--active-window>
+
+Umjesto pokretanja novog Inkscape procesa, ovo će pokrenuti naredbu u
+posljednjem fokusiranom Inkscape dokumentu.
+
 =item B<--display>=I<DISPLAY>
 
-Sets the X display to use for the Inkscape window.
+Postavlja X prikaz koji će se koristiti za Inkscape prozor.
 
 =item B<--app-id-tag>=I<TAG>
 
-Creates a unique instance of Inkscape with the application ID
-'org.inkscape.Inkscape.TAG'. This is useful to separate the Inkscape
-instances when running different Inkscape versions or using different
-preferences files concurrently.
+Stvara jedinstvenu instancu Inkscapea s ID-om aplikacije
+„org.inkscape.Inkscape.TAG”. Ovo je korisno za odvajanje Inkscape instanci
+pri pokretanju različitih verzija Inkscapea ili za istodobno korištenje
+različitih datoteka postavki.
 
 =item B<--batch-process>
 
@@ -518,6 +554,9 @@ U modusu ljuske, Inkscape kao unos očekuje niz radnji (ili naredbi). Oni će
 se obrađivati redak po redak – znači kad se pritisne enter. Moguće je (ali
 nije nužno) sve radnje staviti u jedan redak.
 
+Ova se opcija može kombinirati s parametrom L<--active-window> za
+izvršavanje naredbi ljuske u već otvorenom Inkscape dokumentu.
+
 Sljedeći primjer otvara datoteku i izvozi je u dva različita formata, zatim
 otvara drugu datoteku i izvozi jedan objekt:
 
@@ -533,23 +572,23 @@ Datoteka za osnovnu konfiguraciju se nalazi u
 Inkscapeu mogu promijeniti (uglavnom u dijaloškom sučelju za Inkscape
 postavke). U pod-direktoriju se mogu spremiti i vlastite:
 
-B<$HOME>/.config/inkscape/extensions/ - extensions.
+B<$HOME>/.config/inkscape/extensions/ - proširenja.
 
-B<$HOME>/.config/inkscape/fonts/ - fonts.
+B<$HOME>/.config/inkscape/fonts/ - fontovi.
 
-B<$HOME>/.config/inkscape/icons/ - icon sets.
+B<$HOME>/.config/inkscape/icons/ - kompleti ikona.
 
 B<$HOME>/.config/inkscape/keys/ – mapiranja tipkovnice.
 
-B<$HOME>/.config/inkscape/paint/ - patterns and hatches.
+B<$HOME>/.config/inkscape/paint/ - mustre i šrafure.
 
-B<$HOME>/.config/inkscape/palettes/ - palettes.
+B<$HOME>/.config/inkscape/palettes/ - palete.
 
-B<$HOME>/.config/inkscape/symbols/ - symbol files.
+B<$HOME>/.config/inkscape/symbols/ - datoteke simbola.
 
 B<$HOME>/.config/inkscape/templates/ – predlošci za nove datoteke.
 
-B<$HOME>/.config/inkscape/ui/ - user interface files.
+B<$HOME>/.config/inkscape/ui/ - datoteke kosriničkog sućečlja.
 
 =head1 DIJAGNOZE
 
@@ -619,7 +658,7 @@ duplikate za 90 stupnjeva, spremi SVG i zatvori program:
     inkscape --select=path1555,rect835 --actions="duplicate;object-rotate-90-cw" --export-overwrite filename.svg
 
 Odaberi sve objekte s oznakom elipse, rotiraj ih za 30 stupnjeva, spremi SVG
-i zatvori program:
+i zatvori program.
 
     inkscape --actions="select-by-element:ellipse;transform-rotate:30" --export-overwrite filename.svg
 
@@ -666,20 +705,6 @@ Postavlja korisničku lokaciju za katalog prevođenja.
 
 Za više detalja pogledaj
 L<http://wiki.inkscape.org/wiki/index.php/Environment_variables>
-
-=head1 DIZAJN SUČELJA
-
-Za korištenje drugih skupina ikona umjesto zadane datoteke
-B<$PREFIX>/share/inkscape/icons/icons.svg, upotrebljava se
-B<$HOME>/.config/inkscape/icons/. Ikone se učitavaju imenom
-(npr. I<fill_none.svg>) ili, ukoliko se ne može naći imenom, onda iz
-I<icons.svg>. Ako nijedan način učitavanja ne uspije, koristi se zadano
-mjesto u sustavu.
-
-Potrebne ikone se učitavaju iz SVG datoteka, putem traženja SVG ID oznaka s
-odgovarajućim imenom ikone. (Na primjer, za učitavanje ikone „fill_none” iz
-datoteke, granični okvir nađen za SVG id „fill_none” se iscrtava kao ikona,
-svejedno da li dolazilo iz I<fill_none.svg> ili iz I<icons.svg>.)
 
 =head1 DALJNJE INFORMACIJE
 
@@ -803,10 +828,10 @@ ${INKSCAPE_AUTHORS}
 
 =head1 AUTORSKA PRAVA I LICENCA
 
-B<Copyright (C)> 1999-2022 by Authors.
+B<Copyright (C)> 1999. – 2023. autora.
 
-B<Inkscape> is free software; you can redistribute it and/or modify it under
-the terms of the GPL version 2 or later.
+B<Inkscape> je besplatni softver; može se dalje distribuirati i/ili
+modificirati prema uvjetima GPL verzije 2 ili novije.
 
 
 

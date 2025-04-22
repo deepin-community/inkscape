@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef SEEN_CONN_AVOID_REF
-#define SEEN_CONN_AVOID_REF
-
 /** \file
  * A class for handling shape interaction with libavoid.
  */
@@ -13,6 +10,9 @@
  *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
+
+#ifndef SEEN_CONN_AVOID_REF
+#define SEEN_CONN_AVOID_REF
 
 #include <2geom/point.h>
 #include <cstddef>
@@ -55,7 +55,7 @@ private:
     sigc::connection _transformed_connection;
 };
 
-extern std::vector<SPItem *> get_avoided_items(std::vector<SPItem *> &list, SPObject *from,
+extern std::vector<SPItem *> get_avoided_items(SPObject *from,
         SPDesktop *desktop, bool initialised = true);
 extern void avoid_item_move(Geom::Affine const *mp, SPItem *moved_item);
 extern void init_avoided_shape_geometry(SPDesktop *desktop);

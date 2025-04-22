@@ -22,62 +22,70 @@
 Functions for handling styles and embedded css
 """
 
+from __future__ import annotations
+
 import re
-from collections import OrderedDict
-from typing import MutableMapping, Union, Iterable, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Optional, Generator, TYPE_CHECKING, Tuple
+from lxml import etree
+import tinycss2
+import tinycss2.ast
 
 from .interfaces.IElement import IBaseElement
 
 from .colors import Color
-from .properties import BaseStyleValue, all_properties, ShorthandValue
-from .css import ConditionalRule
+from .properties import (
+    _get_tokens_from_value,
+    _is_inherit,
+    all_properties,
+    shorthand_from_value,
+    shorthand_properties,
+    TokenList,
+    _strip_whitespace_nodes,
+)
+from .css import CSSCompiler, parser
+
+from .utils import FragmentError, NotifyList, NotifyOrderedDict
+from .elements._utils import NSS
 
 if TYPE_CHECKING:
-    from .elements._svg import SvgDocumentElement
+    from .elements._base import BaseElement
 
 
-class Classes(list):
+class Classes(NotifyList):
     """A list of classes applied to an element (used in css and js)"""
 
-    def __init__(self, classes=None, callback=None):
-        self.callback = None
+    def __init__(self, classes=None, callback=None, element=None):
         if isinstance(classes, str):
             classes = classes.split()
-        super().__init__(classes or ())
-        self.callback = callback
+        super().__init__(classes or (), callback=callback)
 
     def __str__(self):
         return " ".join(self)
 
-    def _callback(self):
-        if self.callback is not None:
-            self.callback(self)
 
-    def __setitem__(self, index, value):
-        super().__setitem__(index, value)
-        self._callback()
+@dataclass
+class StyleValue:
+    """Encapsulates a single parsed style value + its importance state"""
 
-    def append(self, value):
-        value = str(value)
-        if value not in self:
-            super().append(value)
-            self._callback()
+    value: TokenList
+    important: bool = False
 
-    def remove(self, value):
-        value = str(value)
-        if value in self:
-            super().remove(value)
-            self._callback()
+    def __str__(self):
+        return tinycss2.serialize(self.value) + ("!important" if self.important else "")
 
-    def toggle(self, value):
-        """If exists, remove it, if not, add it"""
-        value = str(value)
-        if value in self:
-            return self.remove(value)
-        return self.append(value)
+    def __eq__(self, other):
+        return (
+            tinycss2.serialize(self.value) == tinycss2.serialize(other.value)
+            and self.important == other.important
+        )
+
+    def is_inherit(self):
+        """Checks if the value is "inherit" """
+        return _is_inherit(self.value)
 
 
-class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
+class Style(NotifyOrderedDict):
     """A list of style directives
 
     .. versionchanged:: 1.2
@@ -92,8 +100,8 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
     color_props = ("stroke", "fill", "stop-color", "flood-color", "lighting-color")
     opacity_props = ("stroke-opacity", "fill-opacity", "opacity", "stop-opacity")
     unit_props = "stroke-width"
-    """Dictionary of attributes with units. 
-    
+    """Dictionary of attributes with units.
+
     ..versionadded:: 1.2
     """
     associated_props = {
@@ -107,42 +115,67 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
     """
 
     def __init__(self, style=None, callback=None, element=None, **kw):
-        self.element = element
-        # This callback is set twice because this is 'pre-initial' data (no callback)
         self.callback = None
-        # Either a string style or kwargs (with dashes as underscores).
-        style = style or [(k.replace("_", "-"), v) for k, v in kw.items()]
-        if isinstance(style, str):
-            style = self._parse_str(style)
-        # Order raw dictionaries so tests can be made reliable
-        if isinstance(style, dict) and not isinstance(style, OrderedDict):
-            style = [(name, style[name]) for name in sorted(style)]
-        # Should accept dict, Style, parsed string, list etc.
-        super().__init__(style)
-        # Now after the initial data, the callback makes sense.
-        self.callback = callback
+        self.element = element
 
-    @staticmethod
-    def _parse_str(style: str, element=None) -> Iterable[BaseStyleValue]:
+        # if style is passed as kwargs, replace underscores by dashes
+        style = style or [(k.replace("_", "-"), v) for k, v in kw.items()]
+
+        self.update(style)
+
+        # Should accept dict, Style, parsed string, list etc.
+        super().__init__(callback=callback)
+
+    def _add(self, key: str, value: StyleValue):
+        # Works with both regular dictionaries and Styles
+        if key in shorthand_properties:
+            chg = shorthand_properties[key].converter.get_shorthand_changes(value.value)  # type: ignore
+            for k, v in chg.items():
+                self._add(k, StyleValue(v, value.important))
+        else:
+            if key not in self or (
+                not self.get_store(key).important or value.important
+            ):
+                # Only overwrite if importance of existing value is higher
+                super().__setitem__(key, value)
+
+    def _get_val(self, key: str, value):
+        if key in all_properties and not isinstance(value, str):
+            return StyleValue(
+                all_properties[key].converter.convert_back(value, self.element)
+            )
+        return StyleValue(_get_tokens_from_value(value))
+
+    def _attr_callback(self, key):
+        def inner(value):
+            self[key] = value
+
+        return inner
+
+    def _parse_str(self, style: str) -> Generator[Tuple[str, StyleValue], None, None]:
         """Create a dictionary from the value of a CSS rule (such as an inline style or
-        from an embedded style sheet), including its !important state, parsing the value
-        if possible.
+        from an embedded style sheet), including its !important state, in a tokenized
+        form. Whitespace tokens from the start and end of the value are stripped.
 
         Args:
-            style: the content of a CSS rule to parse
-            element: the element this style is working on (can be the root SVG, is used
-                for parsing gradients etc.)
+            style: the content of a CSS rule to parse. Can also be a List of
+                ComponentValues
 
         Yields:
-            :class:`~inkex.properties.BaseStyleValue`: the parsed attribute
+            Tuple[str, class:`~inkex.style.StyleValue`]: the parsed attribute
         """
-        for declaration in style.split(";"):
-            if ":" in declaration:
-                result = BaseStyleValue.factory_errorhandled(
-                    element, declaration=declaration.strip()
+        result = tinycss2.parse_declaration_list(
+            style, skip_comments=True, skip_whitespace=True
+        )
+        for declaration in result:
+            if isinstance(declaration, tinycss2.ast.Declaration):
+                yield (
+                    declaration.name,
+                    StyleValue(
+                        _strip_whitespace_nodes(declaration.value),
+                        declaration.important,
+                    ),
                 )
-                if result is not None:
-                    yield result
 
     @staticmethod
     def parse_str(style: str, element=None):
@@ -155,7 +188,7 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
 
     def to_str(self, sep=";"):
         """Convert to string using a custom delimiter"""
-        return sep.join([self.get_store(key).declaration for key in self])
+        return sep.join([f"{key}:{value}" for key, value in self.items()])
 
     def __add__(self, other):
         """Add two styles together to get a third, composing them"""
@@ -193,17 +226,23 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
         return ret
 
     def update(self, other):
-        """Update, while respecting ``!important`` declarations."""
-        if not isinstance(other, Style):
-            other = Style(other)
-        # only update
+        """Update, while respecting ``!important`` declarations, and simplifying
+        shorthands"""
         if isinstance(other, Style):
-            for key in other.keys():
-                if not (self.get_importance(key) and not other.get_importance(key)):
-                    self[key] = other.get_store(key)
+            for k, v in super(NotifyOrderedDict, other).items():
+                self._add(k, v)
+        # Order raw dictionaries so tests can be made reliable
+        elif isinstance(other, dict):
+            for k, v in sorted(other.items()):
+                self._add(k, self._get_val(k, v))
 
-        if self.callback is not None:
-            self.callback(self)
+        elif isinstance(other, list) and all(isinstance(i, tuple) for i in other):
+            for k, v in other:
+                self._add(k, self._get_val(k, v))
+
+        elif isinstance(other, str) or (isinstance(other, list)):
+            for k, v in self._parse_str(other):
+                self._add(k, v)
 
     def add_inherited(self, parent):
         """Creates a new Style containing all parent styles with importance "!important"
@@ -219,36 +258,24 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
             Style: the merged Style object
         """
         ret = self.copy()
-        ret.apply_shorthands()  # parent should already have its shortcuts applied
 
         if not (isinstance(parent, Style)):
             return ret
 
-        for key in parent.keys():
+        for item in parent.keys():
             apply = False
-            if key in all_properties and all_properties[key][3]:
+            if item in all_properties and all_properties[item].inherited:
                 # only set parent value if value is not set or parent importance is
                 # higher
-                if key not in ret:
+                if item not in ret or (
+                    not self.get_importance(item) and parent.get_importance(item)
+                ):
                     apply = True
-                elif self.get_importance(key) != parent.get_importance(key):
-                    apply = parent.get_importance(key)
-            if key in ret and ret[key] == "inherit":
+            if item in ret and ret.get_store(item).is_inherit():
                 apply = True
             if apply:
-                ret[key] = parent[key]
+                super(NotifyOrderedDict, ret).__setitem__(item, parent.get_store(item))
         return ret
-
-    def apply_shorthands(self):
-        """Apply all shorthands in this style."""
-        for element in list(self.values()):
-            if isinstance(element, ShorthandValue):
-                element.apply_shorthand(self)
-
-    def __delitem__(self, key):
-        super().__delitem__(key)
-        if self.callback is not None:
-            self.callback(self)
 
     def __setitem__(self, key, value):
         """Sets a style value.
@@ -260,28 +287,40 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
             key (str): the attribute name
             value (Any):
 
-                - a :class:`BaseStyleValue`
+                - a :class:`StyleValue`
+                - a TokenList (tokenized CSS value),
                 - a string with the value
-                - any other object. The :class:`~inkex.properties.BaseStyleValue`
-                  subclass of the provided key will attempt to create a string out of
-                  the passed value.
+                - any other object. The converter associated with the provided key will
+                  attempt to create a string out of the passed value.
         Raises:
-            ValueError: when ``value`` is a :class:`~inkex.properties.BaseStyleValue`
-                for a different attribute than `key`
+            ValueError: when passing something else than string, StyleValue or TokenList
+                and key is not a known style attribute
             Error: Other exceptions may be raised when converting non-string objects."""
-        if not isinstance(value, BaseStyleValue) or value is None:
-            # try to convert the value using the factory
-            value = BaseStyleValue.factory(attr_name=key, value=value)
-            # check if the set attribute is valid
-            _ = value.parse_value(self.element)
-        elif key != value.attr_name:
-            raise ValueError(
-                """You're trying to save a value into a style attribute, but the
-                provided key is different from the attribute name given in the value"""
-            )
-        super().__setitem__(key, value)
-        if self.callback is not None:
-            self.callback(self)
+
+        if isinstance(value, StyleValue):
+            super().__setitem__(key, value)
+            return
+        if isinstance(value, str):
+            value = value.strip()
+            tokenized = _get_tokens_from_value(value)
+
+            if key in all_properties:
+                all_properties[key].converter.raise_invalid_value(
+                    tokenized, self.element
+                )
+            value = tokenized
+        elif (
+            isinstance(value, list)
+            and len(value) > 0
+            and all(isinstance(i, tinycss2.ast.Node) for i in value)
+        ):
+            pass
+        elif key in all_properties:
+            value = all_properties[key].converter.convert_back(value, self.element)
+        else:
+            raise TypeError()
+        # Convert value to StyleValue
+        super().__setitem__(key, StyleValue(value, False))
 
     def __getitem__(self, key):
         """Returns the unparsed value of the element (minus a possible ``!important``)
@@ -289,12 +328,13 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
         .. versionchanged:: 1.2
             ``!important`` is removed from the value.
         """
-        return self.get_store(key).value
+        return tinycss2.serialize(super().__getitem__(key).value)
 
     def get(self, key, default=None):
-        if key in self:
-            return self.__getitem__(key)
-        return default
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
     def get_store(self, key):
         """Gets the :class:`~inkex.properties.BaseStyleValue` of this key, since the
@@ -311,27 +351,37 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
         """
         return super().__getitem__(key)
 
-    def __call__(self, key, element=None):
+    def __call__(self, key: str, element: Optional[BaseElement] = None, default=None):
         """Return the parsed value of a style. Optionally, an element can be passed
-        that will be used to find gradient definitions ect.
+        that will be used to find gradient definitions etc.
 
         .. versionadded:: 1.2"""
-        # check if there are shorthand properties defined. If so, apply them to a copy
-        copy = self
-        for value in super().values():
-            if isinstance(value, ShorthandValue):
-                copy = self.copy()
-                copy.apply_shorthands()
-        if key in copy:
-            return copy.get_store(key).parse_value(element or self.element)
-        # style is not set, return the default value
-        if key in all_properties:
-            defvalue = BaseStyleValue.factory(
-                attr_name=key, value=all_properties[key][1]
+        tmp = super().get(key, None)
+        v: None | TokenList = None if tmp is None else tmp.value
+        if (v is None and (key in all_properties or default is not None)) or (
+            v is not None and _is_inherit(v)
+        ):  # if the value is still inherit here, return the default
+            v = (
+                _get_tokens_from_value(default)
+                if default is not None
+                else (
+                    all_properties[key].default_value if key in all_properties else None
+                )
             )
-            return (
-                defvalue.parse_value()
-            )  # default values are independent of the element
+            if v is None:
+                return v
+        if v is not None:
+            if key in shorthand_properties:
+                return tinycss2.serialize(v)
+            if key in all_properties:
+                result = all_properties[key].converter.convert(
+                    v, element or self.element
+                )
+            else:
+                result = tinycss2.serialize(v)
+            if isinstance(result, list) and not isinstance(result, Color):
+                result = NotifyList(result, callback=self._attr_callback(key))
+            return result
         raise KeyError("Unknown attribute")
 
     def __eq__(self, other):
@@ -345,18 +395,18 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
         return True
 
     def items(self):
-        """The styles's parsed items
+        """The styles's items as string
 
         .. versionadded:: 1.2"""
         for key, value in super().items():
-            yield key, value.value
+            yield key, tinycss2.serialize(value.value)
 
     def get_importance(self, key, default=False):
         """Returns whether the declaration with ``key`` is marked as ``!important``
 
         .. versionadded:: 1.2"""
         if key in self:
-            return super().__getitem__(key).important
+            return self.get_store(key).important
         return default
 
     def set_importance(self, key, importance):
@@ -367,8 +417,7 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
             super().__getitem__(key).important = importance
         else:
             raise KeyError()
-        if self.callback is not None:
-            self.callback(self)
+        self._callback()
 
     def get_color(self, name="fill"):
         """Get the color AND opacity as one Color object"""
@@ -387,9 +436,15 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
 
     def update_urls(self, old_id, new_id):
         """Find urls in this style and replace them with the new id"""
-        for (name, value) in self.items():
-            if value == f"url(#{old_id})":
-                self[name] = f"url(#{new_id})"
+        for _, elem in super().items():
+            for token in elem.value:
+                if (
+                    isinstance(token, tinycss2.ast.URLToken)
+                    and token.value == f"#{old_id}"
+                ):
+                    token.value = f"#{new_id}"
+                    token.representation = f"url(#{new_id})"
+                    self._callback()
 
     def interpolate(self, other, fraction):
         # type: (Style, Style, float) -> Style
@@ -406,7 +461,7 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
         return StyleInterpolator(self.element, other.element).interpolate(fraction)
 
     @classmethod
-    def cascaded_style(cls, element):
+    def cascaded_style(cls, element: BaseElement):
         """Returns the cascaded style of an element (all rules that apply the element
         itself), based on the stylesheets, the presentation attributes and the inline
         style using the respective specificity of the style
@@ -422,7 +477,10 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
         Returns:
             Style: the cascaded style
         """
-        styles = list(element.root.stylesheets.lookup_specificity(element.get_id()))
+        try:
+            styles = list(element.root.stylesheets.lookup_specificity(element))
+        except FragmentError:
+            styles = []
 
         # presentation attributes have specificity 0,
         # see https://www.w3.org/TR/SVG/styling.html#PresentationAttributes
@@ -466,6 +524,86 @@ class Style(OrderedDict, MutableMapping[str, Union[str, BaseStyleValue]]):
         cascaded.element = element
         return cascaded  # doesn't have a parent
 
+    @classmethod
+    def _get_cascade(cls, attribute: str, element: BaseElement) -> Optional[TokenList]:
+        if attribute in shorthand_from_value:
+
+            def relevant(style):
+                return attribute in style or shorthand_from_value[attribute] in style
+
+        else:
+
+            def relevant(style):
+                return attribute in style
+
+        try:
+            values = []
+            for sheet in element.root.stylesheets:
+                for style in sheet:
+                    if relevant(style):
+                        value = style.get_store(attribute)
+                        values += [
+                            (value, spec) for spec in style.get_specificities(element)
+                        ]
+        except FragmentError:
+            values = []
+
+        # presentation attributes have specificity 0,
+        # see https://www.w3.org/TR/SVG/styling.html#PresentationAttributes
+        # they also cannot be shorthands and are always important=False
+        if attribute in element.attrib:
+            values.append(
+                (
+                    StyleValue(
+                        _get_tokens_from_value(element.attrib[attribute]),
+                        False,
+                    ),
+                    (0, 0, 0),
+                )
+            )
+
+        if relevant(element.style):
+            values.append((element.style.get_store(attribute), (float("inf"), 0, 0)))
+        if len(values) == 0:
+            return None
+        # Sort according to importance, then specificity
+        values.sort(key=lambda item: (item[0].important, item[1]))
+        return values[-1][0].value
+
+    @classmethod
+    def _get_style(cls, attribute: str, element: BaseElement):
+        """Specified style for :param:`attribute`"""
+        # The resolution order is:
+        # - cascade -> then resolve the value, except if the value is "inherit"
+        # - parent's computed value
+        # - initial (default) value -> then resolve
+
+        result = None
+        current = element
+        inherited = (
+            all_properties[attribute].inherited
+            if attribute in all_properties
+            else False
+        )
+        while True:
+            result = cls._get_cascade(attribute, current)
+            if result is not None and not _is_inherit(result):
+                break
+            current = current.getparent()
+            if current is None or (not inherited and not _is_inherit(result)):
+                break
+        # Compute value based on current
+        if result is None or _is_inherit(result):  # Fallback to default value
+            if attribute in all_properties:
+                result = all_properties[attribute].default_value
+            else:
+                return None
+        return (
+            all_properties[attribute].converter.convert(result, current)
+            if attribute in all_properties
+            else tinycss2.serialize(result)
+        )
+
 
 class StyleSheets(list):
     """
@@ -476,34 +614,22 @@ class StyleSheets(list):
     re-created on the fly by lxml so lookups have to be centralised.
     """
 
-    def __init__(self, svg=None):
-        super().__init__()
-        self.svg = svg
-
-    def lookup(self, element_id, svg=None):
+    def lookup(self, element):
         """
         Find all styles for this element.
         """
-        # This is aweful, but required because we can't know for sure
-        # what might have changed in the xml tree.
-        if svg is None:
-            svg = self.svg
         for sheet in self:
-            for style in sheet.lookup(element_id, svg=svg):
+            for style in sheet.lookup(element):
                 yield style
 
-    def lookup_specificity(self, element_id, svg=None):
+    def lookup_specificity(self, element):
         """
         Find all styles for this element and return the specificity of the match.
 
         .. versionadded:: 1.2
         """
-        # This is aweful, but required because we can't know for sure
-        # what might have changed in the xml tree.
-        if svg is None:
-            svg = self.svg
         for sheet in self:
-            for style in sheet.lookup_specificity(element_id, svg=svg):
+            for style in sheet.lookup_specificity(element):
                 yield style
 
 
@@ -513,16 +639,19 @@ class StyleSheet(list):
     a css file used with a css. Will yield multiple Style() classes.
     """
 
-    comment_strip = re.compile(r"(\/\/.*?\n)|(\/\*.*?\*\/)|@.*;")
-
     def __init__(self, content=None, callback=None):
         super().__init__()
         self.callback = None
         # Remove comments
-        content = self.comment_strip.sub("", (content or ""))
+        if content is None:
+            parsed = []
+        else:
+            parsed = tinycss2.parse_stylesheet(
+                content, skip_comments=True, skip_whitespace=True
+            )
         # Parse rules
-        for block in content.split("}"):
-            if block:
+        for block in parsed:
+            if isinstance(block, tinycss2.ast.QualifiedRule):
                 self.append(block)
         self.callback = callback
 
@@ -539,45 +668,37 @@ class StyleSheet(list):
             ConditionalStyle(rules=rule, style=str(style), callback=self._callback)
         )
 
-    def append(self, other):
+    def append(self, other: str | tinycss2.ast.QualifiedRule):
         """Make sure callback is called when updating"""
         if isinstance(other, str):
-            if "{" not in other:
-                return  # Warning?
-            rules, style = other.strip("}").split("{", 1)
-            if rules.strip().startswith("@"):  # ignore @font-face and @import
-                return
+            other = tinycss2.parse_one_rule(other)
+        if isinstance(other, tinycss2.ast.QualifiedRule):
             other = ConditionalStyle(
-                rules=rules, style=style.strip(), callback=self._callback
+                other.prelude, other.content, callback=self._callback
             )
         super().append(other)
         self._callback()
 
-    def lookup(self, element_id, svg):
-        """Lookup the element_id against all the styles in this sheet"""
+    def lookup(self, element):
+        """Lookup the element against all the styles in this sheet"""
         for style in self:
-            for elem in svg.xpath(style.to_xpath()):
-                if elem.get("id", None) == element_id:
-                    yield style
+            if any(style.checks(element)):
+                yield style
 
-    def lookup_specificity(self, element_id, svg):
+    def lookup_specificity(self, element):
         """Lookup the element_id against all the styles in this sheet
         and return the specificity of the match
 
         Args:
-            element_id (str): the id of the element that styles are being queried for
-            svg (SvgDocumentElement): The document that contains both element and the
-                styles
+            element: the element of the element that styles are being queried for
 
         Yields:
             Tuple[ConditionalStyle, Tuple[int, int, int]]: all matched styles and the
             specificity of the match
         """
         for style in self:
-            for rule, spec in zip(style.to_xpaths(), style.get_specificities()):
-                for elem in svg.xpath(rule):
-                    if elem.get("id", None) == element_id:
-                        yield (style, spec)
+            for specificity in style.get_specificities(element):
+                yield (style, specificity)
 
 
 class ConditionalStyle(Style):
@@ -587,9 +708,33 @@ class ConditionalStyle(Style):
     rather than being an attribute style.
     """
 
-    def __init__(self, rules="*", style=None, callback=None, **kwargs):
+    def __init__(
+        self, rules: str | TokenList = "*", style=None, callback=None, **kwargs
+    ):
         super().__init__(style=style, callback=callback, **kwargs)
-        self.rules = [ConditionalRule(rule) for rule in rules.split(",")]
+        self._rules: str | TokenList = rules
+        self.rules = list(parser.parse(rules, namespaces=NSS))
+        self.checks = [
+            CSSCompiler.compile_node(selector.parsed_tree) for selector in self.rules
+        ]
+
+    def matches(self, element: etree.Element):
+        """Checks if an individual element matches this selector.
+
+        .. versionadded:: 1.4"""
+        if isinstance(element, etree._Comment):
+            return False
+        if any(check(element) for check in self.checks):
+            return True
+        return False
+
+    def all_matches(self, document: etree.Element):
+        """Get all matches of this selector in document as iterator.
+
+        .. versionadded:: 1.4"""
+        for el in document.iter():
+            if self.matches(el):
+                yield el
 
     def __str__(self):
         """Return this style as a css entry with class"""
@@ -599,23 +744,14 @@ class ConditionalStyle(Style):
             return f"{rules} {{\n  {content};\n}}"
         return f"{rules} {{}}"
 
-    def to_xpath(self):
-        """Convert all rules to an xpath"""
-        # This can be converted to cssselect.CSSSelector (lxml.cssselect) later if we
-        # have coverage problems. The main reason we're not is that cssselect is doing
-        # exactly this xpath transform and provides no extra functionality for reverse
-        # lookups.
-        return "|".join(self.to_xpaths())
-
-    def to_xpaths(self):
-        """Gets a list of xpaths for all rules of this ConditionalStyle
-
-        .. versionadded:: 1.2"""
-        return [rule.to_xpath() for rule in self.rules]
-
-    def get_specificities(self):
+    def get_specificities(self, element: Optional[BaseElement] = None):
         """Gets an iterator of the specificity of all rules in this ConditionalStyle
 
         .. versionadded:: 1.2"""
-        for rule in self.rules:
-            yield rule.get_specificity()
+        if element is not None:
+            for rule, check in zip(self.rules, self.checks):
+                if check(element):
+                    yield rule.specificity
+        else:
+            for rule in self.rules:
+                yield rule.specificity

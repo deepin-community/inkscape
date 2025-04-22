@@ -18,17 +18,15 @@
 #include "knot-properties.h"
 
 #include <boost/lexical_cast.hpp>
-
 #include <glibmm/i18n.h>
 #include <glibmm/main.h>
 
 #include "desktop.h"
 #include "ui/knot/knot.h"
+#include "ui/pack.h"
 #include "util/units.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Dialogs {
+namespace Inkscape::UI::Dialog {
 
 KnotPropertiesDialog::KnotPropertiesDialog()
     : _knotpoint(nullptr),
@@ -66,7 +64,7 @@ KnotPropertiesDialog::KnotPropertiesDialog()
     _layout_table.attach(_knot_y_label, 0, 1, 1, 1);
     _layout_table.attach(_knot_y_entry, 1, 1, 1, 1);
 
-    mainVBox->pack_start(_layout_table, true, true, 4);
+    UI::pack_start(*mainVBox, _layout_table, true, true, 4);
 
     // Buttons
     _close_button.set_can_default();
@@ -95,9 +93,6 @@ KnotPropertiesDialog::KnotPropertiesDialog()
     set_focus(_knot_y_entry);
 }
 
-KnotPropertiesDialog::~KnotPropertiesDialog() {
-}
-
 void KnotPropertiesDialog::showDialog(SPDesktop *desktop, const SPKnot *pt, Glib::ustring const unit_name)
 {
     KnotPropertiesDialog *dialog = new KnotPropertiesDialog();
@@ -111,7 +106,7 @@ void KnotPropertiesDialog::showDialog(SPDesktop *desktop, const SPKnot *pt, Glib
     desktop->setWindowTransient (dialog->gobj());
     dialog->property_destroy_with_parent() = true;
 
-    dialog->show();
+    dialog->set_visible(true);
     dialog->present();
 }
 
@@ -137,27 +132,6 @@ KnotPropertiesDialog::_close()
     );
 }
 
-bool KnotPropertiesDialog::_handleKeyEvent(GdkEventKey * /*event*/)
-{
-
-    /*switch (get_latin_keyval(event)) {
-        case GDK_KEY_Return:
-        case GDK_KEY_KP_Enter: {
-            _apply();
-            return true;
-        }
-        break;
-    }*/
-    return false;
-}
-
-void KnotPropertiesDialog::_handleButtonEvent(GdkEventButton* event)
-{
-    if ( (event->type == GDK_2BUTTON_PRESS) && (event->button == 1) ) {
-        _apply();
-    }
-}
-
 void KnotPropertiesDialog::_setKnotPoint(Geom::Point knotpoint, Glib::ustring const unit_name)
 {
     _unit_name = unit_name;
@@ -172,10 +146,7 @@ void KnotPropertiesDialog::_setPt(const SPKnot *pt)
 	_knotpoint = const_cast<SPKnot *>(pt);
 }
 
-} // namespace
-} // namespace
-} // namespace
-
+} // namespace Inkscape::UI::Dialog
 
 /*
   Local Variables:

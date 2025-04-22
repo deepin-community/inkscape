@@ -39,23 +39,22 @@ WidgetSpacer::WidgetSpacer(Inkscape::XML::Node *xml, Inkscape::Extension::Extens
 }
 
 /** \brief  Create a label for the description */
-Gtk::Widget *WidgetSpacer::get_widget(sigc::signal<void> *changeSignal)
+Gtk::Widget *WidgetSpacer::get_widget(sigc::signal<void ()> *changeSignal)
 {
     if (_hidden) {
         return nullptr;
     }
 
-    Gtk::Box *spacer = Gtk::manage(new Gtk::Box());
-    spacer->set_border_width(_size/2);
+    auto const spacer = Gtk::make_managed<Gtk::Box>();
+    spacer->property_margin().set_value(_size/2);
 
     if (_expand) {
         spacer->set_hexpand();
         spacer->set_vexpand();
     }
 
-    spacer->show();
-
-    return dynamic_cast<Gtk::Widget *>(spacer);
+    spacer->set_visible(true);
+    return spacer;
 }
 
 }  /* namespace Extension */

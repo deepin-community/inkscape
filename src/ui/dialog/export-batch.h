@@ -14,48 +14,110 @@
 #ifndef SP_EXPORT_BATCH_H
 #define SP_EXPORT_BATCH_H
 
-#include <gtkmm.h>
+#include <map>
+#include <memory>
+#include <string>
+#include <glibmm/refptr.h>
+#include <glibmm/ustring.h>
+#include <gtkmm/box.h>
+#include <gtkmm/checkbutton.h>
+#include <gtkmm/entry.h>
+#include <gtkmm/enums.h>
+#include <gtkmm/flowboxchild.h>
+#include <gtkmm/grid.h>
+#include <gtkmm/label.h>
+#include <gtkmm/radiobutton.h>
 
-#include "ui/widget/scrollprotected.h"
+#include "helper/auto-connection.h"
+#include "ui/widget/export-preview.h"
+
+namespace Gtk {
+class Builder;
+class Button;
+class FlowBox;
+class ProgressBar;
+class Widget;
+} // namespace Gtk
 
 class InkscapeApplication;
-class SPDocument;
 class SPDesktop;
+class SPDocument;
+class SPItem;
+class SPPage;
 
 namespace Inkscape {
-    class Preferences;
-    class Selection;
+
+class Preferences;
+class Selection;
 
 namespace UI {
+
+namespace Widget {
+class ColorPicker;
+} // namespace Widget
+
 namespace Dialog {
 
 class ExportList;
 class BatchItem;
-class ExportProgressDialog;
 
-class BatchExport : public Gtk::Box
+typedef std::map<std::string, std::unique_ptr<BatchItem>> BatchItems;
+
+class BatchItem final : public Gtk::FlowBoxChild
 {
 public:
-    BatchExport() {};
-    BatchExport(BaseObjectType *cobject, const Glib::RefPtr<Gtk::Builder> &refGlade)
-        : Gtk::Box(cobject){};
-    ~BatchExport() override = default;
+    BatchItem(SPItem *item, bool isolate_item, std::shared_ptr<PreviewDrawing> drawing);
+    BatchItem(SPPage *page, std::shared_ptr<PreviewDrawing> drawing);
+    ~BatchItem() final;
 
+    Glib::ustring getLabel() const { return _label_str; }
+    SPItem *getItem() const { return _item; }
+    SPPage *getPage() const { return _page; }
+    void refresh(bool hide, guint32 bg_color);
+    void setDrawing(std::shared_ptr<PreviewDrawing> drawing);
+
+    auto get_radio_group() { return _option.get_group(); }
+    void on_parent_changed(Gtk::Widget *) final;
+    void on_mode_changed(Gtk::SelectionMode mode);
+    void set_selected(bool selected);
+    void update_selected();
+    bool isolateItem() const { return _isolate_item; }
+    void setIsolateItem(bool isolate);
+
+    static void syncItems(BatchItems &items, std::map<std::string, SPObject*> const &objects, Gtk::FlowBox &container, std::shared_ptr<PreviewDrawing> preview, bool isolate_items);
 private:
-    InkscapeApplication *_app;
-    SPDesktop *_desktop = nullptr;
-    SPDocument *_document = nullptr;
+    void init(std::shared_ptr<PreviewDrawing> drawing);
+    void update_label();
 
-private:
-    bool setupDone = false; // To prevent setup() call add connections again.
+    Glib::ustring _label_str;
+    Gtk::Grid _grid;
+    Gtk::Label _label;
+    Gtk::CheckButton _selector;
+    Gtk::RadioButton _option;
+    ExportPreview _preview;
+    SPItem *_item = nullptr;
+    SPPage *_page = nullptr;
+    bool _isolate_item = false;
+    bool is_hide = false;
 
+    auto_connection _selection_widget_changed_conn;
+    auto_connection _object_modified_conn;
+};
+
+class BatchExport final : public Gtk::Box
+{
 public:
+    BatchExport(BaseObjectType *cobject, const Glib::RefPtr<Gtk::Builder>& builder);
+    ~BatchExport() final;
+
     void setApp(InkscapeApplication *app) { _app = app; }
     void setDocument(SPDocument *document);
     void setDesktop(SPDesktop *desktop);
     void selectionChanged(Inkscape::Selection *selection);
     void selectionModified(Inkscape::Selection *selection, guint flags);
     void pagesChanged();
+    void queueRefreshItems();
+    void queueRefresh(bool rename_file = false);
 
 private:
     enum selection_mode
@@ -65,91 +127,78 @@ private:
         SELECTION_PAGE,
     };
 
-private:
-    typedef Inkscape::UI::Widget::ScrollProtected<Gtk::SpinButton> SpinButton;
+    InkscapeApplication *_app;
+    SPDesktop *_desktop = nullptr;
+    SPDocument *_document = nullptr;
+    std::shared_ptr<PreviewDrawing> _preview_drawing;
+    bool setupDone = false; // To prevent setup() call add connections again.
 
     std::map<selection_mode, Gtk::RadioButton *> selection_buttons;
-    Gtk::FlowBox *preview_container = nullptr;
-    Gtk::CheckButton *show_preview = nullptr;
-    Gtk::Label *num_elements = nullptr;
-    Gtk::CheckButton *hide_all = nullptr;
-    Gtk::Entry *filename_entry = nullptr;
-    Gtk::Button *export_btn = nullptr;
-    Gtk::ProgressBar *_prog = nullptr;
-    ExportList *export_list = nullptr;
+    Gtk::FlowBox &preview_container;
+    Gtk::CheckButton &show_preview;
+    Gtk::CheckButton &overwrite;
+    Gtk::Label &num_elements;
+    Gtk::CheckButton &hide_all;
+    Gtk::Entry &name_text;
+    Gtk::Entry &path_text;
+    Gtk::Button &export_btn;
+    Gtk::Button &cancel_btn;
+    Gtk::ProgressBar &_prog;
+    Gtk::ProgressBar &_prog_batch;
+    ExportList &export_list;
+    Gtk::Box &progress_box;
 
     // Store all items to be displayed in flowbox
-    std::map<std::string, BatchItem *> current_items;
+    std::map<std::string, std::unique_ptr<BatchItem>> current_items;
 
-    bool filename_modified;
-    Glib::ustring original_name;
-    Glib::ustring doc_export_name;
+    std::string original_name;
 
     Inkscape::Preferences *prefs = nullptr;
     std::map<selection_mode, Glib::ustring> selection_names;
     selection_mode current_key;
 
-public:
     // initialise variables from builder
     void initialise(const Glib::RefPtr<Gtk::Builder> &builder);
     void setup();
-
-private:
     void setDefaultSelectionMode();
-    void onFilenameModified();
     void onAreaTypeToggle(selection_mode key);
     void onExport();
+    void onCancel();
     void onBrowse(Gtk::EntryIconPosition pos, const GdkEventButton *ev);
 
     void refreshPreview();
     void refreshItems();
-    void loadExportHints();
+    void loadExportHints(bool rename_file);
 
-public:
-    void refresh()
-    {
-        refreshItems();
-        loadExportHints();
-    };
+    Glib::ustring getBatchPath() const;
+    void setBatchPath(Glib::ustring const &path);
+    Glib::ustring getBatchName(bool fallback) const;
+    void setBatchName(Glib::ustring const &name);
+    void setExporting(bool exporting, Glib::ustring const &text = "", Glib::ustring const &test_batch = "");
 
-private:
-    void setExporting(bool exporting, Glib::ustring const &text = "");
-    ExportProgressDialog *create_progress_dialog(Glib::ustring progress_text);
-    /**
-     * Callback to be used in for loop to update the progress bar.
-     *
-     * @param value number between 0 and 1 indicating the fraction of progress (0.17 = 17 % progress)
-     * @param dlg void pointer to the Gtk::Dialog progress dialog
-     */
-    static unsigned int onProgressCallback(float value, void *dlg);
+    static unsigned int onProgressCallback(float value, void *);
 
-    /**
-     * Callback for pressing the cancel button.
-     */
-    void onProgressCancel();
-
-    /**
-     * Callback invoked on closing the progress dialog.
-     */
-    bool onProgressDelete(GdkEventAny *event);
-
-private:
-    ExportProgressDialog *prog_dlg = nullptr;
     bool interrupted;
 
     // Gtk Signals
-    sigc::connection filenameConn;
-    sigc::connection exportConn;
-    sigc::connection browseConn;
-    sigc::connection selectionModifiedConn;
-    sigc::connection selectionChangedConn;
+    auto_connection filename_conn;
+    auto_connection export_conn;
+    auto_connection cancel_conn;
+    auto_connection browse_conn;
+    auto_connection refresh_conn;
+    auto_connection refresh_items_conn;
     // SVG Signals
-    sigc::connection _pages_changed_connection;
+    auto_connection _pages_changed_connection;
+
+    std::unique_ptr<Inkscape::UI::Widget::ColorPicker> _bgnd_color_picker;
 };
+
+
 } // namespace Dialog
 } // namespace UI
 } // namespace Inkscape
-#endif
+
+#endif // SP_EXPORT_BATCH_H
 
 /*
   Local Variables:

@@ -16,7 +16,9 @@
 #include <glibmm/i18n.h>
 
 #include "actions-view-mode.h"
+#include "actions-helper.h"
 
+#include "desktop.h"
 #include "inkscape-application.h"
 #include "inkscape-window.h"
 
@@ -25,7 +27,7 @@
 #include "ui/monitor.h"   // Monitor aspect ratio
 #include "ui/widget/canvas.h"
 
-#include "widgets/desktop-widget.h"
+#include "ui/widget/desktop-widget.h"
 
 // Helper function to set state.
 void
@@ -34,13 +36,13 @@ canvas_set_state(InkscapeWindow *win, Glib::ustring action_name, bool state)
     // Get Action
     auto action = win->lookup_action(action_name);
     if (!action) {
-        std::cerr << "canvas_set_state: " << action_name << " action missing!" << std::endl;
+        show_output(Glib::ustring("canvas_set_state: ") + action_name.raw() + " action missing!");
         return;
     }
 
     auto saction = Glib::RefPtr<Gio::SimpleAction>::cast_dynamic(action);
     if (!saction) {
-        std::cerr << "canvas_set_state: " << action_name << " not SimpleAction!" << std::endl;
+        show_output(Glib::ustring("canvas_set_state: ") + action_name.raw() + " not SimpleAction!");
         return;
     }
 
@@ -55,13 +57,13 @@ canvas_toggle_state(InkscapeWindow *win, Glib::ustring action_name)
     // Get Action
     auto action = win->lookup_action(action_name);
     if (!action) {
-        std::cerr << "canvas_toggle_state: " << action_name << " action missing!" << std::endl;
+        show_output(Glib::ustring("canvas_toggle_state: ") + action_name.raw() + " action missing!");
         return false;
     }
 
     auto saction = Glib::RefPtr<Gio::SimpleAction>::cast_dynamic(action);
     if (!saction) {
-        std::cerr << "canvas_toggle_state: " << action_name << " not SimpleAction!" << std::endl;
+        show_output(Glib::ustring("canvas_toggle_state: ") + action_name.raw() + " not SimpleAction!");
         return false;
     }
 
@@ -72,17 +74,6 @@ canvas_toggle_state(InkscapeWindow *win, Glib::ustring action_name)
     saction->change_state(state);
 
     return state;
-}
-
-void
-canvas_show_grid_toggle(InkscapeWindow *win)
-{
-    // Toggle State
-    canvas_toggle_state(win, "canvas-show-grid");
-
-    // Do Action
-    SPDesktop* dt = win->get_desktop();
-    dt->toggleGrids();
 }
 
 void
@@ -235,7 +226,7 @@ view_set_gui(InkscapeWindow* win)
     SPDesktop* desktop = win->get_desktop();
 
     if (!desktop) {
-        std::cerr << "canvas_set_gui: no desktop!" << std::endl;
+        show_output("canvas_set_gui: no desktop!");
         return;
     }
 
@@ -257,7 +248,6 @@ view_set_gui(InkscapeWindow* win)
     bool statusbar_state   = prefs->getBool(pref_root + "statusbar/state", true);
     bool scrollbars_state  = prefs->getBool(pref_root + "scrollbars/state", true);
     bool rulers_state      = prefs->getBool(pref_root + "rulers/state", true);
-    bool interface_mode    = prefs->getInt(pref_root + "interface_mode", false);
 
     canvas_set_state(win, "canvas-commands-bar",      commands_state);
     canvas_set_state(win, "canvas-snap-controls-bar", snaptoolbox_state);
@@ -273,8 +263,6 @@ view_set_gui(InkscapeWindow* win)
 std::vector<std::vector<Glib::ustring>> raw_data_view_mode =
 {
     // clang-format off
-    {"win.canvas-show-grid",                N_("Page Grid"),                "Canvas Display",   N_("Show or hide the page grid")},
-
     {"win.canvas-commands-bar",             N_("Commands Bar"),             "Canvas Display",   N_("Show or hide the Commands bar (under the menu)")},
     {"win.canvas-snap-controls-bar",        N_("Snap Controls Bar"),        "Canvas Display",   N_("Show or hide the snapping controls")},
     {"win.canvas-tool-control-bar",         N_("Tool Controls Bar"),        "Canvas Display",   N_("Show or hide the Tool Controls bar")},
@@ -301,7 +289,7 @@ add_actions_view_mode(InkscapeWindow* win)
     SPDesktop* desktop = win->get_desktop();
 
     if (!desktop) {
-        std::cerr << "add_actions_view_mode: no desktop!" << std::endl;
+        show_output("add_actions_view_mode: no desktop!");
     }
 
     Glib::ustring pref_root = "/window/";
@@ -318,7 +306,6 @@ add_actions_view_mode(InkscapeWindow* win)
     double const width  = monitor_geometry.get_width();
     double const height = monitor_geometry.get_height();
     bool widescreen = (height > 0 && width/height > 1.65);
-    widescreen = prefs->getInt(pref_root + "task/taskset", widescreen ? 2 : 0) == 2; // legacy
 
     // clang-format off
     bool commands_toggle    = prefs->getBool(pref_root + "commands/state", true);
@@ -332,29 +319,27 @@ add_actions_view_mode(InkscapeWindow* win)
 
     bool interface_mode     = prefs->getBool(pref_root + "interface_mode", widescreen);
 
-    win->add_action_bool(          "canvas-show-grid",              sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&canvas_show_grid_toggle),            win));
+    win->add_action_bool(          "canvas-commands-bar",           sigc::bind(sigc::ptr_fun(&canvas_commands_bar_toggle),         win), commands_toggle);
+    win->add_action_bool(          "canvas-snap-controls-bar",      sigc::bind(sigc::ptr_fun(&canvas_snap_controls_bar_toggle),    win), snaptoolbox_toggle);
+    win->add_action_bool(          "canvas-tool-control-bar",       sigc::bind(sigc::ptr_fun(&canvas_tool_control_bar_toggle),     win), toppanel_toggle);
+    win->add_action_bool(          "canvas-toolbox",                sigc::bind(sigc::ptr_fun(&canvas_toolbox_toggle),              win), toolbox_toggle);
+    win->add_action_bool(          "canvas-rulers",                 sigc::bind(sigc::ptr_fun(&canvas_rulers_toggle),               win), rulers_toggle);
+    win->add_action_bool(          "canvas-scroll-bars",            sigc::bind(sigc::ptr_fun(&canvas_scroll_bars),                 win), scrollbars_toggle);
+    win->add_action_bool(          "canvas-palette",                sigc::bind(sigc::ptr_fun(&canvas_palette_toggle),              win), palette_toggle);
+    win->add_action_bool(          "canvas-statusbar",              sigc::bind(sigc::ptr_fun(&canvas_statusbar_toggle),            win), statusbar_toggle);
 
-    win->add_action_bool(          "canvas-commands-bar",           sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&canvas_commands_bar_toggle),         win), commands_toggle);
-    win->add_action_bool(          "canvas-snap-controls-bar",      sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&canvas_snap_controls_bar_toggle),    win), snaptoolbox_toggle);
-    win->add_action_bool(          "canvas-tool-control-bar",       sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&canvas_tool_control_bar_toggle),     win), toppanel_toggle);
-    win->add_action_bool(          "canvas-toolbox",                sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&canvas_toolbox_toggle),              win), toolbox_toggle);
-    win->add_action_bool(          "canvas-rulers",                 sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&canvas_rulers_toggle),               win), rulers_toggle);
-    win->add_action_bool(          "canvas-scroll-bars",            sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&canvas_scroll_bars),                 win), scrollbars_toggle);
-    win->add_action_bool(          "canvas-palette",                sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&canvas_palette_toggle),              win), palette_toggle);
-    win->add_action_bool(          "canvas-statusbar",              sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&canvas_statusbar_toggle),            win), statusbar_toggle);
-
-    win->add_action_bool (         "canvas-interface-mode",         sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&canvas_interface_mode),              win), interface_mode);
-    win->add_action(               "view-fullscreen",               sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&view_fullscreen),                    win));
+    win->add_action_bool (         "canvas-interface-mode",         sigc::bind(sigc::ptr_fun(&canvas_interface_mode),              win), interface_mode);
+    win->add_action(               "view-fullscreen",               sigc::bind(sigc::ptr_fun(&view_fullscreen),                    win));
     
-    win->add_action(               "view-full-screen-focus",        sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&view_full_screen_focus),             win));
-    win->add_action(               "view-focus-toggle",             sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&view_focus_toggle),                  win));
+    win->add_action(               "view-full-screen-focus",        sigc::bind(sigc::ptr_fun(&view_full_screen_focus),             win));
+    win->add_action(               "view-focus-toggle",             sigc::bind(sigc::ptr_fun(&view_focus_toggle),                  win));
 
-    win->add_action(               "canvas-command-palette",        sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&canvas_command_palette),             win));
+    win->add_action(               "canvas-command-palette",        sigc::bind(sigc::ptr_fun(&canvas_command_palette),             win));
     // clang-format on
 
     auto app = InkscapeApplication::instance();
     if (!app) {
-        std::cerr << "add_actions_view_mode: no app!" << std::endl;
+        show_output("add_actions_view_mode: no app!");
         return;
     }
     app->get_action_extra_data().add_data(raw_data_view_mode);

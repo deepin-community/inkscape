@@ -1,9 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 #
 # Copyright (C) 2008-2009 Alvin Penner, penner@vaxxine.com
 #               2009, Christian Mayer, inkscape@christianmayer.de
 #               2020, MartinOwens, doctormo@geek-2.com
+#               2024, Jonathan Neuhauser, jonathan.neuhauser@outlook.com
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -25,10 +26,12 @@ Input a DXF file >= (AutoCAD Release 13 == AC1012)
 
 import os
 import re
+import struct
 import sys
 import math
 
 from collections import defaultdict
+from typing import Tuple
 from urllib.parse import quote
 from lxml import etree
 
@@ -616,6 +619,8 @@ def mtext_separate(node, tspan, text):
 
 
 def mtext_ctrl(tspan, phrase):
+    if len(phrase) == 0:
+        return
     if phrase[0] != "\\":
         tspan.text = phrase
         return
@@ -840,7 +845,7 @@ def export_ellipse(vals):
         # vals are through adjust_coords : recover proper value
         # (x,y)=(scale*x-xmin, height-scale*y-ymin)
         x2 = vals.x2 + xmin
-        y2 = vals.y2 + ymin - height
+        y2 = -vals.y2 + ymin + height
         generate_ellipse(
             vals.x1, vals.y1, x2, y2, vals.width_ratio, vals.ellipse_a1, vals.ellipse_a2
         )
@@ -1006,7 +1011,6 @@ def export_dimension(vals):
     # mandatory group codes : (10, 11, 13, 14, 20, 21, 23, 24) (x1..4, y1..4)
     # block_name: dimension definition for 10mm
     if vals.has_x1 and vals.has_x2 and vals.has_y1 and vals.has_y2:
-
         if vals.has_block_name:
             attribs = {
                 inkex.addNS("href", "xlink"): "#%s" % (vals.block_name)
@@ -1126,7 +1130,7 @@ def export_attdef(vals):
 
 def generate_ellipse(xc, yc, xm, ym, w, a1, a2):
     rm = math.sqrt(xm * xm + ym * ym)
-    a = -math.atan2(ym, xm)  # x-axis-rotation
+    a = math.atan2(ym, xm)  # x-axis-rotation
     diff = (a2 - a1 + 2 * math.pi) % (2 * math.pi)
     if abs(diff) > 0.0000001 and abs(diff - 2 * math.pi) > 0.0000001:  # open arc
         large = 0  # large-arc-flag
@@ -1285,11 +1289,88 @@ class DxfInput(inkex.InputExtension):
             },
         )
 
-        def _get_line():
-            return self.document.readline().strip().decode(options.input_encode)
+        def _get_line(strip=True):
+            line = self.document.readline()
+            if strip:
+                line = line.strip()
+            else:
+                line = line.rstrip(b"\r\n")
+            return line.decode(options.input_encode)
 
         def get_line():
-            return _get_line(), _get_line()
+            l1 = _get_line()
+            if l1 in ("1", "2", "3", "6", "7", "8"):  # text value
+                # text entity, do not strip
+                return l1, _get_line(False)
+            return l1, _get_line()
+
+        def get_binary_line() -> Tuple[str, str]:
+            stream = self.document
+            # Data types inferred from
+            # https://help.autodesk.com/view/OARX/2023/ENU/?guid=GUID-2553CF98-44F6-4828-82DD-FE3BC7448113
+
+            try:
+                key = struct.unpack("<h", stream.read(2))[0]
+                if (
+                    key <= 9
+                    or 100 <= key <= 109
+                    or 300 <= key <= 309
+                    or 320 <= key <= 369
+                    or 390 <= key <= 399
+                    or 410 <= key <= 419
+                    or 430 <= key <= 439
+                    or 470 <= key <= 481
+                    or 999 <= key <= 1009
+                ):
+                    string_bytes = bytearray()
+                    while True:
+                        byte = stream.read(1)
+                        if byte == b"\x00" or len(byte) == 0:
+                            value = string_bytes.decode().replace("\t", "")
+                            break
+                        string_bytes.extend(byte)
+                elif (
+                    10 <= key <= 59
+                    or 110 <= key <= 149
+                    or 210 <= key <= 239
+                    or 460 <= key <= 469
+                    or 1010 <= key <= 1059
+                ):
+                    value = struct.unpack("d", stream.read(8))[0]
+                elif (
+                    60 <= key <= 79
+                    or 170 <= key <= 179
+                    or 270 <= key <= 289
+                    or 370 <= key <= 389
+                    or 400 <= key <= 409
+                    or 1060 <= key <= 1070
+                ):
+                    value = struct.unpack("<h", stream.read(2))[0]
+                elif (
+                    80 <= key <= 99
+                    or 420 <= key <= 429
+                    or 440 <= key <= 459
+                    or key == 1071
+                ):
+                    value = struct.unpack("<i", stream.read(4))[0]
+                elif 160 <= key <= 169:
+                    value = struct.unpack("<q", stream.read(8))[0]
+                elif 290 <= key <= 299:
+                    value = struct.unpack("?", stream.read(1))[0]
+                elif 310 <= key <= 319:
+                    # binary data
+                    length = struct.unpack("<B", stream.read(1))[0]
+                    value = stream.read(length)
+                else:
+                    inkex.errormsg(
+                        _(
+                            "Encountered key of unknown format, id={0} while parsing DXF. This is probably a bug."
+                        ).format(key)
+                    )
+                return str(key), str(value)
+            except struct.error:
+                return "", ""
+                # EOF
 
         def get_group(group):
             line = get_line()
@@ -1311,20 +1392,16 @@ class DxfInput(inkex.InputExtension):
         style_font4 = {}  # style font 2byte
         style_direction = {}  # style display direction
         be_extrude = False
-        line = get_line()
+        first_line = _get_line()
 
-        if line[0] == "AutoCAD Binary DXF":
-            inkex.errormsg(
-                _(
-                    "Inkscape cannot read binary DXF files. \n"
-                    "Please convert to ASCII format first."
-                )
-                + str(len(line[0]))
-                + " "
-                + str(len(line[1]))
-            )
-            self.document = doc
-            return
+        if first_line == "AutoCAD Binary DXF":
+            magic = self.document.read(2)
+            if not magic == b"\x1a\x00":
+                inkex.AbortExtension(_("Binary DXF file has unexpected header."))
+            get_line = get_binary_line
+            line = [first_line, ""]
+        else:
+            line = [first_line, _get_line()]
 
         inENTITIES = False
         style_name = "*"

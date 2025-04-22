@@ -19,14 +19,11 @@
 
 #include "desktop.h"
 #include "desktop-style.h"
-#include "document.h"
 #include "document-undo.h"
 #include "filter-chemistry.h"
-#include "inkscape.h"
 #include "style.h"
-
-#include "object/filters/blend.h"
 #include "svg/css-ostringstream.h"
+#include "ui/pack.h"
 #include "ui/widget/style-subject.h"
 
 constexpr double BLUR_MULTIPLIER = 4.0;
@@ -48,7 +45,7 @@ ObjectCompositeSettings::ObjectCompositeSettings(Glib::ustring icon_name, char c
     set_name( "ObjectCompositeSettings");
 
     // Filter Effects
-    pack_start(_filter_modifier, false, false, 2);
+    UI::pack_start(*this, _filter_modifier, false, false, 2);
 
     _filter_modifier.signal_blend_changed().connect(sigc::mem_fun(*this, &ObjectCompositeSettings::_blendBlurValueChanged));
     _filter_modifier.signal_blur_changed().connect(sigc::mem_fun(*this, &ObjectCompositeSettings::_blendBlurValueChanged));
@@ -107,23 +104,13 @@ ObjectCompositeSettings::_blendBlurValueChanged()
     //apply created filter to every selected item
     std::vector<SPObject*> sel = _subject->list();
     for (auto i : sel) {
-        if (!SP_IS_ITEM(i)) {
+        if (!is<SPItem>(i)) {
             continue;
         }
-        SPItem * item = SP_ITEM(i);
+        auto item = cast<SPItem>(i);
         SPStyle *style = item->style;
         g_assert(style != nullptr);
-        bool change_blend = (item->style->mix_blend_mode.set ? item->style->mix_blend_mode.value : SP_CSS_BLEND_NORMAL) != _filter_modifier.get_blend_mode();
-        // < 1.0 filter based blend removal
-        if (!item->style->mix_blend_mode.set && item->style->filter.set && item->style->getFilter()) {
-            remove_filter_legacy_blend(item);
-        }
-        item->style->mix_blend_mode.set = TRUE;
-        if (item->style->isolation.value == SP_CSS_ISOLATION_ISOLATE) {
-            item->style->mix_blend_mode.value = SP_CSS_BLEND_NORMAL;
-        } else { 
-            item->style->mix_blend_mode.value = _filter_modifier.get_blend_mode();
-        }
+        bool change_blend = set_blend_mode(item, _filter_modifier.get_blend_mode());
 
         if (radius == 0 && item->style->filter.set && item->style->getFilter()
             && filter_is_single_gaussian_blur(item->style->getFilter())) {
@@ -133,8 +120,8 @@ ObjectCompositeSettings::_blendBlurValueChanged()
             filter->update_filter_region(item);
             sp_style_set_property_url(item, "filter", filter, false);
         } 
-        if (change_blend) { //we do blend so we need update display style
-            item->updateRepr(SP_OBJECT_WRITE_NO_CHILDREN | SP_OBJECT_WRITE_EXT);
+        if (change_blend) {
+            ; // update done already
         } else {
             item->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_STYLE_MODIFIED_FLAG);
         }

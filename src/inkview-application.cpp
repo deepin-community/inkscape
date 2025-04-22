@@ -19,18 +19,18 @@
 #endif
 
 #include <iostream>
-
 #include <glibmm/i18n.h>  // Internationalization
-
+#include <glibmm/variantdict.h>
 #include <gtkmm/filechooserdialog.h>
 
 #include "inkview-application.h"
-
 #include "inkscape.h"             // Inkscape::Application
 #include "inkscape-version.h"     // Inkscape version
 #include "include/glibmm_version.h"
 #include "inkgc/gc-core.h"        // Garbage Collecting init
 #include "inkview-window.h"
+#include "util/statics.h"
+#include "ui/dialog-run.h"
 
 #ifdef ENABLE_NLS
 // Native Language Support - shouldn't this always be used?
@@ -90,9 +90,9 @@ InkviewApplication::InkviewApplication()
     register_application();
 }
 
-Glib::RefPtr<InkviewApplication> InkviewApplication::create()
+InkviewApplication::~InkviewApplication()
 {
-    return Glib::RefPtr<InkviewApplication>(new InkviewApplication());
+    Inkscape::Util::StaticsBin::get().destroy();
 }
 
 void
@@ -122,7 +122,7 @@ InkviewApplication::on_activate()
     file_filter->set_name(_("Scalable Vector Graphics"));
     file_chooser.add_filter(file_filter);
 
-    int res = file_chooser.run();
+    int res = Inkscape::UI::dialog_run(file_chooser);
     if (res == 42) {
         auto files = file_chooser.get_files();
         if (!files.empty()) {
@@ -132,20 +132,18 @@ InkviewApplication::on_activate()
 }
 
 // Open document window for each file. Either this or on_activate() is called.
-void
-InkviewApplication::on_open(const Gio::Application::type_vec_files& files, const Glib::ustring& hint)
+void InkviewApplication::on_open(Gio::Application::type_vec_files const &files, Glib::ustring const &hint)
 {
     try {
         window = new InkviewWindow(files, fullscreen, recursive, timer, scale, preload);
-    } catch (const InkviewWindow::NoValidFilesException&) {
+    } catch (InkviewWindow::NoValidFilesException const &) {
         std::cerr << _("Error") << ": " << _("No (valid) files to open.") << std::endl;
-        exit(1);
+        return; // Fixme: Exit with code 1 - see https://gitlab.com/inkscape/inkscape/-/issues/270.
     }
 
     window->show_all();
     add_window(*window);
 }
-
 
 // ========================= Callbacks ==========================
 

@@ -16,6 +16,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -29,151 +30,110 @@
 
 #include <glibmm/i18n.h>
 #include <gtkmm/adjustment.h>
+#include <gtkmm/togglebutton.h>
 
 #include "desktop.h"
 #include "document-undo.h"
 #include "document.h"
-#include "selection.h"
-
 #include "object/box3d.h"
 #include "object/persp3d.h"
-
+#include "selection.h"
+#include "ui/builder-utils.h"
 #include "ui/icon-names.h"
 #include "ui/tools/box3d-tool.h"
 #include "ui/widget/canvas.h"
-#include "ui/widget/spin-button-tool-item.h"
-
-#include "xml/node-event-vector.h"
+#include "ui/widget/spinbutton.h"
 
 using Inkscape::DocumentUndo;
 
-static Inkscape::XML::NodeEventVector box3d_persp_tb_repr_events =
-{
-    nullptr, /* child_added */
-    nullptr, /* child_removed */
-    Inkscape::UI::Toolbar::Box3DToolbar::event_attr_changed,
-    nullptr, /* content_changed */
-    nullptr  /* order_changed */
-};
+namespace Inkscape::UI::Toolbar {
 
-namespace Inkscape {
-namespace UI {
-namespace Toolbar {
+/// Normalize angle so that it lies in the interval [0, 360).
+static double normalize_angle(double a)
+{
+    return a - std::floor(a / 360.0) * 360.0;
+}
+
 Box3DToolbar::Box3DToolbar(SPDesktop *desktop)
-        : Toolbar(desktop),
-        _repr(nullptr),
-        _freeze(false)
+    : Toolbar(desktop)
+    , _builder(create_builder("toolbar-box3d.ui"))
+    , _angle_x_item(get_derived_widget<UI::Widget::SpinButton>(_builder, "_angle_x_item"))
+    , _vp_x_state_btn(get_widget<Gtk::ToggleButton>(_builder, "_vp_x_state_btn"))
+    , _angle_y_item(get_derived_widget<UI::Widget::SpinButton>(_builder, "_angle_y_item"))
+    , _vp_y_state_btn(get_widget<Gtk::ToggleButton>(_builder, "_vp_y_state_btn"))
+    , _angle_z_item(get_derived_widget<UI::Widget::SpinButton>(_builder, "_angle_z_item"))
+    , _vp_z_state_btn(get_widget<Gtk::ToggleButton>(_builder, "_vp_z_state_btn"))
 {
-    auto prefs      = Inkscape::Preferences::get();
-    auto document   = desktop->getDocument();
-    auto persp_impl = document->getCurrentPersp3DImpl();
+    auto prefs = Inkscape::Preferences::get();
 
-    /* Angle X */
-    {
-        std::vector<double> values = {-90, -60, -30, 0, 30, 60, 90};
-        auto angle_x_val = prefs->getDouble("/tools/shapes/3dbox/box3d_angle_x", 30);
-        _angle_x_adj = Gtk::Adjustment::create(angle_x_val, -360.0, 360.0, 1.0, 10.0);
-        _angle_x_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("box3d-angle-x", _("Angle X:"), _angle_x_adj));
-        // TRANSLATORS: PL is short for 'perspective line'
-        _angle_x_item->set_tooltip_text(_("Angle of PLs in X direction"));
-        _angle_x_item->set_custom_numeric_menu_data(values);
-        _angle_x_item->set_focus_widget(desktop->canvas);
-        _angle_x_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(*this, &Box3DToolbar::angle_value_changed),
-                                                                _angle_x_adj, Proj::X));
-        add(*_angle_x_item);
-    }
+    _toolbar = &get_widget<Gtk::Box>(_builder, "box3d-toolbar");
 
-    if (!persp_impl || !Persp3D::VP_is_finite(persp_impl, Proj::X)) {
-        _angle_x_item->set_sensitive(true);
-    } else {
-        _angle_x_item->set_sensitive(false);
-    }
+    _vp_x_state_btn.signal_toggled().connect(
+        sigc::bind(sigc::mem_fun(*this, &Box3DToolbar::vp_state_changed), Proj::X));
+    _vp_x_state_btn.set_active(prefs->getBool("/tools/shapes/3dbox/vp_x_state", true));
 
-    /* VP X state */
-    {
-        // TRANSLATORS: VP is short for 'vanishing point'
-        _vp_x_state_item = add_toggle_button(_("State of VP in X direction"),
-                                             _("Toggle VP in X direction between 'finite' and 'infinite' (=parallel)"));
-        _vp_x_state_item->set_icon_name(INKSCAPE_ICON("perspective-parallel"));
-        _vp_x_state_item->signal_toggled().connect(sigc::bind(sigc::mem_fun(*this, &Box3DToolbar::vp_state_changed), Proj::X));
-        _angle_x_item->set_sensitive( !prefs->getBool("/tools/shapes/3dbox/vp_x_state", true) );
-        _vp_x_state_item->set_active( prefs->getBool("/tools/shapes/3dbox/vp_x_state", true) );
-    }
+    _vp_y_state_btn.signal_toggled().connect(
+        sigc::bind(sigc::mem_fun(*this, &Box3DToolbar::vp_state_changed), Proj::Y));
+    _vp_y_state_btn.set_active(prefs->getBool("/tools/shapes/3dbox/vp_y_state", true));
 
-    /* Angle Y */
-    {
-        auto angle_y_val = prefs->getDouble("/tools/shapes/3dbox/box3d_angle_y", 30);
-        _angle_y_adj = Gtk::Adjustment::create(angle_y_val, -360.0, 360.0, 1.0, 10.0);
-        _angle_y_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("box3d-angle-y", _("Angle Y:"), _angle_y_adj));
-        // TRANSLATORS: PL is short for 'perspective line'
-        _angle_y_item->set_tooltip_text(_("Angle of PLs in Y direction"));
-        std::vector<double> values = {-90, -60, -30, 0, 30, 60, 90};
-        _angle_y_item->set_custom_numeric_menu_data(values);
-        _angle_y_item->set_focus_widget(desktop->canvas);
-        _angle_y_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(*this, &Box3DToolbar::angle_value_changed),
-                                                                _angle_y_adj, Proj::Y));
-        add(*_angle_y_item);
-    }
+    _vp_z_state_btn.signal_toggled().connect(
+        sigc::bind(sigc::mem_fun(*this, &Box3DToolbar::vp_state_changed), Proj::Z));
+    _vp_z_state_btn.set_active(prefs->getBool("/tools/shapes/3dbox/vp_z_state", true));
 
-    if (!persp_impl || !Persp3D::VP_is_finite(persp_impl, Proj::Y)) {
-        _angle_y_item->set_sensitive(true);
-    } else {
-        _angle_y_item->set_sensitive(false);
-    }
+    setup_derived_spin_button(_angle_x_item, "box3d_angle_x", Proj::X);
+    setup_derived_spin_button(_angle_y_item, "box3d_angle_y", Proj::Y);
+    setup_derived_spin_button(_angle_z_item, "box3d_angle_z", Proj::Z);
 
-    /* VP Y state */
-    {
-        // TRANSLATORS: VP is short for 'vanishing point'
-        _vp_y_state_item = add_toggle_button(_("State of VP in Y direction"),
-                                             _("Toggle VP in Y direction between 'finite' and 'infinite' (=parallel)"));
-        _vp_y_state_item->set_icon_name(INKSCAPE_ICON("perspective-parallel"));
-        _vp_y_state_item->signal_toggled().connect(sigc::bind(sigc::mem_fun(*this, &Box3DToolbar::vp_state_changed), Proj::Y));
-        _angle_y_item->set_sensitive( !prefs->getBool("/tools/shapes/3dbox/vp_y_state", true) );
-        _vp_y_state_item->set_active( prefs->getBool("/tools/shapes/3dbox/vp_y_state", true) );
-    }
+    _angle_x_item.set_custom_numeric_menu_data({
+        {135, ""},
+        {150, ""},
+        {165, ""},
+        {180, ""},
+        {195, ""},
+        {210, ""},
+        {235, ""}
+    });
 
-    /* Angle Z */
-    {
-        auto angle_z_val = prefs->getDouble("/tools/shapes/3dbox/box3d_angle_z", 30);
-        _angle_z_adj = Gtk::Adjustment::create(angle_z_val, -360.0, 360.0, 1.0, 10.0);
-        _angle_z_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("box3d-angle-z", _("Angle Z:"), _angle_z_adj));
-        // TRANSLATORS: PL is short for 'perspective line'
-        _angle_z_item->set_tooltip_text(_("Angle of PLs in Z direction"));
-        std::vector<double> values = {-90, -60, -30, 0, 30, 60, 90};
-        _angle_z_item->set_custom_numeric_menu_data(values);
-        _angle_z_item->set_focus_widget(desktop->canvas);
-        _angle_z_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(*this, &Box3DToolbar::angle_value_changed),
-                                                                _angle_z_adj, Proj::Z));
-        add(*_angle_z_item);
-    }
+    _angle_y_item.set_custom_numeric_menu_data({
+        {270, ""},
+    });
 
-    if (!persp_impl || !Persp3D::VP_is_finite(persp_impl, Proj::Z)) {
-        _angle_z_item->set_sensitive(true);
-    } else {
-        _angle_z_item->set_sensitive(false);
-    }
-
-    /* VP Z state */
-    {
-        // TRANSLATORS: VP is short for 'vanishing point'
-        _vp_z_state_item = add_toggle_button(_("State of VP in Z direction"),
-                                             _("Toggle VP in Z direction between 'finite' and 'infinite' (=parallel)"));
-        _vp_z_state_item->set_icon_name(INKSCAPE_ICON("perspective-parallel"));
-        _vp_z_state_item->signal_toggled().connect(sigc::bind(sigc::mem_fun(*this, &Box3DToolbar::vp_state_changed), Proj::Z));
-        _angle_z_item->set_sensitive(!prefs->getBool("/tools/shapes/3dbox/vp_z_state", true));
-        _vp_z_state_item->set_active( prefs->getBool("/tools/shapes/3dbox/vp_z_state", true) );
-    }
+    _angle_z_item.set_custom_numeric_menu_data({
+        {-45, ""},
+        {-30, ""},
+        {-15, ""},
+        {0, ""},
+        {15, ""},
+        {30, ""},
+        {45, ""}
+    });
 
     desktop->connectEventContextChanged(sigc::mem_fun(*this, &Box3DToolbar::check_ec));
 
+    add(*_toolbar);
     show_all();
 }
 
-GtkWidget *
-Box3DToolbar::create(SPDesktop *desktop)
+void Box3DToolbar::setup_derived_spin_button(UI::Widget::SpinButton &btn, Glib::ustring const &name,
+                                             Proj::Axis const axis)
 {
-    auto toolbar = new Box3DToolbar(desktop);
-    return GTK_WIDGET(toolbar->gobj());
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    auto document = _desktop->getDocument();
+    auto persp_impl = document->getCurrentPersp3DImpl();
+
+    const Glib::ustring path = "/tools/shapes/3dbox/" + name;
+    auto const val = prefs->getDouble(path, 30);
+
+    auto adj = btn.get_adjustment();
+    adj->set_value(val);
+
+    adj->signal_value_changed().connect(
+        sigc::bind(sigc::mem_fun(*this, &Box3DToolbar::angle_value_changed), adj, axis));
+
+    bool const is_sensitive = !persp_impl || !Persp3D::VP_is_finite(persp_impl, axis);
+
+    btn.set_sensitive(is_sensitive);
+    btn.set_defocus_widget(_desktop->getCanvas());
 }
 
 void
@@ -218,30 +178,29 @@ Box3DToolbar::vp_state_changed(Proj::Axis axis)
     }
     Persp3D *persp = sel_persps.front();
 
-    Gtk::ToggleToolButton *btn = nullptr;
+    bool set_infinite = false;
 
     switch(axis) {
         case Proj::X:
-            btn = _vp_x_state_item;
+            set_infinite = _vp_x_state_btn.get_active();
             break;
         case Proj::Y:
-            btn = _vp_y_state_item;
+            set_infinite = _vp_y_state_btn.get_active();
             break;
         case Proj::Z:
-            btn = _vp_z_state_item;
+            set_infinite = _vp_z_state_btn.get_active();
             break;
         default:
             return;
     }
 
-    bool set_infinite = btn->get_active();
     persp->set_VP_state (axis, set_infinite ? Proj::VP_INFINITE : Proj::VP_FINITE);
 }
 
 void
-Box3DToolbar::check_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec)
+Box3DToolbar::check_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* tool)
 {
-    if (SP_IS_BOX3D_CONTEXT(ec)) {
+    if (dynamic_cast<Inkscape::UI::Tools::Box3dTool*>(tool)) {
         _changed = desktop->getSelection()->connectChanged(sigc::mem_fun(*this, &Box3DToolbar::selection_changed));
         selection_changed(desktop->getSelection());
     } else {
@@ -249,7 +208,7 @@ Box3DToolbar::check_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec)
             _changed.disconnect();
 
         if (_repr) { // remove old listener
-            _repr->removeListenerByData(this);
+            _repr->removeObserver(*this);
             Inkscape::GC::release(_repr);
             _repr = nullptr;
         }
@@ -259,7 +218,7 @@ Box3DToolbar::check_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec)
 Box3DToolbar::~Box3DToolbar()
 {
     if (_repr) { // remove old listener
-        _repr->removeListenerByData(this);
+        _repr->removeObserver(*this);
         Inkscape::GC::release(_repr);
         _repr = nullptr;
     }
@@ -280,13 +239,13 @@ Box3DToolbar::selection_changed(Inkscape::Selection *selection)
     Inkscape::XML::Node *persp_repr = nullptr;
 
     if (_repr) { // remove old listener
-        _repr->removeListenerByData(this);
+        _repr->removeObserver(*this);
         Inkscape::GC::release(_repr);
         _repr = nullptr;
     }
 
     SPItem *item = selection->singleItem();
-    SPBox3D *box = dynamic_cast<SPBox3D *>(item);
+    auto box = cast<SPBox3D>(item);
     if (box) {
         // FIXME: Also deal with multiple selected boxes
         Persp3D *persp = box->get_perspective();
@@ -298,8 +257,8 @@ Box3DToolbar::selection_changed(Inkscape::Selection *selection)
         if (persp_repr) {
             _repr = persp_repr;
             Inkscape::GC::anchor(_repr);
-            _repr->addListener(&box3d_persp_tb_repr_events, this);
-            _repr->synthesizeEvents(&box3d_persp_tb_repr_events, this);
+            _repr->addObserver(*this);
+            _repr->synthesizeEvents(*this);
 
             selection->document()->setCurrentPersp3D(Persp3D::get_from_repr(_repr));
             Inkscape::Preferences *prefs = Inkscape::Preferences::get();
@@ -316,7 +275,7 @@ void
 Box3DToolbar::resync_toolbar(Inkscape::XML::Node *persp_repr)
 {
     if (!persp_repr) {
-        g_print ("No perspective given to box3d_resync_toolbar().\n");
+        g_warning ("No perspective given to box3d_resync_toolbar().");
         return;
     }
 
@@ -325,96 +284,59 @@ Box3DToolbar::resync_toolbar(Inkscape::XML::Node *persp_repr)
         // Hmm, is it an error if this happens?
         return;
     }
-    set_button_and_adjustment(persp, Proj::X,
-                              _angle_x_adj,
-                              _angle_x_item,
-                              _vp_x_state_item);
-    set_button_and_adjustment(persp, Proj::Y,
-                              _angle_y_adj,
-                              _angle_y_item,
-                              _vp_y_state_item);
-    set_button_and_adjustment(persp, Proj::Z,
-                              _angle_z_adj,
-                              _angle_z_item,
-                              _vp_z_state_item);
+    set_button_and_adjustment(persp, Proj::X, _angle_x_item, _vp_x_state_btn);
+    set_button_and_adjustment(persp, Proj::Y, _angle_y_item, _vp_y_state_btn);
+    set_button_and_adjustment(persp, Proj::Z, _angle_z_item, _vp_z_state_btn);
 }
 
-void
-Box3DToolbar::set_button_and_adjustment(Persp3D                        *persp,
-                                        Proj::Axis                      axis,
-                                        Glib::RefPtr<Gtk::Adjustment>&  adj,
-                                        UI::Widget::SpinButtonToolItem *spin_btn,
-                                        Gtk::ToggleToolButton          *toggle_btn)
+void Box3DToolbar::set_button_and_adjustment(Persp3D *persp, Proj::Axis axis, UI::Widget::SpinButton &spin_btn,
+                                             Gtk::ToggleButton &toggle_btn)
 {
     // TODO: Take all selected perspectives into account but don't touch the state button if not all of them
     //       have the same state (otherwise a call to box3d_vp_z_state_changed() is triggered and the states
     //       are reset).
-    bool is_infinite = !Persp3D::VP_is_finite(persp->perspective_impl, axis);
+    bool is_infinite = !Persp3D::VP_is_finite(persp->perspective_impl.get(), axis);
+    auto adj = spin_btn.get_adjustment();
 
     if (is_infinite) {
-        toggle_btn->set_active(true);
-        spin_btn->set_sensitive(true);
+        toggle_btn.set_active(true);
+        spin_btn.set_sensitive(true);
 
         double angle = persp->get_infinite_angle(axis);
         if (angle != Geom::infinity()) { // FIXME: We should catch this error earlier (don't show the spinbutton at all)
             adj->set_value(normalize_angle(angle));
         }
     } else {
-        toggle_btn->set_active(false);
-        spin_btn->set_sensitive(false);
+        toggle_btn.set_active(false);
+        spin_btn.set_sensitive(false);
     }
 }
 
-void
-Box3DToolbar::event_attr_changed(Inkscape::XML::Node *repr,
-                                 gchar const         * /*name*/,
-                                 gchar const         * /*old_value*/,
-                                 gchar const         * /*new_value*/,
-                                 bool                  /*is_interactive*/,
-                                 gpointer              data)
+void Box3DToolbar::notifyAttributeChanged(Inkscape::XML::Node &repr, GQuark, Inkscape::Util::ptr_shared, Inkscape::Util::ptr_shared)
 {
-    auto toolbar = reinterpret_cast<Box3DToolbar*>(data);
-
     // quit if run by the attr_changed or selection changed listener
-    if (toolbar->_freeze) {
+    if (_freeze) {
         return;
     }
 
     // set freeze so that it can be caught in box3d_angle_z_value_changed() (to avoid calling
     // SPDocumentUndo::maybeDone() when the document is undo insensitive)
-    toolbar->_freeze = true;
+    _freeze = true;
 
     // TODO: Only update the appropriate part of the toolbar
 //    if (!strcmp(name, "inkscape:vp_z")) {
-        toolbar->resync_toolbar(repr);
+        resync_toolbar(&repr);
 //    }
 
-    Persp3D *persp = Persp3D::get_from_repr(repr);
+    Persp3D *persp = Persp3D::get_from_repr(&repr);
     if (persp) {
         persp->update_box_reprs();
     }
 
-    toolbar->_freeze = false;
+    _freeze = false;
 }
 
-/**
- * \brief normalize angle so that it lies in the interval [0,360]
- *
- * TODO: Isn't there something in 2Geom or cmath that does this?
- */
-double
-Box3DToolbar::normalize_angle(double a) {
-    double angle = a + ((int) (a/360.0))*360;
-    if (angle < 0) {
-        angle += 360.0;
-    }
-    return angle;
-}
-
-}
-}
-}
-
+} // namespace Inkscape::UI::Toolbar
 
 /*
   Local Variables:

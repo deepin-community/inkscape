@@ -16,10 +16,8 @@
 #include "io/sys.h"
 #include "implementation/implementation.h"
 
-#include "prefdialog/prefdialog.h"
-
-#include "xml/repr.h"
-
+#include "xml/attribute-record.h"
+#include "xml/node.h"
 
 /* Inkscape::Extension::Output */
 
@@ -27,23 +25,21 @@ namespace Inkscape {
 namespace Extension {
 
 /**
-    \return   None
-    \brief    Builds a SPModuleOutput object from a XML description
-    \param    module  The module to be initialized
-    \param    repr    The XML description in a Inkscape::XML::Node tree
+    \brief    Builds an Output object from a XML description
+    \param    in_repr        The XML description in a Inkscape::XML::Node tree
+    \param    implementation The implementation of the extension
 
-    Okay, so you want to build a SPModuleOutput object.
+    Okay, so you want to build an Output object.
 
-    This function first takes and does the build of the parent class,
-    which is SPModule.  Then, it looks for the <output> section of the
+    This function looks for the <output> section of the
     XML description.  Under there should be several fields which
     describe the output module to excruciating detail.  Those are parsed,
     copied, and put into the structure that is passed in as module.
     Overall, there are many levels of indentation, just to handle the
     levels of indentation in the XML file.
 */
-Output::Output (Inkscape::XML::Node *in_repr, Implementation::Implementation *in_imp, std::string *base_directory)
-    : Extension(in_repr, in_imp, base_directory)
+Output::Output(Inkscape::XML::Node *in_repr, ImplementationHolder implementation, std::string *base_directory)
+    : Extension(in_repr, std::move(implementation), base_directory)
 {
     mimetype = nullptr;
     extension = nullptr;
@@ -51,8 +47,6 @@ Output::Output (Inkscape::XML::Node *in_repr, Implementation::Implementation *in
     filetypetooltip = nullptr;
     dataloss = true;
     savecopyonly = false;
-    exported = false;
-    raster = false;
 
     if (repr != nullptr) {
         Inkscape::XML::Node * child_repr;
@@ -62,11 +56,15 @@ Output::Output (Inkscape::XML::Node *in_repr, Implementation::Implementation *in
         while (child_repr != nullptr) {
             if (!strcmp(child_repr->name(), INKSCAPE_EXTENSION_NS "output")) {
 
-                if (child_repr->attribute("raster") && !strcmp(child_repr->attribute("raster"), "true")) {
-                     raster = true;
-                }
-                if (child_repr->attribute("is_exported") && !strcmp(child_repr->attribute("is_exported"), "true")) {
-                     exported = true;
+                for (const auto &iter : child_repr->attributeList()) {
+                    std::string name = g_quark_to_string(iter.key);
+                    std::string value = std::string(iter.value);
+                    if (name == "raster")
+                        raster = value == "true";
+                    else if (name == "is_exported")
+                        exported = value == "true";
+                    else if (name == "priority")
+                        set_sort_priority(strtol(value.c_str(), nullptr, 0));
                 }
 
                 child_repr = child_repr->firstChild();
@@ -147,8 +145,8 @@ Output::check ()
     \return  IETF mime-type for the extension
 	\brief   Get the mime-type that describes this extension
 */
-gchar *
-Output::get_mimetype()
+gchar const *
+Output::get_mimetype() const
 {
     return mimetype;
 }
@@ -157,8 +155,8 @@ Output::get_mimetype()
     \return  Filename extension for the extension
 	\brief   Get the filename extension for this extension
 */
-gchar *
-Output::get_extension()
+gchar const *
+Output::get_extension() const
 {
     return extension;
 }
@@ -168,7 +166,7 @@ Output::get_extension()
 	\brief   Get the name of the filetype supported
 */
 const char *
-Output::get_filetypename(bool translated)
+Output::get_filetypename(bool translated) const
 {
     const char *name;
 
@@ -189,43 +187,13 @@ Output::get_filetypename(bool translated)
 	\brief   Get the tooltip for more information on the filetype
 */
 const char *
-Output::get_filetypetooltip(bool translated)
+Output::get_filetypetooltip(bool translated) const
 {
     if (filetypetooltip && translated) {
         return get_translation(filetypetooltip);
     } else {
         return filetypetooltip;
     }
-}
-
-/**
-    \return  A dialog to get settings for this extension
-	\brief   Create a dialog for preference for this extension
-
-	Calls the implementation to get the preferences.
-*/
-bool
-Output::prefs ()
-{
-    if (!loaded())
-        set_state(Extension::STATE_LOADED);
-    if (!loaded()) return false;
-
-    Gtk::Widget * controls;
-    controls = imp->prefs_output(this);
-    if (controls == nullptr) {
-        // std::cout << "No preferences for Output" << std::endl;
-        return true;
-    }
-
-    Glib::ustring title = this->get_name();
-    PrefDialog *dialog = new PrefDialog(title, controls);
-    int response = dialog->run();
-    dialog->hide();
-
-    delete dialog;
-
-    return (response == Gtk::RESPONSE_OK);
 }
 
 /**
@@ -252,9 +220,9 @@ Output::save(SPDocument *doc, gchar const *filename, bool detachbase)
     if (loaded()) {
         imp->setDetachBase(detachbase);
         auto new_doc = doc->copy();
+        new_doc->ensureUpToDate();
+        run_processing_actions(new_doc.get());
         imp->save(this, new_doc.get(), filename);
-        // This shouldn't be needed, but the unique_ptr is not destroying this SPDocument.
-        delete new_doc.release();
     }
 }
 
@@ -278,15 +246,30 @@ Output::export_raster(const SPDocument *doc, std::string png_filename, gchar con
 }
 
 /**
- * Adds a valid extension to the filename if it's missing.
+ * Adds a valid extension to the filename if it's missing. Only used by export-single.cpp.
  */
 void
-Output::add_extension(Glib::ustring &filename)
+Output::add_extension(std::string &filename)
 {
     auto current_ext = Inkscape::IO::get_file_extension(filename);
     if (extension && current_ext != extension) {
         filename = filename + extension;
     }
+}
+
+/**
+    \return  True if the filename matches
+    \brief   Match filename to extension that can open it.
+*/
+bool
+Output::can_save_filename(gchar const *filename) const
+{
+    gchar *filenamelower = g_utf8_strdown(filename, -1);
+    gchar *extensionlower = g_utf8_strdown(extension, -1);
+    bool result = g_str_has_suffix(filenamelower, extensionlower);
+    g_free(filenamelower);
+    g_free(extensionlower);
+    return result;
 }
 
 } }  /* namespace Inkscape, Extension */

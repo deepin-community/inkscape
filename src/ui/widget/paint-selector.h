@@ -1,25 +1,31 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /** @file
- * Generic paint selector widget
+ * PaintSelector: Generic paint selector widget.
  *//*
  * Authors:
- *   Lauris
+ *   Lauris Kaplinski
+ *   bulia byak <buliabyak@users.sf.net>
+ *   John Cliff <simarilius@yahoo.com>
  *   Jon A. Cruz <jon@joncruz.org>
+ *   Abhishek Sharma
  *
  * Copyright (C) 2018 Authors
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
+
 #ifndef SEEN_SP_PAINT_SELECTOR_H
 #define SEEN_SP_PAINT_SELECTOR_H
 
-#include "color.h"
-#include "fill-or-stroke.h"
-#include <glib.h>
+#include <memory>
+#include <optional>
+#include <2geom/forward.h>
 #include <gtkmm/box.h>
 
+#include "color.h"
+#include "fill-or-stroke.h"
+#include "gradient-selector-interface.h"
 #include "object/sp-gradient-spread.h"
 #include "object/sp-gradient-units.h"
-#include "gradient-selector-interface.h"
 #include "ui/selected-color.h"
 #include "ui/widget/gradient-selector.h"
 #include "ui/widget/swatch-selector.h"
@@ -40,13 +46,12 @@ class RadioButton;
 class ToggleButton;
 } // namespace Gtk
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 class FillRuleRadioButton;
-class StyleToggleButton;
 class GradientEditor;
+class PatternEditor;
+class StyleToggleButton;
 
 /**
  * Generic paint selector widget.
@@ -97,8 +102,8 @@ class PaintSelector : public Gtk::Box {
     Gtk::Box         *_selector_solid_color = nullptr;
     GradientEditor   *_selector_gradient = nullptr;
     Gtk::Box         *_selector_mesh = nullptr;
-    Gtk::Box         *_selector_pattern = nullptr;
     SwatchSelector   *_selector_swatch = nullptr;
+    PatternEditor* _selector_pattern = nullptr;
 
     Gtk::Label *_label;
     GtkWidget *_patternmenu = nullptr;
@@ -108,7 +113,7 @@ class PaintSelector : public Gtk::Box {
     bool _meshmenu_update = false;
 #endif
 
-    Inkscape::UI::SelectedColor *_selected_color;
+    std::unique_ptr<Inkscape::UI::SelectedColor> _selected_color;
     bool _updating_color;
 
     void getColorAlpha(SPColor &color, gfloat &alpha) const;
@@ -116,13 +121,14 @@ class PaintSelector : public Gtk::Box {
     static gboolean isSeparator(GtkTreeModel *model, GtkTreeIter *iter, gpointer data);
 
   private:
-    sigc::signal<void, FillRule> _signal_fillrule_changed;
-    sigc::signal<void> _signal_dragged;
-    sigc::signal<void, Mode, bool> _signal_mode_changed;
-    sigc::signal<void> _signal_grabbed;
-    sigc::signal<void> _signal_released;
-    sigc::signal<void> _signal_changed;
+    sigc::signal<void (FillRule)> _signal_fillrule_changed;
+    sigc::signal<void ()> _signal_dragged;
+    sigc::signal<void (Mode, bool)> _signal_mode_changed;
+    sigc::signal<void ()> _signal_grabbed;
+    sigc::signal<void ()> _signal_released;
+    sigc::signal<void ()> _signal_changed;
     sigc::signal<void (SPStop*)> _signal_stop_selected;
+    sigc::signal<void> _signal_edit_pattern;
 
     StyleToggleButton *style_button_add(gchar const *px, PaintSelector::Mode mode, gchar const *tip);
     void style_button_toggled(StyleToggleButton *tb);
@@ -161,7 +167,6 @@ class PaintSelector : public Gtk::Box {
 
   public:
     PaintSelector(FillOrStroke kind);
-    ~PaintSelector() override;
 
     inline decltype(_signal_fillrule_changed) signal_fillrule_changed() const { return _signal_fillrule_changed; }
     inline decltype(_signal_dragged) signal_dragged() const { return _signal_dragged; }
@@ -170,6 +175,7 @@ class PaintSelector : public Gtk::Box {
     inline decltype(_signal_released) signal_released() const { return _signal_released; }
     inline decltype(_signal_changed) signal_changed() const { return _signal_changed; }
     inline decltype(_signal_stop_selected) signal_stop_selected() const { return _signal_stop_selected; }
+    inline decltype(_signal_edit_pattern) signal_edit_pattern() const { return _signal_edit_pattern; }
 
     void setMode(Mode mode);
     static Mode getModeForStyle(SPStyle const &style, FillOrStroke kind);
@@ -198,6 +204,12 @@ class PaintSelector : public Gtk::Box {
     SPGradient *getGradientVector();
     void pushAttrsToGradient(SPGradient *gr) const;
     SPPattern *getPattern();
+    std::optional<unsigned int> get_pattern_color();
+    Geom::Affine get_pattern_transform();
+    Geom::Point get_pattern_offset();
+    Geom::Scale get_pattern_gap();
+    Glib::ustring get_pattern_label();
+    bool is_pattern_scale_uniform();
 };
 
 enum {
@@ -209,9 +221,8 @@ enum {
     COMBO_N_COLS = 4
 };
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
+
 #endif // SEEN_SP_PAINT_SELECTOR_H
 
 /*

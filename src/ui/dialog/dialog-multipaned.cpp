@@ -11,29 +11,31 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "dialog-multipaned.h"
-
-#include <glibmm/i18n.h>
-#include <glibmm/objectbase.h>
-#include <gtkmm/container.h>
-#include <gtkmm/image.h>
-#include <gtkmm/label.h>
+#include <cassert>
 #include <iostream>
 #include <numeric>
+#include <glibmm/i18n.h>
+#include <gtkmm/drawingarea.h>
+#include <gtkmm/eventbox.h>
+#include <gtkmm/gesturemultipress.h>
+#include <gtkmm/image.h>
+#include <gtkmm/label.h>
+#include <gtkmm/overlay.h>
+#include <sigc++/functors/mem_fun.h>
 
+#include "dialog-multipaned.h"
+#include "dialog-window.h"
+#include "ui/controller.h"
 #include "ui/dialog/dialog-notebook.h"
 #include "ui/util.h"
 #include "ui/widget/canvas-grid.h"
-#include "dialog-window.h"
 
-#define DROPZONE_SIZE 5
-#define DROPZONE_EXPANSION 15
-#define HANDLE_SIZE 12
-#define HANDLE_CROSS_SIZE 25
+static constexpr int DROPZONE_SIZE      =  5;
+static constexpr int DROPZONE_EXPANSION = 15;
+static constexpr int HANDLE_SIZE        = 12;
+static constexpr int HANDLE_CROSS_SIZE  = 25;
 
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
+namespace Inkscape::UI::Dialog {
 
 /*
  * References:
@@ -57,7 +59,31 @@ int get_handle_size() {
 
 /* ============ MyDropZone ============ */
 
-std::list<MyDropZone *> MyDropZone::_instances_list;
+/**
+ * Dropzones are eventboxes at the ends of a DialogMultipaned where you can drop dialogs.
+ */
+class MyDropZone final
+    : public Gtk::Orientable
+    , public Gtk::EventBox
+{
+public:
+    MyDropZone(Gtk::Orientation orientation);
+    ~MyDropZone() final;
+
+    static void add_highlight_instances();
+    static void remove_highlight_instances();
+
+private:
+    void set_size(int size);
+    bool _active = false;
+    void add_highlight();
+    void remove_highlight();
+
+    static std::vector<MyDropZone *> _instances_list;
+    friend class DialogMultipaned;
+};
+
+std::vector<MyDropZone *> MyDropZone::_instances_list;
 
 MyDropZone::MyDropZone(Gtk::Orientation orientation)
     : Glib::ObjectBase("MultipanedDropZone")
@@ -70,7 +96,7 @@ MyDropZone::MyDropZone(Gtk::Orientation orientation)
 
     get_style_context()->add_class("backgnd-passive");
 
-    signal_drag_motion().connect([=](const Glib::RefPtr<Gdk::DragContext>& ctx, int x, int y, guint time) {
+    signal_drag_motion().connect([=](Glib::RefPtr<Gdk::DragContext> const &/*ctx*/, int x, int y, guint time) {
         if (!_active) {
             _active = true;
             add_highlight();
@@ -79,7 +105,7 @@ MyDropZone::MyDropZone(Gtk::Orientation orientation)
         return true;
     });
 
-    signal_drag_leave().connect([=](const Glib::RefPtr<Gdk::DragContext>&, guint time) {
+    signal_drag_leave().connect([=](Glib::RefPtr<Gdk::DragContext> const &/*ctx*/, guint time) {
         if (_active) {
             _active = false;
             set_size(DROPZONE_SIZE);
@@ -91,7 +117,9 @@ MyDropZone::MyDropZone(Gtk::Orientation orientation)
 
 MyDropZone::~MyDropZone()
 {
-    _instances_list.remove(this);
+    auto const it = std::find(_instances_list.cbegin(), _instances_list.cend(), this);
+    assert(it != _instances_list.cend());
+    _instances_list.erase(it);
 }
 
 void MyDropZone::add_highlight_instances()
@@ -105,7 +133,6 @@ void MyDropZone::remove_highlight_instances()
 {
     for (auto *instance : _instances_list) {
         instance->remove_highlight();
-        // instance->set_size(DROPZONE_SIZE);
     }
 }
 
@@ -134,19 +161,62 @@ void MyDropZone::set_size(int size)
 
 /* ============  MyHandle  ============ */
 
+/**
+ * Handles are event boxes that help with resizing DialogMultipaned' children.
+ */
+class MyHandle final
+    : public Gtk::Orientable
+    , public Gtk::Overlay
+{
+public:
+    MyHandle(Gtk::Orientation orientation, int size);
+    ~MyHandle() final = default;
+
+    void set_dragging    (bool dragging);
+    void set_drag_updated(bool updated );
+
+private:
+    void on_motion_enter (GtkEventControllerMotion const *motion,
+                          double x, double y);
+    void on_motion_motion(GtkEventControllerMotion const *motion,
+                          double x, double y);
+    void on_motion_leave (GtkEventControllerMotion const *motion);
+
+    Gtk::EventSequenceState on_click_pressed (Gtk::GestureMultiPress const &gesture,
+                                              int n_press, double x, double y);
+    Gtk::EventSequenceState on_click_released(Gtk::GestureMultiPress const &gesture,
+                                              int n_press, double x, double y);
+
+    void toggle_multipaned();
+    void update_click_indicator(double x, double y);
+    void show_click_indicator(bool show);
+    bool on_drawing_area_draw(Cairo::RefPtr<Cairo::Context> const &cr);
+    Cairo::Rectangle get_active_click_zone();
+
+    Gtk::DrawingArea * const _drawing_area;
+    int _cross_size;
+    Gtk::Widget *_child;
+    void resize_handler(Gtk::Allocation &allocation);
+    bool is_click_resize_active() const;
+    bool _click = false;
+    bool _click_indicator = false;
+
+    bool _dragging = false;
+    bool _drag_updated = false;
+};
+
 MyHandle::MyHandle(Gtk::Orientation orientation, int size = get_handle_size())
     : Glib::ObjectBase("MultipanedHandle")
     , Gtk::Orientable()
-    , Gtk::EventBox()
+    , Gtk::Overlay{}
+    , _drawing_area{Gtk::make_managed<Gtk::DrawingArea>()}
     , _cross_size(0)
     , _child(nullptr)
 {
     set_name("MultipanedHandle");
     set_orientation(orientation);
 
-    add_events(Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::POINTER_MOTION_MASK);
-
-    Gtk::Image *image = Gtk::manage(new Gtk::Image());
+    auto const image = Gtk::make_managed<Gtk::Image>();
     if (get_orientation() == Gtk::ORIENTATION_HORIZONTAL) {
         image->set_from_icon_name("view-more-symbolic", Gtk::ICON_SIZE_SMALL_TOOLBAR);
         set_size_request(size, -1);
@@ -157,8 +227,20 @@ MyHandle::MyHandle(Gtk::Orientation orientation, int size = get_handle_size())
     image->set_pixel_size(size);
     add(*image);
 
-    // Signal
+    _drawing_area->signal_draw().connect(sigc::mem_fun(*this, &MyHandle::on_drawing_area_draw));
+    add_overlay(*_drawing_area);
+
     signal_size_allocate().connect(sigc::mem_fun(*this, &MyHandle::resize_handler));
+
+    Controller::add_motion<&MyHandle::on_motion_enter ,
+                           &MyHandle::on_motion_motion,
+                           &MyHandle::on_motion_leave >
+                          (*_drawing_area, *this, Gtk::PHASE_TARGET);
+
+    Controller::add_click(*_drawing_area,
+                          sigc::mem_fun(*this, &MyHandle::on_click_pressed ),
+                          sigc::mem_fun(*this, &MyHandle::on_click_released),
+                          Controller::Button::any, Gtk::PHASE_TARGET);
 
     show_all();
 }
@@ -179,43 +261,43 @@ Cairo::Rectangle MyHandle::get_active_click_zone() {
     double width = allocation.get_width();
     double height = allocation.get_height();
     double h = height / 5;
-
     Cairo::Rectangle rect = { .x = 0, .y = (height - h) / 2, .width = width, .height = h };
     return rect;
 }
 
-bool MyHandle::on_draw(const Cairo::RefPtr<Cairo::Context>& cr) {
-    bool ret = EventBox::on_draw(cr);
-
+bool MyHandle::on_drawing_area_draw(Cairo::RefPtr<Cairo::Context> const &cr)
+{
     // show click indicator/highlight?
     if (_click_indicator && is_click_resize_active() && !_dragging) {
         auto rect = get_active_click_zone();
-
         if (rect.width > 4 && rect.height > 0) {
-            Glib::RefPtr<Gtk::StyleContext> style_context = get_style_context();
-            Gdk::RGBA fg = style_context->get_color(get_state_flags());
+            auto const fg = get_foreground_color(get_style_context());
             rounded_rectangle(cr, rect.x + 2, rect.y, rect.width - 4, rect.height, 3);
             cr->set_source_rgba(fg.get_red(), fg.get_green(), fg.get_blue(), 0.26);
             cr->fill();
         }
     }
-
-    return ret;
+    return true;
 }
 
 void MyHandle::set_dragging(bool dragging) {
     if (_dragging != dragging) {
         _dragging = dragging;
         if (_click_indicator) {
-            queue_draw();
+            _drawing_area->queue_draw();
         }
     }
+}
+
+void MyHandle::set_drag_updated(bool const updated) {
+    _drag_updated = updated;
 }
 
 /**
  * Change the mouse pointer into a resize icon to show you can drag.
  */
-bool MyHandle::on_enter_notify_event(GdkEventCrossing *crossing_event)
+void MyHandle::on_motion_enter(GtkEventControllerMotion const * /*motion*/,
+                               double const x, double const y)
 {
     auto window = get_window();
     auto display = get_display();
@@ -228,14 +310,13 @@ bool MyHandle::on_enter_notify_event(GdkEventCrossing *crossing_event)
         window->set_cursor(cursor);
     }
 
-    update_click_indicator(crossing_event->x, crossing_event->y);
-
-    return false;
+    update_click_indicator(x, y);
 }
 
-bool MyHandle::on_leave_notify_event(GdkEventCrossing* crossing_event) {
+void MyHandle::on_motion_leave(GtkEventControllerMotion const * /*motion*/)
+{
+    get_window()->set_cursor({});
     show_click_indicator(false);
-    return false;
 }
 
 void MyHandle::show_click_indicator(bool show) {
@@ -243,7 +324,7 @@ void MyHandle::show_click_indicator(bool show) {
 
     if (show != _click_indicator) {
         _click_indicator = show;
-        this->queue_draw();
+        _drawing_area->queue_draw();
     }
 }
 
@@ -262,26 +343,31 @@ bool MyHandle::is_click_resize_active() const {
     return get_orientation() == Gtk::ORIENTATION_HORIZONTAL;
 }
 
-bool MyHandle::on_button_press_event(GdkEventButton* button_event) {
-    // detect single-clicks
-    _click = button_event->button == 1 && button_event->type == GDK_BUTTON_PRESS;
-    return false;
+Gtk::EventSequenceState MyHandle::on_click_pressed(Gtk::GestureMultiPress const &gesture,
+                                                   int /*n_press*/, double /*x*/, double /*y*/)
+{
+    // Detect single-clicks, except after a (moving/updated) drag
+    _click = !_drag_updated && gesture.get_current_button() == 1;
+    set_drag_updated(false);
+    return Gtk::EVENT_SEQUENCE_NONE;
 }
 
-bool MyHandle::on_button_release_event(GdkEventButton* event) {
+Gtk::EventSequenceState MyHandle::on_click_released(Gtk::GestureMultiPress const &gesture,
+                                                    int /*n_press*/, double /*x*/, double /*y*/)
+{
     // single-click on active zone?
-    if (_click && event->type == GDK_BUTTON_RELEASE && event->button == 1 && _click_indicator) {
+    if (_click && gesture.get_current_button() == 1 && _click_indicator) {
         _click = false;
         _dragging = false;
         // handle clicked
         if (is_click_resize_active()) {
             toggle_multipaned();
-            return true;
+            return Gtk::EVENT_SEQUENCE_CLAIMED;
         }
     }
 
     _click = false;
-    return false;
+    return Gtk::EVENT_SEQUENCE_NONE;
 }
 
 void MyHandle::toggle_multipaned() {
@@ -291,7 +377,7 @@ void MyHandle::toggle_multipaned() {
     auto panel = dynamic_cast<DialogMultipaned*>(get_parent());
     if (!panel) return;
 
-    auto children = panel->get_children();
+    auto const &children = panel->get_multipaned_children();
     Gtk::Widget* multi = nullptr; // multipaned widget to toggle
     bool left_side = true; // panels to the left of canvas
     size_t i = 0;
@@ -315,10 +401,10 @@ void MyHandle::toggle_multipaned() {
 
             if (multi) {
                 if (multi->is_visible()) {
-                    multi->hide();
+                    multi->set_visible(false);
                 }
                 else {
-                    multi->show();
+                    multi->set_visible(true);
                 }
                 // resize parent
                 panel->children_toggled();
@@ -330,12 +416,12 @@ void MyHandle::toggle_multipaned() {
     }
 }
 
-bool MyHandle::on_motion_notify_event(GdkEventMotion* motion_event) {
+void MyHandle::on_motion_motion(GtkEventControllerMotion const * /*motion*/,
+                                double const x, double const y)
+{
     // motion invalidates click; it activates resizing
     _click = false;
-    // show_click_indicator(false);
-    update_click_indicator(motion_event->x, motion_event->y);
-    return false;
+    update_click_indicator(x, y);
 }
 
 /**
@@ -374,24 +460,19 @@ DialogMultipaned::DialogMultipaned(Gtk::Orientation orientation)
     set_redraw_on_allocate(false);
 
     // ============= Add dropzones ==============
-    MyDropZone *dropzone_s = Gtk::manage(new MyDropZone(orientation));
-    MyDropZone *dropzone_e = Gtk::manage(new MyDropZone(orientation));
-
+    auto const dropzone_s = Gtk::make_managed<MyDropZone>(orientation);
+    auto const dropzone_e = Gtk::make_managed<MyDropZone>(orientation);
     dropzone_s->set_parent(*this);
     dropzone_e->set_parent(*this);
-
     children.push_back(dropzone_s);
     children.push_back(dropzone_e);
 
     // ============ Connect signals =============
-    gesture = Gtk::GestureDrag::create(*this);
-
-    _connections.emplace_back(
-        gesture->signal_drag_begin().connect(sigc::mem_fun(*this, &DialogMultipaned::on_drag_begin)));
-    _connections.emplace_back(gesture->signal_drag_end().connect(sigc::mem_fun(*this, &DialogMultipaned::on_drag_end)));
-    _connections.emplace_back(
-        gesture->signal_drag_update().connect(sigc::mem_fun(*this, &DialogMultipaned::on_drag_update)));
-
+    Controller::add_drag(*this,
+        sigc::mem_fun(*this, &DialogMultipaned::on_drag_begin ),
+        sigc::mem_fun(*this, &DialogMultipaned::on_drag_update),
+        sigc::mem_fun(*this, &DialogMultipaned::on_drag_end   ),
+        Gtk::PHASE_CAPTURE);
     _connections.emplace_back(
         signal_drag_data_received().connect(sigc::mem_fun(*this, &DialogMultipaned::on_drag_data)));
     _connections.emplace_back(
@@ -407,18 +488,6 @@ DialogMultipaned::DialogMultipaned(Gtk::Orientation orientation)
 
 DialogMultipaned::~DialogMultipaned()
 {
-    // Disconnect all signals
-    for_each(_connections.begin(), _connections.end(), [&](auto c) { c.disconnect(); });
-    /*
-        for (std::vector<Gtk::Widget *>::iterator it = children.begin(); it != children.end();) {
-            if (dynamic_cast<DialogMultipaned *>(*it) || dynamic_cast<DialogNotebook *>(*it)) {
-                delete *it;
-            } else {
-                it++;
-            }
-        }
-    */
-
     for (;;) {
         auto it = std::find_if(children.begin(), children.end(), [](auto w) {
             return dynamic_cast<DialogMultipaned *>(w) || dynamic_cast<DialogNotebook *>(w);
@@ -438,14 +507,22 @@ DialogMultipaned::~DialogMultipaned()
     for (auto child : children) {
         if (dynamic_cast<Inkscape::UI::Widget::CanvasGrid*>(child)) {
             remove(*child);
+            break;
         }
     }
-
-    children.clear();
 }
 
-void DialogMultipaned::prepend(Gtk::Widget *child)
+void DialogMultipaned::insert(int const pos, Gtk::Widget &child)
 {
+    auto const parent = child.get_parent();
+    g_assert(!parent || parent == this);
+
+    // Zero/positive pos means insert @children[pos]. Negative means @children[children.size()-pos]
+    // We update children, so we must get iterator anew each time it is to be used. Check bound too
+    g_assert(pos >= 0 &&  pos <= children.size() || // (prepending) inserting at 1-past-end is A-OK
+             pos <  0 && -pos <= children.size());  // (appending) inserting@ 1-before-begin is NOT
+    auto const get_iter = [&]{ return (pos >= 0 ? children.begin() : children.end()) + pos; };
+
     remove_empty_widget(); // Will remove extra widget if existing
 
     // If there are MyMultipane children that are empty, they will be removed
@@ -457,54 +534,32 @@ void DialogMultipaned::prepend(Gtk::Widget *child)
         }
     }
 
-    if (child) {
-        // Add handle
-        if (children.size() > 2) {
-            MyHandle *my_handle = Gtk::manage(new MyHandle(get_orientation()));
-            my_handle->set_parent(*this);
-            children.insert(children.begin() + 1, my_handle); // After start dropzone
-        }
-
-        // Add child
-        children.insert(children.begin() + 1, child);
-        if (!child->get_parent())
-            child->set_parent(*this);
-
-        // Ideally, we would only call child->show() here and assume that the
-        // child has already configured visibility of all its own children.
-        child->show_all();
+    // Add handle
+    if (children.size() > 2) {
+        auto const my_handle = Gtk::make_managed<MyHandle>(get_orientation());
+        my_handle->set_parent(*this);
+        children.insert(get_iter(), my_handle);
     }
+
+    // Add child
+    children.insert(get_iter(), &child);
+    if (!parent) {
+        child.set_parent(*this);
+    }
+
+    // Ideally, we would only call child->set_visible(true) here and assume that the
+    // child has already configured visibility of all its own children.
+    child.show_all();
 }
 
-void DialogMultipaned::append(Gtk::Widget *child)
+void DialogMultipaned::prepend(Gtk::Widget &child)
 {
-    remove_empty_widget(); // Will remove extra widget if existing
+    insert(+1, child); // After start dropzone
+}
 
-    // If there are MyMultipane children that are empty, they will be removed
-    for (auto const &child1 : children) {
-        DialogMultipaned *paned = dynamic_cast<DialogMultipaned *>(child1);
-        if (paned && paned->has_empty_widget()) {
-            remove(*child1);
-            remove_empty_widget();
-        }
-    }
-
-    if (child) {
-        // Add handle
-        if (children.size() > 2) {
-            MyHandle *my_handle = Gtk::manage(new MyHandle(get_orientation()));
-            my_handle->set_parent(*this);
-            children.insert(children.end() - 1, my_handle); // Before end dropzone
-        }
-
-        // Add child
-        children.insert(children.end() - 1, child);
-        if (!child->get_parent())
-            child->set_parent(*this);
-
-        // See comment in DialogMultipaned::prepend
-        child->show_all();
-    }
+void DialogMultipaned::append(Gtk::Widget &child)
+{
+    insert(-1, child); // Before end dropzone
 }
 
 void DialogMultipaned::add_empty_widget()
@@ -512,13 +567,13 @@ void DialogMultipaned::add_empty_widget()
     const int EMPTY_WIDGET_SIZE = 60; // magic number
 
     // The empty widget is a label
-    auto label = Gtk::manage(new Gtk::Label(_("You can drop dockable dialogs here.")));
+    auto const label = Gtk::make_managed<Gtk::Label>(_("You can drop dockable dialogs here."));
     label->set_line_wrap();
     label->set_justify(Gtk::JUSTIFY_CENTER);
     label->set_valign(Gtk::ALIGN_CENTER);
     label->set_vexpand();
 
-    append(label);
+    append(*label);
     _empty_widget = label;
 
     if (get_orientation() == Gtk::ORIENTATION_VERTICAL) {
@@ -612,10 +667,10 @@ void DialogMultipaned::toggle_multipaned_children(bool show)
     for (auto child : children) {
         if (auto panel = dynamic_cast<DialogMultipaned*>(child)) {
             if (show) {
-                panel->show();
+                panel->set_visible(true);
             }
             else {
-                panel->hide();
+                panel->set_visible(false);
             }
         }
     }
@@ -662,6 +717,9 @@ void DialogMultipaned::get_preferred_width_vfunc(int &minimum_width, int &natura
             }
         }
     }
+    if (_natural_width > natural_width) {
+        natural_width = _natural_width;
+    }
 }
 
 void DialogMultipaned::get_preferred_height_vfunc(int &minimum_height, int &natural_height) const
@@ -702,6 +760,10 @@ void DialogMultipaned::get_preferred_width_for_height_vfunc(int height, int &min
             }
         }
     }
+
+    if (_natural_width > natural_width) {
+        natural_width = _natural_width;
+    }
 }
 
 void DialogMultipaned::get_preferred_height_for_width_vfunc(int width, int &minimum_height, int &natural_height) const
@@ -723,7 +785,6 @@ void DialogMultipaned::get_preferred_height_for_width_vfunc(int width, int &mini
         }
     }
 }
-
 
 void DialogMultipaned::children_toggled() {
     _handle = -1;
@@ -751,127 +812,159 @@ void DialogMultipaned::on_size_allocate(Gtk::Allocation &allocation)
         children[_drag_handle + 1]->size_allocate(allocation2);
         _drag_handle = -1;
     }
+    // initially widgets get created with a 1x1 size; ignore it and wait for the final resize
+    else if (allocation.get_width() > 1 && allocation.get_height() > 1) {
+        _natural_width = allocation.get_width();
+    }
 
-    {
-        std::vector<bool> expandables;              // Is child expandable?
-        std::vector<int> sizes_minimums;            // Difference between allocated space and minimum space.
-        std::vector<int> sizes_naturals;            // Difference between allocated space and natural space.
-        std::vector<int> sizes(children.size(), 0); // The new allocation sizes
-        std::vector<int> sizes_current;             // The current sizes along main axis
-        int left = horizontal ? allocation.get_width() : allocation.get_height();
+    std::vector<bool> expandables;              // Is child expandable?
+    std::vector<int> sizes_minimums;            // Difference between allocated space and minimum space.
+    std::vector<int> sizes_naturals;            // Difference between allocated space and natural space.
+    std::vector<int> sizes_current;             // The current sizes along main axis
+    int left = horizontal ? allocation.get_width() : allocation.get_height();
 
-        int index = 0;
+    int index = 0;
+    bool force_resize = false;  // initially panels are not sized yet, so we will apply their natural sizes
+    int canvas_index = -1;
+    for (auto child : children) {
+        bool visible = child->get_visible();
 
-        int canvas_index = -1;
-        for (auto &child : children) {
-            bool visible;
-
-            Inkscape::UI::Widget::CanvasGrid *canvas = dynamic_cast<Inkscape::UI::Widget::CanvasGrid *>(child);
-            if (canvas) {
-                canvas_index = index;
-            }
-
-            {
-                visible = child->get_visible();
-                expandables.push_back(child->compute_expand(get_orientation()));
-
-                Gtk::Requisition req_minimum;
-                Gtk::Requisition req_natural;
-                child->get_preferred_size(req_minimum, req_natural);
-                if (child == _resizing_widget1 || child == _resizing_widget2) {
-                    // ignore limits for widget being resized interactively and use their current size
-                    req_minimum.width = req_minimum.height = 0;
-                    auto alloc = child->get_allocation();
-                    req_natural.width = alloc.get_width();
-                    req_natural.height = alloc.get_height();
-                }
-
-                sizes_minimums.push_back(visible ? horizontal ? req_minimum.width : req_minimum.height : 0);
-                sizes_naturals.push_back(visible ? horizontal ? req_natural.width : req_natural.height : 0);
-            }
-
-            Gtk::Allocation child_allocation = child->get_allocation();
-            sizes_current.push_back(visible ? horizontal ? child_allocation.get_width() : child_allocation.get_height()
-                                            : 0);
-            index++;
+        if (dynamic_cast<Inkscape::UI::Widget::CanvasGrid*>(child)) {
+            canvas_index = index;
         }
 
-        // Precalculate the minimum, natural and current totals
-        int sum_minimums = std::accumulate(sizes_minimums.begin(), sizes_minimums.end(), 0);
-        int sum_naturals = std::accumulate(sizes_naturals.begin(), sizes_naturals.end(), 0);
-        int sum_current = std::accumulate(sizes_current.begin(), sizes_current.end(), 0);
+        expandables.push_back(child->compute_expand(get_orientation()));
 
-        if (sum_naturals <= left) {
+        Gtk::Requisition req_minimum;
+        Gtk::Requisition req_natural;
+        child->get_preferred_size(req_minimum, req_natural);
+        if (child == _resizing_widget1 || child == _resizing_widget2) {
+            // ignore limits for widget being resized interactively and use their current size
+            req_minimum.width = req_minimum.height = 0;
+            auto alloc = child->get_allocation();
+            req_natural.width = alloc.get_width();
+            req_natural.height = alloc.get_height();
+        }
+
+        sizes_minimums.push_back(visible ? horizontal ? req_minimum.width : req_minimum.height : 0);
+        sizes_naturals.push_back(visible ? horizontal ? req_natural.width : req_natural.height : 0);
+
+        Gtk::Allocation child_allocation = child->get_allocation();
+        int size = 0;
+        if (visible) {
+            if (dynamic_cast<MyHandle*>(child)) {
+                // resizing handles should never be smaller than their min size:
+                size = horizontal ? req_minimum.width : req_minimum.height;
+            }
+            else {
+                // all other widgets can get smaller than their min size
+                size = horizontal ? child_allocation.get_width() : child_allocation.get_height();
+                auto min = horizontal ? req_minimum.width : req_minimum.height;
+                // enforce some minimum size, so newly inserted panels don't collapse to nothing
+                if (size < min) size = std::min(20, min); // arbitrarily chosen 20px
+            }
+        }
+        sizes_current.push_back(size);
+        index++;
+
+        if (sizes_current.back() < sizes_minimums.back()) force_resize = true;
+    }
+
+    std::vector<int> sizes = sizes_current; // The new allocation sizes
+
+    const int sum_current = std::accumulate(sizes_current.begin(), sizes_current.end(), 0);
+    {
+        // Precalculate the minimum, natural and current totals
+        const int sum_minimums = std::accumulate(sizes_minimums.begin(), sizes_minimums.end(), 0);
+        const int sum_naturals = std::accumulate(sizes_naturals.begin(), sizes_naturals.end(), 0);
+
+        // initial resize requested?
+        if (force_resize && sum_naturals <= left) {
             sizes = sizes_naturals;
             left -= sum_naturals;
-        } else if (sum_minimums <= left && left < sum_naturals) {
-            sizes = sizes_minimums;
-            left -= sum_minimums;
-        }
-
-        if (canvas_index >= 0) { // give remaining space to canvas element
-            sizes[canvas_index] += left;
-        } else { // or, if in a sub-dialogmultipaned, give it evenly to widgets
-
-            int d = 0;
-            for (int i = 0; i < (int)children.size(); ++i) {
-                if (expandables[i]) {
-                    d++;
-                }
-            }
-
-            if (d > 0) {
-                int idx = 0;
-                for (int i = 0; i < (int)children.size(); ++i) {
-                    if (expandables[i]) {
-                        sizes[i] += (left / d);
-                        if (idx < (left % d))
-                            sizes[i]++;
-                        idx++;
+        } else if (sum_minimums <= left && left < sum_current) {
+            // requested size exeeds available space; try shrinking it by starting from the last element
+            sizes = sizes_current;
+            auto excess = sum_current - left;
+            for (int i = static_cast<int>(sizes.size() - 1); excess > 0 && i >= 0; --i) {
+                auto extra = sizes_current[i] - sizes_minimums[i];
+                if (extra > 0) {
+                    if (extra >= excess) {
+                        // we are done, enough space found
+                        sizes[i] -= excess;
+                        excess = 0;
+                    }
+                    else {
+                        // shrink as far as possible, then continue to the next panel
+                        sizes[i] -= extra;
+                        excess -= extra;
                     }
                 }
             }
-        }
-        left = 0;
 
-        // Check if we actually need to change the sizes on the main axis
-        left = horizontal ? allocation.get_width() : allocation.get_height();
-        if (left == sum_current) {
-            bool valid = true;
-            for (int i = 0; i < (int)children.size(); ++i) {
-                valid = valid && (sizes_minimums[i] <= sizes_current[i]) &&        // is it over the minimums?
-                        (expandables[i] || sizes_current[i] <= sizes_naturals[i]); // but does it want to be expanded?
-                if (!valid)
-                    break;
+            if (excess > 0) {
+                sizes = sizes_minimums;
+                left -= sum_minimums;
             }
-            if (valid)
-                sizes = sizes_current; // The current sizes are good, don't change anything;
-        }
-
-        // Set x and y values of allocations (widths should be correct).
-        int current_x = allocation.get_x();
-        int current_y = allocation.get_y();
-
-        // Allocate
-        for (int i = 0; i < (int)children.size(); ++i) {
-            Gtk::Allocation child_allocation = children[i]->get_allocation();
-            child_allocation.set_x(current_x);
-            child_allocation.set_y(current_y);
-
-            int size = sizes[i];
-
-            if (horizontal) {
-                child_allocation.set_width(size);
-                current_x += size;
-                child_allocation.set_height(allocation.get_height());
-            } else {
-                child_allocation.set_height(size);
-                current_y += size;
-                child_allocation.set_width(allocation.get_width());
+            else {
+                left = 0;
             }
-
-            children[i]->size_allocate(child_allocation);
         }
+        else {
+            left = std::max(0, left - sum_current);
+        }
+    }
+
+    if (canvas_index >= 0) { // give remaining space to canvas element
+        sizes[canvas_index] += left;
+    } else { // or, if in a sub-dialogmultipaned, give it to the last panel
+
+        for (int i = static_cast<int>(children.size()) - 1; i >= 0; --i) {
+            if (expandables[i]) {
+                sizes[i] += left;
+                break;
+            }
+        }
+    }
+
+    // Check if we actually need to change the sizes on the main axis
+    left = horizontal ? allocation.get_width() : allocation.get_height();
+    if (left == sum_current) {
+        bool valid = true;
+        for (size_t i = 0; i < children.size(); ++i) {
+            valid = sizes_minimums[i] <= sizes_current[i] &&        // is it over the minimums?
+                    (expandables[i] || sizes_current[i] <= sizes_naturals[i]); // but does it want to be expanded?
+            if (!valid)
+                break;
+        }
+        if (valid) {
+            sizes = sizes_current; // The current sizes are good, don't change anything;
+        }
+    }
+
+    // Set x and y values of allocations (widths should be correct).
+    int current_x = allocation.get_x();
+    int current_y = allocation.get_y();
+
+    // Allocate
+    for (size_t i = 0; i < children.size(); ++i) {
+        Gtk::Allocation child_allocation = children[i]->get_allocation();
+        child_allocation.set_x(current_x);
+        child_allocation.set_y(current_y);
+
+        int size = sizes[i];
+
+        if (horizontal) {
+            child_allocation.set_width(size);
+            current_x += size;
+            child_allocation.set_height(allocation.get_height());
+        } else {
+            child_allocation.set_height(size);
+            current_y += size;
+            child_allocation.set_width(allocation.get_width());
+        }
+
+        children[i]->size_allocate(child_allocation);
     }
 }
 
@@ -886,9 +979,9 @@ void DialogMultipaned::forall_vfunc(gboolean, GtkCallback callback, gpointer cal
 
 void DialogMultipaned::on_add(Gtk::Widget *child)
 {
-    if (child) {
-        append(child);
-    }
+    g_assert(child);
+
+    append(*child);
 }
 
 /**
@@ -897,51 +990,52 @@ void DialogMultipaned::on_add(Gtk::Widget *child)
  */
 void DialogMultipaned::on_remove(Gtk::Widget *child)
 {
-    if (child) {
-        MyDropZone *dropzone = dynamic_cast<MyDropZone *>(child);
-        if (dropzone) {
-            return;
-        }
-        MyHandle *my_handle = dynamic_cast<MyHandle *>(child);
-        if (my_handle) {
-            return;
-        }
+    g_assert(child);
 
-        const bool visible = child->get_visible();
-        if (children.size() > 2) {
-            auto it = std::find(children.begin(), children.end(), child);
-            if (it != children.end()) {         // child found
-                if (it + 2 != children.end()) { // not last widget
-                    my_handle = dynamic_cast<MyHandle *>(*(it + 1));
+    MyDropZone *dropzone = dynamic_cast<MyDropZone *>(child);
+    if (dropzone) {
+        return;
+    }
+    MyHandle *my_handle = dynamic_cast<MyHandle *>(child);
+    if (my_handle) {
+        return;
+    }
+
+    const bool visible = child->get_visible();
+    if (children.size() > 2) {
+        auto it = std::find(children.begin(), children.end(), child);
+        if (it != children.end()) {         // child found
+            if (it + 2 != children.end()) { // not last widget
+                my_handle = dynamic_cast<MyHandle *>(*(it + 1));
+                my_handle->unparent();
+                child->unparent();
+                children.erase(it, it + 2);
+            } else {                        // last widget
+                if (children.size() == 3) { // only widget
+                    child->unparent();
+                    children.erase(it);
+                } else { // not only widget, delete preceding handle
+                    my_handle = dynamic_cast<MyHandle *>(*(it - 1));
                     my_handle->unparent();
                     child->unparent();
-                    children.erase(it, it + 2);
-                } else {                        // last widget
-                    if (children.size() == 3) { // only widget
-                        child->unparent();
-                        children.erase(it);
-                    } else { // not only widget, delete preceding handle
-                        my_handle = dynamic_cast<MyHandle *>(*(it - 1));
-                        my_handle->unparent();
-                        child->unparent();
-                        children.erase(it - 1, it + 1);
-                    }
+                    children.erase(it - 1, it + 1);
                 }
             }
         }
-        if (visible) {
-            queue_resize();
-        }
+    }
+    if (visible) {
+        queue_resize();
+    }
 
-        if (children.size() == 2) {
-            add_empty_widget();
-            _empty_widget->set_size_request(300, -1);
-            _signal_now_empty.emit();
-        }
+    if (children.size() == 2) {
+        add_empty_widget();
+        _empty_widget->set_size_request(300, -1);
+        _signal_now_empty.emit();
     }
 }
 
-void DialogMultipaned::on_drag_begin(double start_x, double start_y)
+Gtk::EventSequenceState DialogMultipaned::on_drag_begin(Gtk::GestureDrag const & /*gesture*/,
+                                                        double const start_x, double const start_y)
 {
     _hide_widget1 = _hide_widget2 = nullptr;
     _resizing_widget1 = _resizing_widget2 = nullptr;
@@ -968,17 +1062,13 @@ void DialogMultipaned::on_drag_begin(double start_x, double start_y)
     }
 
     if (!found) {
-        gesture->set_state(Gtk::EVENT_SEQUENCE_DENIED);
-        return;
+        return Gtk::EVENT_SEQUENCE_DENIED;
     }
 
     if (child_number < 1 || child_number > (int)(children.size() - 2)) {
         std::cerr << "DialogMultipaned::on_drag_begin: Invalid child (" << child_number << "!!" << std::endl;
-        gesture->set_state(Gtk::EVENT_SEQUENCE_DENIED);
-        return;
+        return Gtk::EVENT_SEQUENCE_DENIED;
     }
-
-    gesture->set_state(Gtk::EVENT_SEQUENCE_CLAIMED);
 
     // Save for use in on_drag_update().
     _handle = child_number;
@@ -993,9 +1083,12 @@ void DialogMultipaned::on_drag_begin(double start_x, double start_y)
         start_allocation2.set_width(0);
         start_allocation2.set_height(0);
     }
+
+    return Gtk::EVENT_SEQUENCE_CLAIMED;
 }
 
-void DialogMultipaned::on_drag_end(double offset_x, double offset_y)
+Gtk::EventSequenceState DialogMultipaned::on_drag_end(Gtk::GestureDrag const & /*gesture*/,
+                                                      double const offset_x, double const offset_y)
 {
     if (_handle >= 0 && _handle < children.size()) {
         if (auto my_handle = dynamic_cast<MyHandle*>(children[_handle])) {
@@ -1003,14 +1096,13 @@ void DialogMultipaned::on_drag_end(double offset_x, double offset_y)
         }
     }
 
-    gesture->set_state(Gtk::EVENT_SEQUENCE_DENIED);
     _handle = -1;
     _drag_handle = -1;
     if (_hide_widget1) {
-        _hide_widget1->hide();
+        _hide_widget1->set_visible(false);
     }
     if (_hide_widget2) {
-        _hide_widget2->hide();
+        _hide_widget2->set_visible(false);
     }
     _hide_widget1 = nullptr;
     _hide_widget2 = nullptr;
@@ -1018,6 +1110,8 @@ void DialogMultipaned::on_drag_end(double offset_x, double offset_y)
     _resizing_widget2 = nullptr;
 
     queue_allocate(); // reimpose limits if any were bent during interactive resizing
+
+    return Gtk::EVENT_SEQUENCE_DENIED;
 }
 
 // docking panels in application window can be collapsed (to left or right side) to make more
@@ -1039,15 +1133,13 @@ bool can_collapse(Gtk::Widget* widget, Gtk::Widget* handle) {
     size_t panel_index = 0;
     size_t handle_index = 0;
     size_t i = 0;
-    for (auto child : parent->get_children()) {
-        if (dynamic_cast<Inkscape::UI::Widget::CanvasGrid*>(child)) {
+    for (auto const child : UI::get_children(*parent)) {
+        if (dynamic_cast<Inkscape::UI::Widget::CanvasGrid *>(child)) {
             left_side = false;
-        }
-        else if (child == handle) {
+        } else if (child == handle) {
             left_handle = left_side;
             handle_index = i;
-        }
-        else if (child == widget) {
+        } else if (child == widget) {
             panel_index = i;
         }
         ++i;
@@ -1066,11 +1158,11 @@ bool can_collapse(Gtk::Widget* widget, Gtk::Widget* handle) {
 // return minimum widget size; this fn works for hidden widgets too
 int get_min_width(Gtk::Widget* widget) {
     bool hidden = !widget->is_visible();
-    if (hidden) widget->show();
+    if (hidden) widget->set_visible(true);
     int minimum_size = 0;
     int natural_size = 0;
     widget->get_preferred_width(minimum_size, natural_size);
-    if (hidden) widget->hide();
+    if (hidden) widget->set_visible(false);
     return minimum_size;
 }
 
@@ -1126,9 +1218,12 @@ double collapse_curve(double val, double size) {
     return val;
 }
 
-void DialogMultipaned::on_drag_update(double offset_x, double offset_y)
+Gtk::EventSequenceState DialogMultipaned::on_drag_update(Gtk::GestureDrag const & /*gesture*/,
+                                                         double offset_x, double offset_y)
 {
-    if (_handle < 0) return;
+    if (_handle < 0) {
+        return Gtk::EVENT_SEQUENCE_NONE;
+    }
 
     auto child1 = children[_handle - 1];
     auto child2 = children[_handle + 1];
@@ -1139,10 +1234,10 @@ void DialogMultipaned::on_drag_update(double offset_x, double offset_y)
     // HACK: The bias prevents erratic resizing when dragging the handle fast, outside the bounds of the app.
     const int BIAS = 1;
 
+    auto const handle = dynamic_cast<MyHandle *>(children[_handle]);
+    handle->set_drag_updated(true);
+
     if (get_orientation() == Gtk::ORIENTATION_HORIZONTAL) {
-
-        auto handle = children[_handle];
-
         // function to resize panel
         auto resize_fn = [](Gtk::Widget* handle, Gtk::Widget* child, int start_width, double& offset_x) {
             int minimum_size = get_min_width(child);
@@ -1151,7 +1246,7 @@ void DialogMultipaned::on_drag_update(double offset_x, double offset_y)
             Gtk::Widget* hide = nullptr;
 
             if (!child->is_visible() && can_collapse(child, handle)) {
-                child->show();
+                child->set_visible(true);
                 resizing = true;
             }
 
@@ -1218,55 +1313,71 @@ void DialogMultipaned::on_drag_update(double offset_x, double offset_y)
 
     _drag_handle = _handle;
     queue_allocate(); // Relayout DialogMultipaned content.
+
+    return Gtk::EVENT_SEQUENCE_NONE;
 }
 
 void DialogMultipaned::set_target_entries(const std::vector<Gtk::TargetEntry> &target_entries)
 {
+    auto &front = dynamic_cast<MyDropZone &>(*children.at(0) );
+    auto &back  = dynamic_cast<MyDropZone &>(*children.back());
+
     drag_dest_set(target_entries);
-    ((MyDropZone *)children[0])->drag_dest_set(target_entries, Gtk::DEST_DEFAULT_ALL, Gdk::ACTION_MOVE);
-    ((MyDropZone *)children[children.size() - 1])
-        ->drag_dest_set(target_entries, Gtk::DEST_DEFAULT_ALL, Gdk::ACTION_MOVE);
+    front.drag_dest_set(target_entries, Gtk::DEST_DEFAULT_ALL, Gdk::ACTION_MOVE);
+    back .drag_dest_set(target_entries, Gtk::DEST_DEFAULT_ALL, Gdk::ACTION_MOVE);
 }
 
-void DialogMultipaned::on_drag_data(const Glib::RefPtr<Gdk::DragContext> context, int x, int y,
+void DialogMultipaned::on_drag_data(Glib::RefPtr<Gdk::DragContext> const &context, int x, int y,
                                     const Gtk::SelectionData &selection_data, guint info, guint time)
 {
-    _signal_prepend_drag_data.emit(context);
+    _signal_prepend_drag_data.emit(selection_data);
 }
 
-void DialogMultipaned::on_prepend_drag_data(const Glib::RefPtr<Gdk::DragContext> context, int x, int y,
+void DialogMultipaned::on_prepend_drag_data(Glib::RefPtr<Gdk::DragContext> const &context, int x, int y,
                                             const Gtk::SelectionData &selection_data, guint info, guint time)
 {
-    _signal_prepend_drag_data.emit(context);
+    _signal_prepend_drag_data.emit(selection_data);
 }
 
-void DialogMultipaned::on_append_drag_data(const Glib::RefPtr<Gdk::DragContext> context, int x, int y,
+void DialogMultipaned::on_append_drag_data(Glib::RefPtr<Gdk::DragContext> const &context, int x, int y,
                                            const Gtk::SelectionData &selection_data, guint info, guint time)
 {
-    _signal_append_drag_data.emit(context);
+    _signal_append_drag_data.emit(selection_data);
 }
 
 // Signals
-sigc::signal<void, const Glib::RefPtr<Gdk::DragContext>> DialogMultipaned::signal_prepend_drag_data()
+sigc::signal<void (Gtk::SelectionData const &)> DialogMultipaned::signal_prepend_drag_data()
 {
     resize_widget_children(this);
     return _signal_prepend_drag_data;
 }
 
-sigc::signal<void, const Glib::RefPtr<Gdk::DragContext>> DialogMultipaned::signal_append_drag_data()
+sigc::signal<void (Gtk::SelectionData const &)> DialogMultipaned::signal_append_drag_data()
 {
     resize_widget_children(this);
     return _signal_append_drag_data;
 }
 
-sigc::signal<void> DialogMultipaned::signal_now_empty()
+sigc::signal<void ()> DialogMultipaned::signal_now_empty()
 {
     return _signal_now_empty;
 }
 
-} // namespace Dialog
-} // namespace UI
-} // namespace Inkscape
+void DialogMultipaned::set_restored_width(int width) {
+    _natural_width = width;
+}
+
+void DialogMultipaned::add_drop_zone_highlight_instances()
+{
+    MyDropZone::add_highlight_instances();
+}
+
+void DialogMultipaned::remove_drop_zone_highlight_instances()
+{
+    MyDropZone::remove_highlight_instances();
+}
+
+} // namespace Inkscape::UI::Dialog
 
 /*
   Local Variables:

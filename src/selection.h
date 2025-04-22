@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef SEEN_INKSCAPE_SELECTION_H
-#define SEEN_INKSCAPE_SELECTION_H
 /*
  * Authors:
  *   Lauris Kaplinski <lauris@kaplinski.com>
@@ -16,24 +14,25 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <vector>
-#include <map>
-#include <cstddef>
-#include <sigc++/sigc++.h>
+#ifndef SEEN_INKSCAPE_SELECTION_H
+#define SEEN_INKSCAPE_SELECTION_H
 
-#include "inkgc/gc-managed.h"
-#include "gc-finalized.h"
-#include "gc-anchored.h"
+#include <cstddef>
+#include <list>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+#include <sigc++/signal.h>
+#include <sigc++/slot.h>
+
+#include "helper/auto-connection.h"
 #include "object/object-set.h"
 
-
 namespace Inkscape {
+
 namespace XML {
 class Node;
-}
-}
-
-namespace Inkscape {
+} // namespace XML
 
 /**
  * The set of selected SPObjects for a given document and layer model.
@@ -52,12 +51,10 @@ namespace Inkscape {
  * It also implements its own asynchronous notification signals that
  * UI elements can listen to.
  */
-class Selection : public Inkscape::GC::Managed<>,
-                  public Inkscape::GC::Finalized,
-                  public Inkscape::GC::Anchored,
-                  public ObjectSet
+class Selection : public ObjectSet
 {
-friend class ObjectSet;
+    friend class ObjectSet;
+
 public:
     /**
      * Constructs an selection object, bound to a particular
@@ -148,6 +145,9 @@ public:
      */
     std::vector<Inkscape::SnapCandidatePoint> getSnapPoints(SnapPreferences const *snapprefs) const;
 
+    // Fixme: Hack should not exist, but used by live_effects.
+    void emitModified() { _emitModified(_flags); };
+
     /**
      * Connects a slot to be notified of selection changes.
      *
@@ -158,14 +158,8 @@ public:
      *
      * @return the resulting connection
      */
-    void emitModified(){ _emitModified(this->_flags); };
-    sigc::connection connectChanged(sigc::slot<void, Selection *> const &slot) {
-        return _changed_signal.connect(slot);
-    }
-    sigc::connection connectChangedFirst(sigc::slot<void, Selection *> const &slot)
-    {
-        return _changed_signal.slots().insert(_changed_signal.slots().begin(), slot);
-    }
+    sigc::connection connectChanged     (sigc::slot<void (Selection *)> slot);
+    sigc::connection connectChangedFirst(sigc::slot<void (Selection *)> slot);
 
     /**
      * Set the anchor point of the selection, used for telling it how transforms
@@ -191,14 +185,8 @@ public:
      * @return the resulting connection
      *
      */
-    sigc::connection connectModified(sigc::slot<void, Selection *, unsigned int> const &slot)
-    {
-        return _modified_signal.connect(slot);
-    }
-    sigc::connection connectModifiedFirst(sigc::slot<void, Selection *, unsigned int> const &slot)
-    {
-        return _modified_signal.slots().insert(_modified_signal.slots().begin(), slot);
-    }
+    sigc::connection connectModified     (sigc::slot<void (Selection *, unsigned)> slot);
+    sigc::connection connectModifiedFirst(sigc::slot<void (Selection *, unsigned)> slot);
 
     /**
      * Set a backup of current selection and store it also to be command line readable by extension system
@@ -216,6 +204,12 @@ public:
      * Here store a paramlist when set backup
      */
     std::list<std::string> params;
+
+    /**
+     * Decide if the selection changing should change the layer and page selection too
+     */
+    void setChangeLayer(bool option) { _change_layer = option; }
+    void setChangePage(bool option) { _change_page = option; }
 
 protected:
     void _connectSignals(SPObject* object) override;
@@ -239,18 +233,21 @@ private:
     SPObject* _selection_context;
     unsigned int _flags;
     unsigned int _idle;
+    bool _change_layer = true;
+    bool _change_page = true;
     std::vector<std::pair<std::string, std::pair<int, int> > > _seldata;
     std::vector<std::string> _selected_ids;
-    std::map<SPObject *, sigc::connection> _modified_connections;
-    sigc::connection _context_release_connection;
+    std::unordered_map<SPObject *, auto_connection> _modified_connections;
+    auto_connection _context_release_connection;
 
-    sigc::signal<void, Selection *> _changed_signal;
-    sigc::signal<void, Selection *, unsigned int> _modified_signal;
+    std::list<sigc::signal<void (Selection *)>> _changed_signals;
+    std::list<sigc::signal<void (Selection *, unsigned int)>> _modified_signals;
 };
 
-}
+} // namespace Inkscape
 
-#endif
+#endif // SEEN_INKSCAPE_SELECTION_H
+
 /*
   Local Variables:
   mode:c++

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef __SP_SPIRAL_CONTEXT_H__
-#define __SP_SPIRAL_CONTEXT_H__
+#ifndef INKSCAPE_UI_TOOLS_SPIRAL_TOOl_H
+#define INKSCAPE_UI_TOOLS_SPIRAL_TOOl_H
 
 /** \file
  * Spiral drawing context
@@ -19,43 +19,49 @@
 #include <sigc++/connection.h>
 #include <2geom/point.h>
 #include "ui/tools/tool-base.h"
-
-#define SP_SPIRAL_CONTEXT(obj) (dynamic_cast<Inkscape::UI::Tools::SpiralTool*>((Inkscape::UI::Tools::ToolBase*)obj))
-#define SP_IS_SPIRAL_CONTEXT(obj) (dynamic_cast<const Inkscape::UI::Tools::SpiralTool*>((const Inkscape::UI::Tools::ToolBase*)obj) != NULL)
+#include "object/weakptr.h"
 
 class SPSpiral;
 
-namespace Inkscape {
+namespace Inkscape { class Selection; }
 
-class Selection;
+namespace Inkscape::UI::Tools {
 
-namespace UI {
-namespace Tools {
-
-class SpiralTool : public ToolBase {
+class SpiralTool : public ToolBase
+{
 public:
     SpiralTool(SPDesktop *desktop);
     ~SpiralTool() override;
 
-	void set(const Inkscape::Preferences::Entry& val) override;
-	bool root_handler(GdkEvent* event) override;
+    void set(Preferences::Entry const &val) override;
+    bool root_handler(CanvasEvent const &event) override;
+
 private:
-	SPSpiral * spiral;
-	Geom::Point center;
-	gdouble revo;
-	gdouble exp;
-	gdouble t0;
+    SPWeakPtr<SPSpiral> spiral;
+    Geom::Point center;
+    double revo = 3.0;
+    double exp = 1.0;
+    double t0 = 0.0;
 
     sigc::connection sel_changed_connection;
 
-	void drag(Geom::Point const &p, guint state);
-	void finishItem();
-	void cancel();
-	void selection_changed(Inkscape::Selection *selection);
+    void drag(Geom::Point const &p, unsigned state);
+    void finishItem();
+    void cancel();
+    void selection_changed(Selection *selection);
 };
 
-}
-}
-}
+} // namespace Inkscape::UI::Tools
 
-#endif
+#endif // INKSCAPE_UI_TOOLS_ARC_TOOl_H
+
+/*
+  Local Variables:
+  mode:c++
+  c-file-style:"stroustrup"
+  c-file-offsets:((innamespace . 0)(inline-open . 0)(case-label . +))
+  indent-tabs-mode:nil
+  fill-column:99
+  End:
+*/
+// vim: filetype=cpp:expandtab:shiftwidth=4:tabstop=8:softtabstop=4 :

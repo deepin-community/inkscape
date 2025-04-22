@@ -31,50 +31,56 @@ enum
 };
 
 // return codes for the find function in the AVL tree (private)
+
+/**
+ * The SweepTree::Find function and its variant for a single point figure out where a point or an edge
+ * should be inserted in a linked list of edges. Once calculated, they return one of these values to indicate
+ * how that place looks like.
+ */
 enum
 {
-  not_found = 0,
-  found_exact = 1,
-  found_on_left = 2,
-  found_on_right = 3,
-  found_between = 4
+  not_found = 0,      /*!< Didn't find a place. */
+  found_exact = 1,    /*!< Found such an edge where edge to insert lies directly on top of another edge */
+  found_on_left = 2,  /*!< Point/edge should go to the left of some edge. (There is nothing on the left of that edge) */
+  found_on_right = 3, /*!< Point/edge should go to the right of some edge. (There is nothing on the right of that edge) */
+  found_between = 4   /*!< Point/edge should go in between two particular edges. */
 };
 
 // types of cap for stroking polylines
-enum butt_typ
+enum ButtType
 {
   butt_straight,		// straight line
   butt_square,			// half square
   butt_round,			// half circle
   butt_pointy			// a little pointy hat
 };
+
 // types of joins for stroking paths
-enum join_typ
+enum JoinType
 {
   join_straight,		// a straight line
   join_round,			// arc of circle (in fact, one or two quadratic bezier curve chunks)
   join_pointy			// a miter join (uses the miter parameter)
 };
-typedef enum butt_typ ButtType;
-typedef enum join_typ JoinType;
 
-enum fill_typ
+enum FillRule
 {
   fill_oddEven   = 0,
   fill_nonZero   = 1,
   fill_positive  = 2,
   fill_justDont = 3
 };
-typedef enum fill_typ FillRule;
 
-// info for a run of pixel to fill
-struct raster_info {
-		int       startPix,endPix;  // start and end pixel from the polygon POV
-		int       sth,stv;          // coordinates for the first pixel in the run, in (possibly another) POV
-		uint32_t* buffer;           // pointer to the first pixel in the run
+// boolean operation
+enum BooleanOp
+{
+  bool_op_union,		// A OR B
+  bool_op_inters,		// A AND B
+  bool_op_diff,			// A \ B
+  bool_op_symdiff,              // A XOR B
+  bool_op_cut,                  // coupure (pleines)
+  bool_op_slice                 // coupure (contour)
 };
-typedef void (*RasterInRunFunc) (raster_info &dest,void *data,int nst,float vst,int nen,float ven);	// init for position ph,pv; the last parameter is a pointer
-
 
 enum Side {
     LEFT = 0,

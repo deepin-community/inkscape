@@ -25,13 +25,13 @@
     Separated out from :py:mod:`inkex.elements._base`"""
 
 from collections import defaultdict
-from typing import DefaultDict, List, Any, Type
+from typing import DefaultDict, List, Any
 
 from lxml import etree
 
 from ..interfaces.IElement import IBaseElement
 
-from ._utils import splitNS
+from ._utils import splitNS, addNS
 from ..utils import errormsg
 from ..localization import inkex_gettext as _
 
@@ -42,15 +42,18 @@ class NodeBasedLookup(etree.PythonElementClassLookup):
     SVG based API to our extensions system.
     """
 
-    default: Type[IBaseElement]
+    default = IBaseElement
 
     # (ns,tag) -> list(cls) ; ascending priority
-    lookup_table = defaultdict(list)  # type: DefaultDict[str, List[Any]]
+    lookup_table: DefaultDict[str, List[Any]] = defaultdict()
 
     @classmethod
     def register_class(cls, klass):
         """Register the given class using it's attached tag name"""
-        cls.lookup_table[splitNS(klass.tag_name)].append(klass)
+        key = addNS(*splitNS(klass.tag_name)[::-1])
+        old = cls.lookup_table.get(key, [])
+        old.append(klass)
+        cls.lookup_table[key] = old
 
     @classmethod
     def find_class(cls, xpath):
@@ -59,7 +62,7 @@ class NodeBasedLookup(etree.PythonElementClassLookup):
         .. versionadded:: 1.1"""
         if isinstance(xpath, type):
             return xpath
-        for kls in cls.lookup_table[splitNS(xpath.split("/")[-1])]:
+        for kls in cls.lookup_table[addNS(*splitNS(xpath.split("/")[-1])[::-1])]:
             # TODO: We could create a apply the xpath attrs to the test element
             # to narrow the search, but this does everything we need right now.
             test_element = kls()
@@ -70,18 +73,22 @@ class NodeBasedLookup(etree.PythonElementClassLookup):
     def lookup(self, doc, element):  # pylint: disable=unused-argument
         """Lookup called by lxml when assigning elements their object class"""
         try:
-            for kls in reversed(self.lookup_table[splitNS(element.tag)]):
+            try:
+                options = self.lookup_table[element.tag]
+            except KeyError:
+                if not element.tag.startswith("{"):
+                    tag = addNS(*splitNS(element.tag)[::-1])
+                    options = self.lookup_table[tag]
+                else:
+                    return self.default
+            for kls in reversed(options):
                 if kls.is_class_element(element):  # pylint: disable=protected-access
                     return kls
-        except TypeError:
-            # Handle non-element proxies case
-            # The documentation implies that it's not possible
-            # Didn't found a reliable way to check whether proxy corresponds to element
-            # or not
-            # Look like lxml issue to me.
-            # The troubling element is "<!--Comment-->"
+
+        except AttributeError:
+            # Handle <!-- Comment -->
             return None
-        return NodeBasedLookup.default
+        return self.default
 
 
 SVG_PARSER = etree.XMLParser(huge_tree=True, strip_cdata=False, recover=True)
@@ -99,14 +106,18 @@ def load_svg(stream):
     if len(SVG_PARSER.error_log) > 0:
         errormsg(
             _(
-                "A parsing error occured, which means you are likely working with "
+                "A parsing error occurred, which means you are likely working with "
                 "a non-conformant SVG file. The following errors were found:\n"
             )
         )
         for __, element in enumerate(SVG_PARSER.error_log):
             errormsg(
-                _("{}. Line {}, column {}").format(
-                    element.message, element.line, element.column
+                _(
+                    "{error_message}. Line {line_number}, column {column_number}",
+                ).format(
+                    error_message=element.message,
+                    line_number=element.line,
+                    column_number=element.column,
                 )
             )
         errormsg(

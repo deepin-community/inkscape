@@ -1,0 +1,26 @@
+From: =?utf-8?q?Jeremy_B=C3=ADcha?= <jeremy.bicha@canonical.com>
+Date: Sun, 16 Mar 2025 20:01:10 -0400
+Subject: Skip tests that fail on several release architectures
+
+https://buildd.debian.org/status/logs.php?pkg=inkscape&ver=1.4-3
+
+Forwarded: https://gitlab.com/inkscape/inbox/-/issues/11399
+---
+ testfiles/cli_tests/CMakeLists.txt | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/testfiles/cli_tests/CMakeLists.txt b/testfiles/cli_tests/CMakeLists.txt
+index 99e8c80..1c6310c 100644
+--- a/testfiles/cli_tests/CMakeLists.txt
++++ b/testfiles/cli_tests/CMakeLists.txt
+@@ -933,8 +933,8 @@ TEST_BIG_ENDIAN(IS_BIG_ENDIAN)
+ 
+ # CMS testing disabled because CI builder doesn't support LCMS yet.
+ # add_pdfinput_test(cms 1)
+-add_pdfinput_test(font-spacing 1 draw-all)
+-add_pdfinput_test(font-style 1 draw-all)
++#add_pdfinput_test(font-spacing 1 draw-all)
++#add_pdfinput_test(font-style 1 draw-all)
+ add_pdfinput_test(gradients 1 draw-all)
+ add_pdfinput_test(latex 1 draw-all)
+ add_pdfinput_test(transparency-groups 1 draw-all)

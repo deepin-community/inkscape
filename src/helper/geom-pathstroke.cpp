@@ -16,6 +16,7 @@
 #include <2geom/circle.h>
 
 #include "helper/geom-pathstroke.h"
+#include "helper/geom.h"
 
 namespace Geom {
 
@@ -689,7 +690,7 @@ void get_cubic_data(Geom::CubicBezier const& bez, double time, double& len, doub
     // curvature radius here. Less code duplication, but slower
 
     if (Geom::are_near(l, 0, 1e-4)) {
-        l = Geom::L2(der2);
+        l = Geom::L2(der2) / 2;
         Geom::Point der3 = derivs.at(3); // try second time
         if (Geom::are_near(l, 0, 1e-4)) {
             l = Geom::L2(der3);
@@ -724,21 +725,25 @@ double _offset_cubic_stable_sub(
 
     double start_off = 1, end_off = 1;
     // correction of the lengths of the tangent to the offset
-    if (!Geom::are_near(start_rad, 0))
-        start_off += (width + width_correction) / start_rad;
-    if (!Geom::are_near(end_rad, 0))
-        end_off += (width + width_correction) / end_rad;
+    // start_off / end_off can also be negative. This is intended and
+    // is the case when *_radius is negative and its absolute value smaller then width.
+    if (!Geom::are_near(start_rad, 0)) {
+        start_off += width / start_rad;
+    }
+    if (!Geom::are_near(end_rad, 0)) {
+        end_off += width / end_rad;
+    }
 
-    // We don't change the direction of the control points
-    if (start_off < 0) {
-        start_off = 0;
+    // the correction factor should not change the sign of the factors
+    // as it is only a scaling heuristic to make the approximation better.
+    const auto correction_factor = 1 + width_correction / width;
+    if (correction_factor > 0) {
+        start_off *= correction_factor;
+        end_off *= correction_factor;
     }
-    if (end_off < 0) {
-        end_off = 0;
-    }
+
     start_off *= start_len;
     end_off *= end_len;
-    // --------
 
     Geom::Point mid1_new = start_normal.ccw()*start_off;
     mid1_new = Geom::Point(start_new[X] + mid1_new[X]/3., start_new[Y] + mid1_new[Y]/3.);
@@ -749,16 +754,22 @@ double _offset_cubic_stable_sub(
     c = Geom::CubicBezier(start_new, mid1_new, mid2_new, end_new);
 
     // check the tolerance for our estimate to be a parallel curve
-
+    // both directions have to be checked, as we are computing a hausdorff distance with offset
     double worst_residual = 0;
-    for (size_t ii = 3; ii <= 7; ii+=2) {
-        const double t = static_cast<double>(ii) / 10;
-        const Geom::Point req = bez.pointAt(t);
-        const Geom::Point chk = c.pointAt(c.nearestTime(req));
-        const double current_residual = (chk-req).length() - std::abs(width);
+    const auto min_offset_difference = [width, &worst_residual](Geom::CubicBezier const &bez1,
+                                                                Geom::CubicBezier const &bez2, const double time) {
+        const Geom::Point requested_point = bez1.pointAt(time);
+        const Geom::Point closest_point = bez2.pointAt(bez2.nearestTime(requested_point));
+        const double current_residual = (requested_point - closest_point).length() - std::abs(width);
         if (std::abs(current_residual) > std::abs(worst_residual)) {
             worst_residual = current_residual;
         }
+    };
+    for (size_t ii = 3; ii <= 7; ii += 2) {
+        const double t = static_cast<double>(ii) / 10;
+
+        min_offset_difference(bez, c, t);
+        min_offset_difference(c, bez, t);
     }
     return worst_residual;
 }
@@ -856,24 +867,27 @@ void offset_cubic(Geom::Path& p, Geom::CubicBezier const& bez, double width, dou
         return;
     }
 
-    // We find the point on our new curve (c) for which the distance between
+    // We find the point on (bez) for which the distance between
     // (c) and (bez) differs the most from the desired distance (width).
+    // both directions have to be checked, as we are computing a hausdorff distance with offset
     double worst_err = std::abs(best_residual);
     double worst_time = .5;
+    const auto min_offset_difference = [width, &worst_err, &worst_time](Geom::CubicBezier const &bez1,
+                                                                        Geom::CubicBezier const &bez2,
+                                                                        const double time) {
+        const Geom::Point requested_point = bez1.pointAt(time);
+        const Geom::Point closest_point = bez2.pointAt(bez2.nearestTime(requested_point));
+        const double current_residual = std::abs((requested_point - closest_point).length() - std::abs(width));
+        if (current_residual > worst_err) {
+            worst_err = current_residual;
+            worst_time = time;
+        }
+    };
     for (size_t ii = 1; ii <= 9; ++ii) {
         const double t = static_cast<double>(ii) / 10;
-        const Geom::Point req = bez.pointAt(t);
-        // We use the exact solution with nearestTime because it is numerically
-        // much more stable than simply assuming that the point on (c) closest
-        // to bez.pointAt(t) is given by c.pointAt(t)
-        const Geom::Point chk = c.pointAt(c.nearestTime(req));
 
-        Geom::Point const diff = req - chk;
-        const double err = std::abs(diff.length() - std::abs(width));
-        if (err > worst_err) {
-            worst_err = err;
-            worst_time = t;
-        }
+        min_offset_difference(bez, c, t);
+        min_offset_difference(c, bez, t);
     }
 
     if (worst_err < tol) {
@@ -1037,7 +1051,7 @@ Geom::Path half_outline(
 {
     if (tolerance <= 0) {
         if (std::abs(width) > 0) {
-            tolerance = 5.0 * (std::abs(width)/100);
+            tolerance = std::abs(width) / 100;
         }
         else {
             tolerance = 1e-4;
@@ -1142,7 +1156,204 @@ void outline_join(Geom::Path &res, Geom::Path const& temp, Geom::Point in_tang, 
             jf = &miter_join;
     }
     jf(jd);
- }
+}
+
+std::vector<std::vector<int>> connected_components(int size, std::function<bool(int, int)> const &adj_test)
+{
+    auto components = std::vector<std::vector<int>>();
+    auto visited = std::vector<bool>(size, false);
+
+    for (int i = 0; i < size; i++) {
+        if (visited[i]) continue;
+
+        auto component = std::vector<int>({ i });
+        visited[i] = true;
+
+        for (int cur = 0; cur < component.size(); cur++) {
+            for (int j = 0; j < size; j++) {
+                if (!visited[j] && adj_test(component[cur], j)) {
+                    component.emplace_back(j);
+                    visited[j] = true;
+                }
+            }
+        }
+
+        components.emplace_back(std::move(component));
+    }
+
+    return components;
+}
+
+/**
+ * Check for an empty path.
+ */
+bool is_path_empty(Geom::Path const &path)
+{
+    double area;
+    Geom::Point pt;
+    Geom::centroid(path.toPwSb(), pt, area);
+    return std::abs(area) < 1e-3;
+}
+
+std::vector<Geom::PathVector> split_non_intersecting_paths(Geom::PathVector &&paths, bool remove_empty)
+{
+    // Get connected components of indices.
+    auto const comps = connected_components(paths.size(), [&] (int i, int j) {
+        return pathvs_have_nonempty_overlap(paths[i], paths[j]);
+    });
+
+    // Split paths into batches.
+    std::vector<Geom::PathVector> result;
+    result.reserve(comps.size());
+
+    for (auto const &comp : comps) {
+        Geom::PathVector pv;
+         // Todo: Fix when 2geom supports reserve.
+
+        for (auto i : comp) {
+            if (remove_empty && is_path_empty(paths[i])) {
+                continue;
+            }
+
+            pv.push_back(std::move(paths[i])); // Todo: Fix when 2geom supports emplace.
+        }
+
+        result.emplace_back(std::move(pv));
+    }
+
+    return result;
+}
+
+Geom::PathVector 
+do_offset(Geom::PathVector const & path_in
+        , double to_offset
+        , double tolerance
+        , double miter_limit
+        , FillRule fillrule
+        , Inkscape::LineJoinType join
+        , Geom::Point point // knot on LPE
+        , Geom::PathVector &helper_path
+        , Geom::PathVector &mix_pathv_all)
+{
+    Geom::PathVector ret_closed;
+    Geom::PathVector ret_open;
+    Geom::PathVector open_pathv;
+    Geom::PathVector closed_pathv;
+    Geom::PathVector orig_pathv = pathv_to_linear_and_cubic_beziers(path_in);
+    Geom::PathVector outline; // return path
+    helper_path.insert(helper_path.end(), orig_pathv.begin(), orig_pathv.end());
+    // Store separated open/closed paths
+    for (auto &i : orig_pathv) {
+        // this improve offset in near closed paths
+        if (Geom::are_near(i.initialPoint(), i.finalPoint())) {
+            i.close(true);
+        }
+        if (i.closed()) {
+            closed_pathv.push_back(i);
+        } else {
+            open_pathv.push_back(i);
+        }
+    }
+    // flatten order the direcions and remove self intersections
+    // we use user fill rule to match original view
+    // after flatten all elements has the same direction in his widding
+    sp_flatten(closed_pathv, fillrule);
+    if (Geom::are_near(to_offset,0.0)) {
+        // this is to keep reference to multiple pathvectors like in a group. Used by knot position in LPE Offset
+        mix_pathv_all.insert(mix_pathv_all.end(), path_in.begin(), path_in.end());
+        closed_pathv.insert(closed_pathv.end(), open_pathv.begin(), open_pathv.end());
+        return closed_pathv;
+    }
+    if (to_offset < 0) {
+        Geom::OptRect bbox = closed_pathv.boundsFast();
+        if (bbox) {
+            (*bbox).expandBy(to_offset / 2.0);
+            if ((*bbox).hasZeroArea()) {
+                closed_pathv.clear();
+            }
+        }
+    }
+    // this is to keep reference to multiple pathvectors like in a group. Used by knot position in LPE Offset
+    mix_pathv_all.insert(mix_pathv_all.end(), closed_pathv.begin(), closed_pathv.end());
+    Geom::PathVector outline_tmp; // full outline to operate
+    double gap = to_offset > 0 ? 0 : 0.01;
+    for (auto &input : closed_pathv) {
+        // input dir is 1 on fill and 0 in holes. garanteed by flatten
+        bool dir = Geom::path_direction(input);
+        Geom::Path with_dir = half_outline(input, std::abs(to_offset) + gap, miter_limit, join, tolerance);
+        if (to_offset > 0) {
+            //we remove artifacts in a manual way not the best way but there is no other way without a clean offset line
+            if (!dir) {
+                auto bbox = input.boundsFast();
+                if (bbox) {
+                    double sizei = std::min((*bbox).width(),(*bbox).height());
+                    if (sizei > to_offset * 2) {
+                        outline_tmp.push_back(with_dir);
+                    }
+                }
+            } else {
+                auto with_dir_pv = Geom::PathVector(with_dir);
+                sp_flatten(with_dir_pv, fill_positive);
+                for (auto path : with_dir_pv) {
+                    auto bbox = path.boundsFast();
+                    if (bbox) {
+                        double sizei = std::min((*bbox).width(),(*bbox).height());
+                        if (sizei > to_offset * 2) {
+                            outline_tmp.push_back(path);
+                        }
+                    }
+                }
+            }
+        } else {
+            Geom::Path against_dir = half_outline(input.reversed(), std::abs(to_offset) + gap, miter_limit, join, tolerance);
+            outline_tmp.push_back(with_dir);
+            outline_tmp.push_back(against_dir);
+            outline.push_back(input);
+        }
+    }
+    if (!closed_pathv.empty()) {
+        if (to_offset > 0) {
+            outline.insert(outline.end(), outline_tmp.begin(), outline_tmp.end());
+            // this make a union propely without calling boolops
+            sp_flatten(outline, fill_positive);
+        } else {
+            // this flatten in a fill_positive way that allow us erase it from the otiginal outline alwais (smaller)
+            sp_flatten(outline_tmp, fill_positive);
+            // this can produce small satellites that become removed after new offset impletation work in 1.4
+            outline = sp_pathvector_boolop(outline_tmp, outline, bool_op_diff, fill_nonZero, fill_nonZero, false);
+        }      
+    }
+    // this is to keep reference to multiple pathvectors like in a group. Used by knot position in LPE Offset
+    mix_pathv_all.insert(mix_pathv_all.end(), open_pathv.begin(), open_pathv.end());
+    for (auto &i : open_pathv) {
+        Geom::Path tmp_a = half_outline(i, to_offset,  miter_limit, join, tolerance);
+        if (point != Geom::Point(Geom::infinity(), Geom::infinity())) {
+            Geom::Path tmp_b = half_outline(i.reversed(), to_offset,  miter_limit, join, tolerance);
+            double distance_b = Geom::distance(point, tmp_a.pointAt(tmp_a.nearestTime(point)));
+            double distance_a = Geom::distance(point, tmp_b.pointAt(tmp_b.nearestTime(point)));
+            if (distance_b < distance_a) {
+                outline.push_back(tmp_a);
+            } else {
+                outline.push_back(tmp_b);
+            }
+        } else {
+            outline.push_back(tmp_a);
+        }
+    }
+    return outline;
+}
+
+Geom::PathVector 
+do_offset(Geom::PathVector const & path_in
+        , double to_offset
+        , double tolerance
+        , double miter_limit
+        , FillRule fillrule
+        , Inkscape::LineJoinType join)
+{
+    Geom::PathVector not_used;
+    return do_offset(path_in, to_offset, tolerance, miter_limit, fillrule, join, Geom::Point(Geom::infinity(), Geom::infinity()), not_used, not_used);
+}
 
 } // namespace Inkscape
 

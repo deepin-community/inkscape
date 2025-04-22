@@ -1,65 +1,33 @@
+cmake_minimum_required(VERSION 3.6)
 
-set(libcroco_SRC
-	cr-additional-sel.c
-	cr-attr-sel.c
-	cr-cascade.c
-	cr-declaration.c
-	cr-doc-handler.c
-	cr-enc-handler.c
-	cr-fonts.c
-	cr-input.c
-	cr-libxml-node-iface.c
-	cr-num.c
-	cr-om-parser.c
-	cr-parser.c
-	cr-parsing-location.c
-	cr-prop-list.c
-	cr-pseudo.c
-	cr-rgb.c
-	cr-selector.c
-	cr-sel-eng.c
-	cr-simple-sel.c
-	cr-statement.c
-	cr-string.c
-	cr-style.c
-	cr-stylesheet.c
-	cr-term.c
-	cr-tknzr.c
-	cr-token.c
-	cr-utils.c
+project(libcroco LANGUAGES C)
 
+if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(LIBCROCO_STANDALONE TRUE)
+endif()
 
-	# -------
-	# Headers
-	cr-additional-sel.h
-	cr-attr-sel.h
-	cr-cascade.h
-	cr-declaration.h
-	cr-doc-handler.h
-	cr-enc-handler.h
-	cr-fonts.h
-	cr-input.h
-	cr-libxml-node-iface.h
-	cr-node-iface.h
-	cr-num.h
-	cr-om-parser.h
-	cr-parser.h
-	cr-parsing-location.h
-	cr-prop-list.h
-	cr-pseudo.h
-	cr-rgb.h
-	cr-sel-eng.h
-	cr-selector.h
-	cr-simple-sel.h
-	cr-statement.h
-	cr-string.h
-	cr-style.h
-	cr-stylesheet.h
-	cr-term.h
-	cr-tknzr.h
-	cr-token.h
-	cr-utils.h
-	libcroco.h
-)
+set(LIBCROCO_MAJOR_VERSION 0)
+set(LIBCROCO_MINOR_VERSION 6)
+set(LIBCROCO_MICRO_VERSION 99)
+set(LIBCROCO_VERSION ${LIBCROCO_MAJOR_VERSION}.${LIBCROCO_MINOR_VERSION}.${LIBCROCO_MICRO_VERSION})
+math(EXPR LIBCROCO_VERSION_NUMBER "${LIBCROCO_MAJOR_VERSION} * 10000 +
+                                   ${LIBCROCO_MINOR_VERSION} * 100 +
+                                   ${LIBCROCO_MICRO_VERSION}")
 
-add_inkscape_lib(croco_LIB "${libcroco_SRC}")
+find_package(PkgConfig REQUIRED)
+
+set(GLIB_REQUIRED 2.0)
+set(LIBXML_REQUIRED 2.4.23)
+
+pkg_check_modules(GLIB REQUIRED glib-2.0>=${GLIB_REQUIRED})
+pkg_check_modules(LIBXML REQUIRED libxml-2.0>=${LIBXML_REQUIRED})
+
+add_subdirectory(src)
+
+option(LIBCROCO_TESTING "Build tests" "${LIBCROCO_STANDALONE}")
+
+if (LIBCROCO_TESTING)
+    enable_testing()
+    add_subdirectory(csslint)
+    add_subdirectory(tests)
+endif()

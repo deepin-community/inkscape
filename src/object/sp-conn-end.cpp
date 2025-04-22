@@ -9,21 +9,14 @@
  */
 #include "sp-conn-end.h"
 
-#include <cstring>
-#include <string>
-#include <limits>
+#include <2geom/path-intersection.h>
 
-#include "bad-uri-exception.h"
-#include "display/curve.h"
-#include "xml/repr.h"
-#include "sp-path.h"
-#include "uri.h"
-#include "document.h"
 #include "sp-item-group.h"
-#include "2geom/path-intersection.h"
+#include "sp-path.h"
+#include "display/curve.h"
 
 
-static void change_endpts(SPCurve *const curve, double const endPos[2]);
+static void change_endpts(SPPath *path, double endPos[2]);
 
 SPConnEnd::SPConnEnd(SPObject *const owner)
     : ref(owner)
@@ -34,7 +27,6 @@ SPConnEnd::SPConnEnd(SPObject *const owner)
     , _changed_connection()
     , _delete_connection()
     , _transformed_connection()
-    , _group_connection()
 {
 }
 
@@ -55,12 +47,12 @@ static bool try_get_intersect_point_with_item_recursive(Geom::PathVector& conn_p
 {
     double initial_pos = intersect_pos;
     // if this is a group...
-    if (SP_IS_GROUP(item)) {
-        SPGroup* group = SP_GROUP(item);
+    if (is<SPGroup>(item)) {
+        auto group = cast<SPGroup>(item);
 
         // consider all first-order children
         double child_pos = 0.0;
-        std::vector<SPItem*> g = sp_item_group_item_list(group);
+        std::vector<SPItem*> g = group->item_list();
         for (auto child_item : g) {
             try_get_intersect_point_with_item_recursive(conn_pv, child_item,
                     item_transform * child_item->transform, child_pos);
@@ -71,18 +63,15 @@ static bool try_get_intersect_point_with_item_recursive(Geom::PathVector& conn_p
     }
 
     // if this is not a shape, nothing to be done
-    auto shape = dynamic_cast<SPShape const *>(item);
+    auto shape = cast<SPShape>(item);
     if (!shape)
         return false;
 
     // make sure it has an associated curve
-    auto item_curve = SPCurve::copy(shape->curve());
-    if (!item_curve) return false;
+    if (!shape->curve()) return false;
 
     // apply transformations (up to common ancestor)
-    item_curve->transform(item_transform);
-
-    const Geom::PathVector& curve_pv = item_curve->get_pathvector();
+    auto const curve_pv = shape->curve()->get_pathvector() * item_transform;
     Geom::CrossingSet cross = crossings(conn_pv, curve_pv);
     // iterate over all Crossings
     //TODO: check correctness of the following code: inner loop uses loop variable
@@ -107,10 +96,7 @@ static bool try_get_intersect_point_with_item(SPPath* conn, SPItem* item,
         const bool at_start, double& intersect_pos)
 {
     // Copy the curve and apply transformations up to common ancestor.
-    auto conn_curve = conn->curve()->copy();
-    conn_curve->transform(conn_transform);
-
-    Geom::PathVector conn_pv = conn_curve->get_pathvector();
+    auto conn_pv = conn->curve()->get_pathvector() * conn_transform;
 
     // If this is not the starting point, use Geom::Path::reverse() to reverse the path
     if (!at_start) {
@@ -165,21 +151,19 @@ static void sp_conn_get_route_and_redraw(SPPath *const path, const bool updatePa
                         (h == 0), endPos[h]);
         }
     }
-    change_endpts(path->curve(), endPos);
+    change_endpts(path, endPos);
     if (updatePathRepr) {
         path->updateRepr();
         path->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
     }
 }
 
-
-static void sp_conn_end_shape_modified(SPObject */*moved_item*/, int /*flags*/, SPPath *const path)
+static void sp_conn_end_shape_modified(SPPath *path)
 {
     if (path->connEndPair.isAutoRoutingConn()) {
         path->connEndPair.tellLibavoidNewEndpoints();
     }
 }
-
 
 void sp_conn_reroute_path(SPPath *const path)
 {
@@ -192,14 +176,12 @@ void sp_conn_reroute_path(SPPath *const path)
 void sp_conn_reroute_path_immediate(SPPath *const path)
 {
     if (path->connEndPair.isAutoRoutingConn()) {
-        bool processTransaction = true;
-        path->connEndPair.tellLibavoidNewEndpoints(processTransaction);
+        path->connEndPair.tellLibavoidNewEndpoints(true);
     }
     // Don't update the path repr or else connector dragging is slowed by
     // constant update of values to the xml editor, and each step is also
     // needlessly remembered by undo/redo.
-    bool const updatePathRepr = false;
-    sp_conn_get_route_and_redraw(path, updatePathRepr);
+    sp_conn_get_route_and_redraw(path, false);
 }
 
 void sp_conn_redraw_path(SPPath *const path)
@@ -208,18 +190,18 @@ void sp_conn_redraw_path(SPPath *const path)
 }
 
 
-static void change_endpts(SPCurve *const curve, double const endPos[2])
+static void change_endpts(SPPath *path, double endPos[2])
 {
     // Use Geom::Path::portion to cut the curve at the end positions
     if (endPos[0] > endPos[1]) {
         // Path is "negative", reset the curve and return
-        curve->reset();
+        path->setCurve({});
         return;
     }
-    const Geom::Path& old_path = curve->get_pathvector()[0];
+    const Geom::Path& old_path = path->curve()->get_pathvector()[0];
     Geom::PathVector new_path_vector;
     new_path_vector.push_back(old_path.portion(endPos[0], endPos[1]));
-    curve->set_pathvector(new_path_vector);
+    path->setCurve(SPCurve(std::move(new_path_vector)));
 }
 
 static void sp_conn_end_deleted(SPObject *, SPObject *const owner, unsigned const handle_ix)
@@ -265,39 +247,21 @@ void SPConnEnd::setAttacherSubHref(gchar const *value)
     }
 }
 
-
-
-void sp_conn_end_href_changed(SPObject */*old_ref*/, SPObject */*ref*/,
-        SPConnEnd *connEndPtr, SPPath *const path, unsigned const handle_ix)
+void sp_conn_end_href_changed(SPObject */*old_ref*/, SPObject */*ref*/, SPConnEnd *connEnd, SPPath *path, unsigned handle_ix)
 {
-    g_return_if_fail(connEndPtr != nullptr);
-    SPConnEnd &connEnd = *connEndPtr;
-    connEnd._delete_connection.disconnect();
-    connEnd._transformed_connection.disconnect();
-    connEnd._group_connection.disconnect();
+    if (!connEnd) return;
+    connEnd->_delete_connection.disconnect();
+    connEnd->_transformed_connection.disconnect();
 
-    if (connEnd.href) {
-        SPObject *refobj = connEnd.ref.getObject();
-        if (refobj) {
-            connEnd._delete_connection
-                = refobj->connectDelete(sigc::bind(sigc::ptr_fun(&sp_conn_end_deleted),
-                                                   path, handle_ix));
-            // This allows the connector tool to dive into a group's children
-            // And connect to their children's centers.
-            SPObject *parent = refobj->parent;
-            if (SP_IS_GROUP(parent) && ! SP_IS_LAYER(parent)) {
-                connEnd._group_connection
-                    = SP_ITEM(parent)->connectModified(sigc::bind(sigc::ptr_fun(&sp_conn_end_shape_modified),
-                                                                 path));
-            }
-            connEnd._transformed_connection
-                = SP_ITEM(refobj)->connectModified(sigc::bind(sigc::ptr_fun(&sp_conn_end_shape_modified),
-                                                                 path));
+    if (connEnd->href) {
+        if (auto refobj = connEnd->ref.getObject()) {
+            connEnd->_delete_connection = refobj->connectDelete(sigc::bind(sigc::ptr_fun(&sp_conn_end_deleted), path, handle_ix));
+            connEnd->_transformed_connection = refobj->connectModified([path] (SPObject *, unsigned) {
+                sp_conn_end_shape_modified(path);
+            });
         }
     }
 }
-
-
 
 /*
   Local Variables:

@@ -19,6 +19,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -29,14 +30,15 @@
  */
 
 #include "toolbar.h"
-
-#include <gtkmm/adjustment.h>
-
-class SPDesktop;
+#include "xml/node-observer.h"
 
 namespace Gtk {
-class ToolButton;
-}
+class Builder;
+class Label;
+class Adjustment;
+} // namespace Gtk
+
+class SPDesktop;
 
 namespace Inkscape {
 class Selection;
@@ -47,52 +49,46 @@ class Node;
 
 namespace UI {
 namespace Widget {
-class LabelToolItem;
-class SpinButtonToolItem;
+class SpinButton;
 }
 
 namespace Toolbar {
-class SpiralToolbar : public Toolbar {
+
+class SpiralToolbar final
+    : public Toolbar
+    , private XML::NodeObserver
+{
+public:
+    SpiralToolbar(SPDesktop *desktop);
+    ~SpiralToolbar() override;
+
 private:
-    UI::Widget::LabelToolItem *_mode_item;
+    Glib::RefPtr<Gtk::Builder> _builder;
+    Gtk::Label &_mode_item;
 
-    UI::Widget::SpinButtonToolItem *_revolution_item;
-    UI::Widget::SpinButtonToolItem *_expansion_item;
-    UI::Widget::SpinButtonToolItem *_t0_item;
+    UI::Widget::SpinButton &_revolution_item;
+    UI::Widget::SpinButton &_expansion_item;
+    UI::Widget::SpinButton &_t0_item;
 
-    Gtk::ToolButton *_reset_item;
+    bool _freeze{false};
 
-    Glib::RefPtr<Gtk::Adjustment> _revolution_adj;
-    Glib::RefPtr<Gtk::Adjustment> _expansion_adj;
-    Glib::RefPtr<Gtk::Adjustment> _t0_adj;
+    XML::Node *_repr{nullptr};
 
-    bool _freeze;
-
-    XML::Node *_repr;
-
-    void value_changed(Glib::RefPtr<Gtk::Adjustment> &adj,
-                       Glib::ustring const           &value_name);
+    void value_changed(Glib::RefPtr<Gtk::Adjustment> &adj, Glib::ustring const &value_name);
     void defaults();
     void selection_changed(Inkscape::Selection *selection);
 
     std::unique_ptr<sigc::connection> _connection;
 
-protected:
-    SpiralToolbar(SPDesktop *desktop);
-    ~SpiralToolbar() override;
+    void event_attr_changed(XML::Node &repr);
 
-public:
-    static GtkWidget * create(SPDesktop *desktop);
+	void notifyAttributeChanged(Inkscape::XML::Node &node, GQuark key, Inkscape::Util::ptr_shared oldval, Inkscape::Util::ptr_shared newval) final;
 
-    static void event_attr_changed(Inkscape::XML::Node *repr,
-                                   gchar const         *name,
-                                   gchar const         *old_value,
-                                   gchar const         *new_value,
-                                   bool                 is_interactive,
-                                   gpointer             data);
+    void setup_derived_spin_button(UI::Widget::SpinButton &btn, Glib::ustring const &name, double default_value);
 };
-}
-}
-}
+
+} // namespace Toolbar
+} // namespace UI
+} // namespace Inkscape
 
 #endif /* !SEEN_SPIRAL_TOOLBAR_H */

@@ -10,19 +10,24 @@
  *
  */
 
+#include <algorithm>
 #include <ctime>
 #include <iomanip>
 #include <iostream>
+#include <string>
 #include <sstream>
-
+#include <vector>
+#include <glibmm/fileutils.h>
 #include <glibmm/i18n.h> // Internationalization
+#include <glibmm/main.h>
+#include <glibmm/miscutils.h>
 
 #include "auto-save.h"
 #include "document.h"
 #include "inkscape-application.h"
 #include "preferences.h"
-
 #include "extension/output.h"
+#include "helper/auto-connection.h"
 #include "io/sys.h"
 #include "xml/repr.h"
 
@@ -45,7 +50,7 @@ void
 AutoSave::start()
 {
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    static sigc::connection autosave_connection;
+    static auto_connection autosave_connection;
 
     // Turn off any previous timeout.
     autosave_connection.disconnect();
@@ -82,7 +87,7 @@ AutoSave::save()
     Glib::RefPtr<Gio::File> dir_file = Gio::File::create_for_path(autosave_dir);
     if (!dir_file->query_exists()) {
         if (!dir_file->make_directory_with_parents()) {
-            std::cerr << "InkscapeApplication::document_autosave: Failed to create autosave directory: " << Glib::filename_to_utf8(autosave_dir) << std::endl;
+            std::cerr << "InkscapeApplication::document_autosave: Failed to create autosave directory: " << autosave_dir << std::endl;
             return true;
         }
     }
@@ -104,7 +109,6 @@ AutoSave::save()
         ++docnum; // Give each document a unique number.
 
         if (document->isModifiedSinceAutoSave()) {
-
             std::string base_name = "automatic-save-" + std::to_string(uid);
 
             // The following we do for each document (rather wasteful...) so that
@@ -150,15 +154,13 @@ AutoSave::save()
                 } catch (Inkscape::Extension::Output::no_extension_found &e) {
                     errortext = g_strdup(_("Autosave failed! Could not find inkscape extension to save document."));
                 } catch (Inkscape::Extension::Output::save_failed &e) {
-                    gchar *safeUri = Inkscape::IO::sanitizeString(path.c_str());
-                    errortext = g_strdup_printf(_("Autosave failed! File %s could not be saved."), safeUri);
-                    g_free(safeUri);
+                    auto const safeUri = Inkscape::IO::sanitizeString(path.c_str());
+                    errortext = g_strdup_printf(_("Autosave failed! File %s could not be saved."), safeUri.c_str());
                 }
                 fclose(file);
             } else {
-                gchar *safeUri = Inkscape::IO::sanitizeString(path.c_str());
-                errortext = g_strdup_printf(_("Autosave failed! File %s could not be saved."), safeUri);
-                g_free(safeUri);
+                auto const safeUri = Inkscape::IO::sanitizeString(path.c_str());
+                errortext = g_strdup_printf(_("Autosave failed! File %s could not be saved."), safeUri.c_str());
             }
 
             if (errortext) {

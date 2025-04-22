@@ -2,7 +2,6 @@
 /** \file
  * Notebook and NotebookPage parameters for extensions.
  */
-
 /*
  * Authors:
  *   Johan Engelen <johan@shouraizou.nl>
@@ -16,19 +15,16 @@
 #include "parameter-notebook.h"
 
 #include <unordered_set>
-
 #include <gtkmm/box.h>
 #include <gtkmm/notebook.h>
 
-#include "preferences.h"
-
 #include "extension/extension.h"
-
+#include "preferences.h"
+#include "ui/pack.h"
 #include "xml/node.h"
 
 namespace Inkscape {
 namespace Extension {
-
 
 ParamNotebook::ParamNotebookPage::ParamNotebookPage(Inkscape::XML::Node *xml, Inkscape::Extension::Extension *ext)
     : InxParameter(xml, ext)
@@ -68,14 +64,14 @@ ParamNotebook::ParamNotebookPage::ParamNotebookPage(Inkscape::XML::Node *xml, In
  *
  * Builds a notebook page (a vbox) and puts parameters on it.
  */
-Gtk::Widget *ParamNotebook::ParamNotebookPage::get_widget(sigc::signal<void> *changeSignal)
+Gtk::Widget *ParamNotebook::ParamNotebookPage::get_widget(sigc::signal<void ()> *changeSignal)
 {
     if (_hidden) {
         return nullptr;
     }
 
-    Gtk::Box * vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
-    vbox->set_border_width(GUI_BOX_MARGIN);
+    auto const vbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
+    vbox->property_margin().set_value(GUI_BOX_MARGIN);
     vbox->set_spacing(GUI_BOX_SPACING);
 
     // add parameters onto page (if any)
@@ -84,8 +80,7 @@ Gtk::Widget *ParamNotebook::ParamNotebookPage::get_widget(sigc::signal<void> *ch
         if (child_widget) {
             int indent = child->get_indent();
             child_widget->set_margin_start(indent *GUI_INDENTATION);
-            vbox->pack_start(*child_widget, false, true, 0); // fill=true does not have an effect here, but allows the
-                                                             // child to choose to expand by setting hexpand/vexpand
+            UI::pack_start(*vbox, *child_widget, child_widget->get_vexpand(), true);
 
             const char *tooltip = child->get_tooltip();
             if (tooltip) {
@@ -94,9 +89,8 @@ Gtk::Widget *ParamNotebook::ParamNotebookPage::get_widget(sigc::signal<void> *ch
         }
     }
 
-    vbox->show();
-
-    return dynamic_cast<Gtk::Widget *>(vbox);
+    vbox->set_visible(true);
+    return vbox;
 }
 
 /** End ParamNotebookPage **/
@@ -187,6 +181,10 @@ std::string ParamNotebook::value_to_string() const
     return _value.raw();
 }
 
+void ParamNotebook::string_to_value(const std::string &in)
+{
+    _value = in;
+}
 
 /** A special category of Gtk::Notebook to handle notebook parameters. */
 class NotebookWidget : public Gtk::Notebook {
@@ -203,7 +201,7 @@ public:
         , activated(false)
     {
         // don't have to set the correct page: this is done in ParamNotebook::get_widget hook function
-        this->signal_switch_page().connect(sigc::mem_fun(this, &NotebookWidget::changed_page));
+        this->signal_switch_page().connect(sigc::mem_fun(*this, &NotebookWidget::changed_page));
     }
 
     void changed_page(Gtk::Widget *page, guint pagenum);
@@ -230,13 +228,13 @@ void NotebookWidget::changed_page(Gtk::Widget * /*page*/, guint pagenum)
  *
  * Builds a notebook and puts pages in it.
  */
-Gtk::Widget *ParamNotebook::get_widget(sigc::signal<void> *changeSignal)
+Gtk::Widget *ParamNotebook::get_widget(sigc::signal<void ()> *changeSignal)
 {
     if (_hidden) {
         return nullptr;
     }
 
-    NotebookWidget *notebook = Gtk::manage(new NotebookWidget(this));
+    auto const notebook = Gtk::make_managed<NotebookWidget>(this);
 
     // add pages (if any) and switch to previously selected page
     int current_page = -1;
@@ -264,7 +262,7 @@ Gtk::Widget *ParamNotebook::get_widget(sigc::signal<void> *changeSignal)
         notebook->set_current_page(selected_page);
     }
 
-    notebook->show();
+    notebook->set_visible(true);
 
     return static_cast<Gtk::Widget *>(notebook);
 }

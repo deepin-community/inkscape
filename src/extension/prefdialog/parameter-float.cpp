@@ -14,15 +14,12 @@
 #include <gtkmm/adjustment.h>
 #include <gtkmm/box.h>
 
-#include "preferences.h"
-
 #include "extension/extension.h"
-
-#include "ui/widget/spin-scale.h"
+#include "preferences.h"
+#include "ui/pack.h"
 #include "ui/widget/spinbutton.h"
-
+#include "ui/widget/spin-scale.h"
 #include "xml/node.h"
-
 
 namespace Inkscape {
 namespace Extension {
@@ -33,9 +30,8 @@ ParamFloat::ParamFloat(Inkscape::XML::Node *xml, Inkscape::Extension::Extension 
     // get value
     if (xml->firstChild()) {
         const char *value = xml->firstChild()->content();
-        if (value) {
-            _value = g_ascii_strtod(value, nullptr);
-        }
+        if (value)
+            string_to_value(value);
     }
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
@@ -104,24 +100,28 @@ double ParamFloat::set(double in)
 
 std::string ParamFloat::value_to_string() const
 {
-    static constexpr auto digits10 = std::numeric_limits<double>::digits10; // number of decimal digits that are ensured to be precise
-    return Glib::ustring::format(std::setprecision(digits10), _value);
+    return Glib::ustring::format(std::setprecision(_precision), std::fixed, _value);
+}
+
+void ParamFloat::string_to_value(const std::string &in)
+{
+    _value = g_ascii_strtod(in.c_str(), nullptr);
 }
 
 /** A class to make an adjustment that uses Extension params. */
 class ParamFloatAdjustment : public Gtk::Adjustment {
     /** The parameter to adjust. */
     ParamFloat *_pref;
-    sigc::signal<void> *_changeSignal;
+    sigc::signal<void ()> *_changeSignal;
 public:
     /** Make the adjustment using an extension and the string
                 describing the parameter. */
-    ParamFloatAdjustment(ParamFloat *param, sigc::signal<void> *changeSignal)
+    ParamFloatAdjustment(ParamFloat *param, sigc::signal<void ()> *changeSignal)
         : Gtk::Adjustment(0.0, param->min(), param->max(), 0.1, 1.0, 0)
         , _pref(param)
         , _changeSignal(changeSignal) {
         this->set_value(_pref->get());
-        this->signal_value_changed().connect(sigc::mem_fun(this, &ParamFloatAdjustment::val_changed));
+        this->signal_value_changed().connect(sigc::mem_fun(*this, &ParamFloatAdjustment::val_changed));
         return;
     };
 
@@ -148,13 +148,13 @@ void ParamFloatAdjustment::val_changed()
  *
  * Builds a hbox with a label and a float adjustment in it.
  */
-Gtk::Widget *ParamFloat::get_widget(sigc::signal<void> *changeSignal)
+Gtk::Widget *ParamFloat::get_widget(sigc::signal<void ()> *changeSignal)
 {
     if (_hidden) {
         return nullptr;
     }
 
-    Gtk::Box *hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, GUI_PARAM_WIDGETS_SPACING));
+    auto const hbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL, GUI_PARAM_WIDGETS_SPACING);
 
     auto pfa = new ParamFloatAdjustment(this, changeSignal);
     Glib::RefPtr<Gtk::Adjustment> fadjust(pfa);
@@ -164,28 +164,26 @@ Gtk::Widget *ParamFloat::get_widget(sigc::signal<void> *changeSignal)
         Glib::ustring text;
         if (_text != nullptr)
             text = _text;
-        UI::Widget::SpinScale *scale = Gtk::manage(new UI::Widget::SpinScale(text, fadjust, _precision));
+        auto const scale = Gtk::make_managed<UI::Widget::SpinScale>(text, fadjust, _precision);
         scale->set_size_request(400, -1);
-        scale->show();
-        hbox->pack_start(*scale, true, true);
+        scale->set_visible(true);
+        UI::pack_start(*hbox, *scale, true, true);
 
     }
     else if (_mode == DEFAULT) {
 
-        Gtk::Label *label = Gtk::manage(new Gtk::Label(_text, Gtk::ALIGN_START));
-        label->show();
-        hbox->pack_start(*label, true, true);
+        auto const label = Gtk::make_managed<Gtk::Label>(_text, Gtk::ALIGN_START);
+        label->set_visible(true);
+        UI::pack_start(*hbox, *label, true, true);
 
-	auto spin = Gtk::manage(new Inkscape::UI::Widget::SpinButton(fadjust, 0.1, _precision));
-        spin->show();
-        hbox->pack_start(*spin, false, false);
+        auto const spin = Gtk::make_managed<Inkscape::UI::Widget::SpinButton>(fadjust, 0.1, _precision);
+        spin->set_visible(true);
+        UI::pack_start(*hbox, *spin, false, false);
     }
 
-    hbox->show();
-
-    return dynamic_cast<Gtk::Widget *>(hbox);
+    hbox->set_visible(true);
+    return hbox;
 }
-
 
 }  /* namespace Extension */
 }  /* namespace Inkscape */

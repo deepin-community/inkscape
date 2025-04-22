@@ -8,6 +8,7 @@
 """
 Allow two xml files/lxml etrees to be compared, returning their differences.
 """
+
 import xml.etree.ElementTree as xml
 from io import BytesIO
 

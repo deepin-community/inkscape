@@ -13,6 +13,7 @@
  */
 
 #include "actions-view-window.h"
+#include "actions-helper.h"
 
 #include <giomm.h>
 #include <glibmm/i18n.h>
@@ -54,15 +55,15 @@ void
 add_actions_view_window(InkscapeWindow* win)
 {
     // clang-format off
-    win->add_action( "window-new",                  sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&window_new),       win));
-    win->add_action( "window-previous",             sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&window_previous),  win));
-    win->add_action( "window-next",                 sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&window_next),      win));
+    win->add_action( "window-new",                  sigc::bind(sigc::ptr_fun(&window_new),       win));
+    win->add_action( "window-previous",             sigc::bind(sigc::ptr_fun(&window_previous),  win));
+    win->add_action( "window-next",                 sigc::bind(sigc::ptr_fun(&window_next),      win));
     // clang-format on
 
     // Check if there is already an application instance (GUI or non-GUI).
     auto app = InkscapeApplication::instance();
     if (!app) {
-        std::cerr << "add_actions_view_window: no app!" << std::endl;
+        show_output("add_actions_view_window: no app!");
         return;
     }
     app->get_action_extra_data().add_data(raw_data_view_window);

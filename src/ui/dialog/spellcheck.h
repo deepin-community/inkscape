@@ -19,7 +19,6 @@
 
 #include <gtkmm/box.h>
 #include <gtkmm/button.h>
-#include <gtkmm/buttonbox.h>
 #include <gtkmm/comboboxtext.h>
 #include <gtkmm/liststore.h>
 #include <gtkmm/scrolledwindow.h>
@@ -31,6 +30,7 @@
 #include "text-editing.h"
 #include "ui/dialog/dialog-base.h"
 #include "ui/widget/scrollprotected.h"
+#include "display/control/canvas-item-ptr.h"
 
 #if WITH_GSPELL
 #include <gspell/gspell.h>
@@ -58,10 +58,8 @@ using LanguagePair = std::pair<std::string, std::string>;
 class SpellCheck : public DialogBase
 {
 public:
-    SpellCheck ();
-    ~SpellCheck () override;
-
-    static SpellCheck &getInstance() { return *new SpellCheck(); }
+    SpellCheck();
+    ~SpellCheck() override;
 
     static std::vector<LanguagePair> get_available_langs();
 
@@ -173,7 +171,7 @@ private:
     /**
      * list of canvasitems (currently just rects) that mark misspelled things on canvas
      */
-    std::vector<Inkscape::CanvasItemRect *> _rects;
+    std::vector<CanvasItemPtr<CanvasItemRect>> _rects;
 
     /**
      * list of text objects we have already checked in this session
@@ -231,7 +229,7 @@ private:
      *  Dialogs widgets
      */
     Gtk::Label          banner_label;
-    Gtk::ButtonBox      banner_hbox;
+    Gtk::Button         banner_hbox;
     Gtk::ScrolledWindow scrolled_window;
     Gtk::TreeView       tree_view;
     Glib::RefPtr<Gtk::ListStore> model;
@@ -250,7 +248,7 @@ private:
     Gtk::Separator  action_sep;
     Gtk::Button     stop_button;
     Gtk::Button     start_button;
-    Gtk::ButtonBox  actionbutton_hbox;
+    Gtk::Box        actionbutton_hbox;
 
     class TreeColumns : public Gtk::TreeModel::ColumnRecord
     {

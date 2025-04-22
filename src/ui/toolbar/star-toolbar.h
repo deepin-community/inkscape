@@ -19,6 +19,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -29,15 +30,15 @@
  */
 
 #include "toolbar.h"
-
-#include <gtkmm/adjustment.h>
-
-class SPDesktop;
+#include "xml/node-observer.h"
 
 namespace Gtk {
-class RadioToolButton;
-class ToolButton;
-}
+class Builder;
+class Label;
+class ToggleButton;
+} // namespace Gtk
+
+class SPDesktop;
 
 namespace Inkscape {
 class Selection;
@@ -52,53 +53,50 @@ class ToolBase;
 }
 
 namespace Widget {
-class LabelToolItem;
-class SpinButtonToolItem;
+class SpinButton;
 }
 
 namespace Toolbar {
-class StarToolbar : public Toolbar {
+
+class StarToolbar final
+    : public Toolbar
+    , private XML::NodeObserver
+{
+public:
+    StarToolbar(SPDesktop *desktop);
+    ~StarToolbar() override;
+
 private:
-    UI::Widget::LabelToolItem *_mode_item;
-    std::vector<Gtk::RadioToolButton *> _flat_item_buttons;
-    UI::Widget::SpinButtonToolItem *_magnitude_item;
-    UI::Widget::SpinButtonToolItem *_spoke_item;
-    UI::Widget::SpinButtonToolItem *_roundedness_item;
-    UI::Widget::SpinButtonToolItem *_randomization_item;
-    Gtk::ToolButton *_reset_item;
+    using ValueChangedMemFun = void (StarToolbar::*)();
+    Glib::RefPtr<Gtk::Builder> _builder;
 
-    XML::Node *_repr;
+    Gtk::Label &_mode_item;
+    std::vector<Gtk::ToggleButton *> _flat_item_buttons;
+    UI::Widget::SpinButton &_magnitude_item;
+    Gtk::Box &_spoke_box;
+    UI::Widget::SpinButton &_spoke_item;
+    UI::Widget::SpinButton &_roundedness_item;
+    UI::Widget::SpinButton &_randomization_item;
 
-    Glib::RefPtr<Gtk::Adjustment> _magnitude_adj;
-    Glib::RefPtr<Gtk::Adjustment> _spoke_adj;
-    Glib::RefPtr<Gtk::Adjustment> _roundedness_adj;
-    Glib::RefPtr<Gtk::Adjustment> _randomization_adj;
+    XML::Node *_repr{nullptr};
 
-    bool _freeze;
+    bool _batchundo = false;
+    bool _freeze{false};
     sigc::connection _changed;
-    
+
+    void setup_derived_spin_button(UI::Widget::SpinButton &btn, Glib::ustring const &name, double default_value,
+                                   ValueChangedMemFun const value_changed_mem_fun);
     void side_mode_changed(int mode);
     void magnitude_value_changed();
     void proportion_value_changed();
     void rounded_value_changed();
     void randomized_value_changed();
     void defaults();
-    void watch_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec);
-    void selection_changed(Inkscape::Selection *selection);
+    void watch_tool(SPDesktop *desktop, UI::Tools::ToolBase *tool);
+    void selection_changed(Selection *selection);
 
-protected:
-    StarToolbar(SPDesktop *desktop);
-    ~StarToolbar() override;
-
-public:
-    static GtkWidget * create(SPDesktop *desktop);
-
-    static void event_attr_changed(Inkscape::XML::Node *repr,
-                                   gchar const         *name,
-                                   gchar const         *old_value,
-                                   gchar const         *new_value,
-                                   bool                 is_interactive,
-                                   gpointer             dataPointer);
+    void notifyAttributeChanged(Inkscape::XML::Node &node, GQuark name, Inkscape::Util::ptr_shared old_value,
+                                Inkscape::Util::ptr_shared new_value) final;
 };
 
 }

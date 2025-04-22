@@ -14,16 +14,14 @@
 #ifndef SEEN_INK_EXTENSION_PARAM_H__
 #define SEEN_INK_EXTENSION_PARAM_H__
 
+#include <string>
 #include "widget.h"
-
 
 namespace Glib {
 class ustring;
-}
+} // namespace Glib
 
-
-namespace Inkscape {
-namespace Extension {
+namespace Inkscape::Extension {
 
 /**
  * A class to represent the parameter of an extension.
@@ -106,9 +104,19 @@ public:
      */
     virtual std::string value_to_string() const;
 
-    /** Recommended spacing between the widgets making up a single Parameter (e.g. label and input) (in px) */
-    const static int GUI_PARAM_WIDGETS_SPACING = 4;
+    /** Sets the current value of the parameter from a string
+     *
+     * \internal Must be implemented by all derived classes.
+     */
+    virtual void string_to_value(const std::string &in);
 
+    /**
+     * Calls string_to_value and then saves the result in the prefs.
+     */
+    virtual const std::string &set(const std::string &in);
+
+    /** Recommended spacing between the widgets making up a single Parameter (e.g. label and input) (in px) */
+    static constexpr int GUI_PARAM_WIDGETS_SPACING = 4;
 
     /** An error class for when a parameter is called on a type it is not */
     class param_no_name {};
@@ -120,7 +128,6 @@ public:
     class param_not_optiongroup_param {};
     class param_not_string_param {};
 
-
 protected:
     /** The name of this parameter. */
     char *_name = nullptr;
@@ -130,7 +137,6 @@ protected:
 
     /** Extended description of the parameter (currently shown as tooltip on hover). */
     char *_description = nullptr;
-
 
     /* **** member functions **** */
 
@@ -145,8 +151,7 @@ protected:
     Glib::ustring pref_name() const;
 };
 
-}  // namespace Extension
-}  // namespace Inkscape
+} // namespace Inkscape::Extension
 
 #endif // SEEN_INK_EXTENSION_PARAM_H__
 

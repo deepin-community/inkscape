@@ -19,26 +19,30 @@
 
 #define noSP_FS_VERBOSE
 
+#include "fill-style.h"
+
 #include <glibmm/i18n.h>
 
 #include "desktop-style.h"
 #include "desktop.h"
 #include "document-undo.h"
-#include "fill-style.h"
+#include "document.h"
 #include "gradient-chemistry.h"
-#include "inkscape.h"
+#include "pattern-manipulation.h"
 #include "selection.h"
+#include "style.h"
 
+#include "actions/actions-tools.h"
 #include "object/sp-defs.h"
 #include "object/sp-linear-gradient.h"
 #include "object/sp-mesh-gradient.h"
+#include "object/sp-object.h"
 #include "object/sp-pattern.h"
 #include "object/sp-radial-gradient.h"
-#include "object/sp-text.h"
 #include "object/sp-stop.h"
+#include "object/sp-text.h"
+#include "object/sp-use.h"
 #include "ui/dialog/dialog-base.h"
-#include "style.h"
-
 #include "ui/icon-names.h"
 
 // These can be deleted once we sort out the libart dependence.
@@ -58,14 +62,17 @@ FillNStroke::FillNStroke(FillOrStroke k)
     , eventContextConn()
 {
     // Add and connect up the paint selector widget:
-    _psel = Gtk::manage(new UI::Widget::PaintSelector(kind));
-    _psel->show();
+    _psel = Gtk::make_managed<UI::Widget::PaintSelector>(kind);
+    _psel->set_visible(true);
     add(*_psel);
     _psel->signal_mode_changed().connect(sigc::mem_fun(*this, &FillNStroke::paintModeChangeCB));
     _psel->signal_dragged().connect(sigc::mem_fun(*this, &FillNStroke::dragFromPaint));
     _psel->signal_changed().connect(sigc::mem_fun(*this, &FillNStroke::paintChangedCB));
     _psel->signal_stop_selected().connect([=](SPStop* stop) {
        if (_desktop) { _desktop->emit_gradient_stop_selected(this, stop); }
+    });
+    _psel->signal_edit_pattern().connect([=](){
+        if (_desktop) set_active_tool(_desktop, "Node");
     });
 
     if (kind == FILL) {
@@ -113,9 +120,11 @@ void FillNStroke::setDesktop(SPDesktop *desktop)
             stop_selected_connection.disconnect();
         }
         _desktop = desktop;
-        if (desktop && desktop->selection) {
-            // subselChangedConn =
-                // desktop->connectToolSubselectionChanged(sigc::hide(sigc::mem_fun(*this, &FillNStroke::performUpdate)));
+        if (desktop && desktop->getSelection()) {
+            subselChangedConn = desktop->connect_text_cursor_moved([=](void* sender, Inkscape::UI::Tools::TextTool* tool) {
+                performUpdate();
+            });
+
             eventContextConn = desktop->connectEventContextChanged(sigc::hide(sigc::bind(
                 sigc::mem_fun(*this, &FillNStroke::eventContextCB), (Inkscape::UI::Tools::ToolBase *)nullptr)));
 
@@ -171,11 +180,11 @@ void FillNStroke::performUpdate()
     const int property = kind == FILL ? QUERY_STYLE_PROPERTY_FILL : QUERY_STYLE_PROPERTY_STROKE;
     int result = sp_desktop_query_style(_desktop, &query, property);
     SPIPaint& paint = *query.getFillOrStroke(kind == FILL);
-    auto stop = dynamic_cast<SPStop*>(paint.getTag());
+    auto stop = cast<SPStop>(paint.getTag());
     if (stop) {
        // there's a stop selected, which is part of subselection, now query selection only to find selected gradient
-       if (_desktop->selection != nullptr) {
-          std::vector<SPItem*> vec(_desktop->selection->items().begin(), _desktop->selection->items().end());
+       if (auto selection = _desktop->getSelection()) {
+          std::vector<SPItem*> vec(selection->items().begin(), selection->items().end());
           result = sp_desktop_query_style_from_list(vec, &query, property);
        }
     }
@@ -208,30 +217,29 @@ void FillNStroke::performUpdate()
                 SPPaintServer* server = (kind == FILL) ? query.getFillPaintServer() : query.getStrokePaintServer();
 
                 if (server) {
-                    if (SP_IS_GRADIENT(server) && SP_GRADIENT(server)->getVector()->isSwatch()) {
-                        SPGradient *vector = SP_GRADIENT(server)->getVector();
+                    if (is<SPGradient>(server) && cast<SPGradient>(server)->getVector()->isSwatch()) {
+                        auto vector = cast<SPGradient>(server)->getVector();
                         _psel->setSwatch(vector);
-                    } else if (SP_IS_LINEARGRADIENT(server)) {
-                        SPGradient *vector = SP_GRADIENT(server)->getVector();
-                        SPLinearGradient *lg = SP_LINEARGRADIENT(server);
+                    } else if (is<SPLinearGradient>(server)) {
+                        auto vector = cast<SPGradient>(server)->getVector();
+                        auto lg = cast<SPLinearGradient>(server);
                         _psel->setGradientLinear(vector, lg, stop);
 
                         _psel->setGradientProperties(lg->getUnits(), lg->getSpread());
-                    } else if (SP_IS_RADIALGRADIENT(server)) {
-                        SPGradient *vector = SP_GRADIENT(server)->getVector();
-                        SPRadialGradient *rg = SP_RADIALGRADIENT(server);
+                    } else if (is<SPRadialGradient>(server)) {
+                        auto vector = cast<SPGradient>(server)->getVector();
+                        auto rg = cast<SPRadialGradient>(server);
                         _psel->setGradientRadial(vector, rg, stop);
 
                         _psel->setGradientProperties(rg->getUnits(), rg->getSpread());
 #ifdef WITH_MESH
-                    } else if (SP_IS_MESHGRADIENT(server)) {
-                        SPGradient *array = SP_GRADIENT(server)->getArray();
-                        _psel->setGradientMesh(SP_MESHGRADIENT(array));
-                        _psel->updateMeshList(SP_MESHGRADIENT(array));
+                    } else if (is<SPMeshGradient>(server)) {
+                        auto array = cast<SPGradient>(server)->getArray();
+                        _psel->setGradientMesh(cast<SPMeshGradient>(array));
+                        _psel->updateMeshList(cast<SPMeshGradient>(array));
 #endif
-                    } else if (SP_IS_PATTERN(server)) {
-                        SPPattern *pat = SP_PATTERN(server)->rootPattern();
-                        _psel->updatePatternList(pat);
+                    } else if (is<SPPattern>(server)) {
+                        _psel->updatePatternList(cast<SPPattern>(server));
                     }
                 }
             }
@@ -357,6 +365,16 @@ void FillNStroke::dragFromPaint()
     _update = false;
 }
 
+void unset_recursive(const char *attribute, SPObject* object)
+{
+	object->removeAttribute(attribute);
+
+	for (auto& child: object->children)
+	{
+		if (is<SPUse> (object)) return;
+		unset_recursive(attribute, &child);
+	}
+}
 /**
 This is called (at least) when:
 1  paint selector mode is switched (e.g. flat color -> gradient)
@@ -427,7 +445,7 @@ void FillNStroke::updateFromPaint(bool switch_style)
 
             break;
         }
-
+        
         case UI::Widget::PaintSelector::MODE_GRADIENT_LINEAR:
         case UI::Widget::PaintSelector::MODE_GRADIENT_RADIAL:
         case UI::Widget::PaintSelector::MODE_SWATCH:
@@ -437,18 +455,9 @@ void FillNStroke::updateFromPaint(bool switch_style)
                                                                                           : SP_GRADIENT_TYPE_RADIAL);
                 bool createSwatch = (_psel->get_mode() == UI::Widget::PaintSelector::MODE_SWATCH);
 
-                SPCSSAttr *css = nullptr;
-                if (kind == FILL) {
-                    // HACK: reset fill-opacity - that 0.75 is annoying; BUT remove this when we have an opacity slider
-                    // for all tabs
-                    css = sp_repr_css_attr_new();
-                    sp_repr_css_set_property(css, "fill-opacity", "1.0");
-                }
-
                 auto vector = _psel->getGradientVector();
                 if (!vector) {
                     /* No vector in paint selector should mean that we just changed mode */
-
                     SPStyle query(_desktop->doc());
                     int result = objects_query_fillstroke(items, &query, kind == FILL);
                     if (result == QUERY_STYLE_MULTIPLE_SAME) {
@@ -459,24 +468,18 @@ void FillNStroke::updateFromPaint(bool switch_style)
                         } else {
                             common = targPaint.value.color;
                         }
-                        vector = sp_document_default_gradient_vector(document, common, createSwatch);
-                        if (vector && createSwatch) {
-                            vector->setSwatch();
-                        }
+                        vector = sp_document_default_gradient_vector(document, common, 1.0, createSwatch);
                     }
+                    if (vector)
+                        vector->setSwatch(createSwatch);
 
                     for (auto item : items) {
-                        // FIXME: see above
-                        if (kind == FILL) {
-                            sp_repr_css_change_recursive(item->getRepr(), css, "style");
-                        }
-
                         if (!vector) {
                             auto gr = sp_gradient_vector_for_object(
                                 document, _desktop, item,
                                 (kind == FILL) ? Inkscape::FOR_FILL : Inkscape::FOR_STROKE, createSwatch);
-                            if (gr && createSwatch) {
-                                gr->setSwatch();
+                            if (gr) {
+                                gr->setSwatch(createSwatch);
                             }
                             sp_item_set_gradient(item, gr, gradient_type,
                                                  (kind == FILL) ? Inkscape::FOR_FILL : Inkscape::FOR_STROKE);
@@ -490,22 +493,17 @@ void FillNStroke::updateFromPaint(bool switch_style)
                     // this gradient type.
                     vector = sp_gradient_ensure_vector_normalized(vector);
                     for (auto item : items) {
-                        // FIXME: see above
-                        if (kind == FILL) {
-                            sp_repr_css_change_recursive(item->getRepr(), css, "style");
-                        }
-
                         SPGradient *gr = sp_item_set_gradient(
                             item, vector, gradient_type, (kind == FILL) ? Inkscape::FOR_FILL : Inkscape::FOR_STROKE);
                         _psel->pushAttrsToGradient(gr);
                     }
                 }
 
-                if (css) {
-                    sp_repr_css_attr_unref(css);
-                    css = nullptr;
+                for (auto item : items) {
+                    // fill and stroke opacity should never be set on gradients since in our user interface
+                    // these are controlled by the gradient stops themselves.
+                    item->style->clear(kind == FILL ? SPAttr::FILL_OPACITY : SPAttr::STROKE_OPACITY);
                 }
-
                 DocumentUndo::done(document, (kind == FILL) ? _("Set gradient on fill") : _("Set gradient on stroke"), INKSCAPE_ICON("dialog-fill-and-stroke"));
             }
             break;
@@ -540,7 +538,7 @@ void FillNStroke::updateFromPaint(bool switch_style)
                     if (style) {
                         SPPaintServer *server =
                             (kind == FILL) ? style->getFillPaintServer() : style->getStrokePaintServer();
-                        if (server && SP_IS_MESHGRADIENT(server))
+                        if (server && is<SPMeshGradient>(server))
                             has_mesh = true;
                     }
 
@@ -562,7 +560,7 @@ void FillNStroke::updateFromPaint(bool switch_style)
                         SPMeshGradient *mg = static_cast<SPMeshGradient *>(document->getObjectByRepr(repr));
                         mg->array.create(mg, item, (kind == FILL) ? item->geometricBounds() : item->visualBounds());
 
-                        bool isText = SP_IS_TEXT(item);
+                        bool isText = is<SPText>(item);
                         sp_style_set_property_url(item, ((kind == FILL) ? "fill" : "stroke"), mg, isText);
 
                         // (*i)->requestModified(SP_OBJECT_MODIFIED_FLAG|SP_OBJECT_STYLE_MODIFIED_FLAG);
@@ -589,7 +587,7 @@ void FillNStroke::updateFromPaint(bool switch_style)
                         Geom::OptRect item_bbox = (kind == FILL) ? item->geometricBounds() : item->visualBounds();
                         mg->array.fill_box(item_bbox);
 
-                        bool isText = SP_IS_TEXT(item);
+                        bool isText = is<SPText>(item);
                         sp_style_set_property_url(item, ((kind == FILL) ? "fill" : "stroke"), mg, isText);
                     }
                 }
@@ -610,13 +608,32 @@ void FillNStroke::updateFromPaint(bool switch_style)
 
                 auto pattern = _psel->getPattern();
                 if (!pattern) {
-
                     /* No Pattern in paint selector should mean that we just
                      * changed mode - don't do jack.
                      */
-
                 } else {
-                    Inkscape::XML::Node *patrepr = pattern->getRepr();
+                    auto link_pattern = pattern;
+                    auto root_pattern = pattern->rootPattern();
+                    if (auto color = _psel->get_pattern_color()) {
+                        sp_pattern_set_color(root_pattern, color.value());
+                    }
+                    // pattern name is applied to the root
+                    root_pattern->setAttribute("inkscape:label", _psel->get_pattern_label().c_str());
+                    // remaining settings apply to link pattern
+                    if (link_pattern != root_pattern) {
+                        auto transform = _psel->get_pattern_transform();
+                        sp_pattern_set_transform(link_pattern, transform);
+                        auto offset = _psel->get_pattern_offset();
+                        sp_pattern_set_offset(link_pattern, offset);
+                        auto uniform = _psel->is_pattern_scale_uniform();
+                        sp_pattern_set_uniform_scale(link_pattern, uniform);
+                        // gap requires both patterns, but they are only created later by calling "adjust_pattern" below
+                        // it is OK to ignore it for now, during initial creation gap is 0,0
+                        auto gap = _psel->get_pattern_gap();
+                        sp_pattern_set_gap(link_pattern, gap);
+                    }
+
+                    Inkscape::XML::Node *patrepr = root_pattern->getRepr();
                     SPCSSAttr *css = sp_repr_css_attr_new();
                     gchar *urltext = g_strdup_printf("url(#%s)", patrepr->attribute("id"));
                     sp_repr_css_set_property(css, (kind == FILL) ? "fill" : "stroke", urltext);
@@ -641,7 +658,7 @@ void FillNStroke::updateFromPaint(bool switch_style)
                         if (style && ((kind == FILL) ? style->fill.isPaintserver() : style->stroke.isPaintserver())) {
                             SPPaintServer *server = (kind == FILL) ? selobj->style->getFillPaintServer()
                                                                    : selobj->style->getStrokePaintServer();
-                            if (SP_IS_PATTERN(server) && SP_PATTERN(server)->rootPattern() == pattern)
+                            if (is<SPPattern>(server) && cast<SPPattern>(server)->rootPattern() == root_pattern)
                                 // only if this object's pattern is not rooted in our selected pattern, apply
                                 continue;
                         }
@@ -651,12 +668,15 @@ void FillNStroke::updateFromPaint(bool switch_style)
                         } else {
                             sp_repr_css_change_recursive(selrepr, css, "style");
                         }
+
+                        // create link to pattern right away, without waiting for object to be moved;
+                        // otherwise pattern editor may end up modifying pattern shared by different objects
+                        item->adjust_pattern(Geom::Affine());
                     }
 
                     sp_repr_css_attr_unref(css);
                     css = nullptr;
                     g_free(urltext);
-
                 } // end if
 
                 DocumentUndo::done(document, (kind == FILL) ? _("Set pattern on fill") : _("Set pattern on stroke"), INKSCAPE_ICON("dialog-fill-and-stroke"));
@@ -666,9 +686,14 @@ void FillNStroke::updateFromPaint(bool switch_style)
 
         case UI::Widget::PaintSelector::MODE_UNSET:
             if (!items.empty()) {
+                for (auto item: items) {
+                    if (item) {
+                        unset_recursive((kind == FILL) ? "fill" : "stroke", item);
+                    }
+                }
                 SPCSSAttr *css = sp_repr_css_attr_new();
                 if (kind == FILL) {
-                    sp_repr_css_unset_property(css, "fill");
+                    sp_repr_css_unset_property(css, "fill");    
                 } else {
                     sp_repr_css_unset_property(css, "stroke");
                     sp_repr_css_unset_property(css, "stroke-opacity");

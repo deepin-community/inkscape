@@ -6,6 +6,7 @@
  *   Bob Jamison ( based off trace dialog)
  *   John Cliff
  *   Other dudes from The Inkscape Organization
+ *   Abhishek Sharma
  *   Declara Denis
  *
  * Copyright (C) 2004 Bob Jamison
@@ -17,42 +18,27 @@
 #ifndef SEEN_UI_DIALOG_TILE_H
 #define SEEN_UI_DIALOG_TILE_H
 
-#include <gtkmm/box.h>
-#include <gtkmm/checkbutton.h>
-#include <gtkmm/notebook.h>
-#include <gtkmm/radiobutton.h>
-
 #include "ui/dialog/dialog-base.h"
 
 namespace Gtk {
+class Box;
 class Button;
-class Grid;
-}
+class Notebook;
+} // namespace Gtk
 
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
+namespace Inkscape::UI::Dialog {
 
 class AlignAndDistribute;
 class ArrangeTab;
 class GridArrangeTab;
 class PolarArrangeTab;
 
-class ArrangeDialog : public DialogBase
+class ArrangeDialog final : public DialogBase
 {
-private:
-    Gtk::Box        *_arrangeBox;
-    Gtk::Notebook   *_notebook;
-    AlignAndDistribute* _align_tab;
-    GridArrangeTab  *_gridArrangeTab;
-    PolarArrangeTab *_polarArrangeTab;
-    Gtk::Button     *_arrangeButton;
-
 public:
     ArrangeDialog();
-    ~ArrangeDialog() override;
 
-    void desktopReplaced() override;
+    void desktopReplaced() final;
 
     void update_arrange_btn();
 
@@ -61,15 +47,18 @@ public:
      */
     void _apply();
 
-    static ArrangeDialog& getInstance() { return *new ArrangeDialog(); }
+private:
+    Gtk::Box           *_arrangeBox      = nullptr;
+    Gtk::Notebook      *_notebook        = nullptr;
+    AlignAndDistribute *_align_tab       = nullptr;
+    GridArrangeTab     *_gridArrangeTab  = nullptr;
+    PolarArrangeTab    *_polarArrangeTab = nullptr;
+    Gtk::Button        *_arrangeButton   = nullptr;
 };
 
-} //namespace Dialog
-} //namespace UI
-} //namespace Inkscape
+} // namespace Inkscape::UI::Dialog
 
-
-#endif /* __TILEDIALOG_H__ */
+#endif // SEEN_UI_DIALOG_TILE_H
 
 /*
   Local Variables:

@@ -15,7 +15,6 @@
 
 #include <vector>
 
-#include <gdk/gdk.h>
 #include <glibmm/ustring.h>
 
 #include "enums.h"  // SPAnchorType
@@ -25,10 +24,6 @@ typedef unsigned int guint32;
 namespace Inkscape {
     class SelTrans;
 }
-
-// Colours are RRGGBBAA:      FILL,       OVER&DRAG,  SELECTED,   STROKE,     OVER&DRAG
-guint32 const DEF_COLOR[] = { 0x000000ff, 0xff0066ff, 0x00ff66ff, 0x000000ff, 0x000000ff };
-guint32 const CEN_COLOR[] = { 0x000000ff, 0x000000ff, 0x00ff66ff, 0x000000ff, 0xff0000b0 };
 
 enum SPSelTransType {
     HANDLE_STRETCH,
@@ -79,7 +74,6 @@ struct SPSelTransHandle;
 struct SPSelTransHandle {
     SPSelTransType type;
     SPAnchorType anchor;
-    GdkCursorType cursor;
     unsigned int control;
     gdouble x, y;
 };

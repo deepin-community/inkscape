@@ -57,13 +57,13 @@ bool CairoRendererPdfOutput::check(Inkscape::Extension::Extension * /*module*/)
     return result;
 }
 
+// TODO: Make this function more generic so that it can do both PostScript and PDF; expose in the headers
 static bool
-pdf_render_document_to_file(SPDocument *doc, gchar const *filename, unsigned int level,
-                            bool texttopath, bool omittext, bool filtertobitmap, int resolution,
-                            const gchar * const exportId, bool exportDrawing, bool exportCanvas, double bleedmargin_px)
+pdf_render_document_to_file(SPDocument *doc, gchar const *filename, unsigned int level, PDFOptions flags,
+                            int resolution)
 {
-    if (texttopath) {
-        assert(!omittext);
+    if (flags.text_to_path) {
+        assert(!flags.text_to_latex);
         // Cairo's text-to-path method has numerical precision and font matching
         // issues (https://gitlab.com/inkscape/inkscape/-/issues/1979).
         // We get better results by using Inkscape's Object-to-Path method.
@@ -73,97 +73,33 @@ pdf_render_document_to_file(SPDocument *doc, gchar const *filename, unsigned int
     doc->ensureUpToDate();
 
     SPRoot *root = doc->getRoot();
-    SPItem *base = nullptr;
-
-    bool pageBoundingBox = TRUE;
-    if (exportId && strcmp(exportId, "")) {
-        // we want to export the given item only
-        base = SP_ITEM(doc->getObjectById(exportId));
-        if (!base) {
-            throw Inkscape::Extension::Output::export_id_not_found(exportId);
-        }
-        root->cropToObject(base); // TODO: This is inconsistent in CLI (should only happen for --export-id-only)
-        pageBoundingBox = exportCanvas;
-    }
-    else {
-        // we want to export the entire document from root
-        base = root;
-        pageBoundingBox = !exportDrawing;
-    }
-
-    if (!base) {
+    if (!root) {
         return false;
     }
     
-    /* Create new arena */
+    /* Create new drawing */
     Inkscape::Drawing drawing;
-    drawing.setExact(true);
     unsigned dkey = SPItem::display_key_new(1);
-    root->invoke_show(drawing, dkey, SP_ITEM_SHOW_DISPLAY);
+    drawing.setRoot(root->invoke_show(drawing, dkey, SP_ITEM_SHOW_DISPLAY));
+    drawing.setExact();
 
     /* Create renderer and context */
     CairoRenderer *renderer = new CairoRenderer();
     CairoRenderContext *ctx = renderer->createContext();
     ctx->setPDFLevel(level);
-    ctx->setTextToPath(texttopath);
-    ctx->setOmitText(omittext);
-    ctx->setFilterToBitmap(filtertobitmap);
+    ctx->setTextToPath(flags.text_to_path);
+    ctx->setOmitText(flags.text_to_latex);
+    ctx->setFilterToBitmap(flags.rasterize_filters);
     ctx->setBitmapResolution(resolution);
 
     bool ret = ctx->setPdfTarget (filename);
     if(ret) {
         /* Render document */
-        ret = renderer->setupDocument(ctx, doc, pageBoundingBox, bleedmargin_px, base);
-
-        auto pages = doc->getPageManager().getPages();
-        if (pages.size() == 0) {
-            // Output the page bounding box as already set up in the initial setupDocument.
-            renderer->renderItem(ctx, root);
-            ret = ctx->finish();
-        } else {
-            auto scale = doc->getDocumentScale();
-
-            // Set root transformation, which copies a bit of what happens above the
-            // reason for this manual process is because we need to slide in the page
-            // offset transformations so need fine-control over placing the children.
-            ctx->transform(scale);
-            ctx->transform(root->transform);
-
-            int index = 1;
-            for (auto &page : pages) {
-                ctx->pushState();
-
-                auto pt = Inkscape::Util::Quantity::convert(1, "px", "pt");
-                auto rect = page->getRect();
-                // Conclude previous page and set new page width and height.
-                auto big_rect = rect * scale;
-                ctx->nextPage(big_rect.width() * pt, big_rect.height() * pt, page->label());
-
-                // Set up page transformation which pushes objects back into the 0,0 location
-                ctx->transform(Geom::Translate(rect.corner(0)).inverse());
-
-                for (auto &child : page->getOverlappingItems(false)) {
-                    ctx->pushState();
-
-                    // This process does not return layers, so those affines are added manually.
-                    for (auto anc : child->ancestorList(true)) {
-                        if (auto layer = dynamic_cast<SPItem *>(anc)) {
-                            if (layer != child && layer != root) {
-                                ctx->transform(layer->transform);
-                            }
-                        }
-                    }
-
-                    // Render the page into the context in the new location.
-                    renderer->renderItem(ctx, child, nullptr, page);
-                    ctx->popState();
-                }
-                ret = ctx->finishPage();
-                index += 1;
-
-                ctx->popState();
-            }
-            ret = ctx->finish();
+        ret = renderer->setupDocument(ctx, doc, root);
+        if (ret) {
+            /* Render multiple pages */
+            ret = renderer->renderPages(ctx, doc, flags.stretch_to_fit);
+            ctx->finish();
         }
     }
 
@@ -206,25 +142,26 @@ CairoRendererPdfOutput::save(Inkscape::Extension::Output *mod, SPDocument *doc, 
         g_warning("Parameter <PDFversion> might not exist");
     }
 
-    bool new_textToPath  = FALSE;
+    PDFOptions flags;
+    flags.text_to_path = false;
     try {
-        new_textToPath = (strcmp(mod->get_param_optiongroup("textToPath"), "paths") == 0);
+        flags.text_to_path = (strcmp(mod->get_param_optiongroup("textToPath"), "paths") == 0);
     }
     catch(...) {
         g_warning("Parameter <textToPath> might not exist");
     }
 
-    bool new_textToLaTeX  = FALSE;
+    flags.text_to_latex = false;
     try {
-        new_textToLaTeX = (strcmp(mod->get_param_optiongroup("textToPath"), "LaTeX") == 0);
+        flags.text_to_latex = (strcmp(mod->get_param_optiongroup("textToPath"), "LaTeX") == 0);
     }
     catch(...) {
         g_warning("Parameter <textToLaTeX> might not exist");
     }
 
-    bool new_blurToBitmap  = FALSE;
+    flags.rasterize_filters = false;
     try {
-        new_blurToBitmap  = mod->get_param_bool("blurToBitmap");
+        flags.rasterize_filters = mod->get_param_bool("blurToBitmap");
     }
     catch(...) {
         g_warning("Parameter <blurToBitmap> might not exist");
@@ -238,37 +175,18 @@ CairoRendererPdfOutput::save(Inkscape::Extension::Output *mod, SPDocument *doc, 
         g_warning("Parameter <resolution> might not exist");
     }
 
-    const gchar *new_exportId = nullptr;
+    flags.stretch_to_fit = false;
     try {
-        new_exportId = mod->get_param_string("exportId");
-    }
-    catch(...) {
-        g_warning("Parameter <exportId> might not exist");
-    }
-
-    bool new_exportCanvas  = true;
-    try {
-        new_exportCanvas = (strcmp(ext->get_param_optiongroup("area"), "page") == 0);
+        flags.stretch_to_fit = (strcmp(ext->get_param_optiongroup("stretch"), "relative") == 0);
     } catch(...) {
-        g_warning("Parameter <area> might not exist");
-    }
-    bool new_exportDrawing  = !new_exportCanvas;
-
-    double new_bleedmargin_px = 0.;
-    try {
-        new_bleedmargin_px = Inkscape::Util::Quantity::convert(mod->get_param_float("bleed"), "mm", "px");
-    }
-    catch(...) {
-        g_warning("Parameter <bleed> might not exist");
+        g_warning("Parameter <stretch> might not exist");
     }
 
     // Create PDF file
     {
         gchar * final_name;
         final_name = g_strdup_printf("> %s", filename);
-        ret = pdf_render_document_to_file(doc, final_name, level,
-                                          new_textToPath, new_textToLaTeX, new_blurToBitmap, new_bitmapResolution,
-                                          new_exportId, new_exportDrawing, new_exportCanvas, new_bleedmargin_px);
+        ret = pdf_render_document_to_file(doc, final_name, level, flags, new_bitmapResolution);
         g_free(final_name);
 
         if (!ret)
@@ -276,8 +194,8 @@ CairoRendererPdfOutput::save(Inkscape::Extension::Output *mod, SPDocument *doc, 
     }
 
     // Create LaTeX file (if requested)
-    if (new_textToLaTeX) {
-        ret = latex_render_document_text_to_file(doc, filename, new_exportId, new_exportDrawing, new_exportCanvas, new_bleedmargin_px, true);
+    if (flags.text_to_latex) {
+        ret = latex_render_document_text_to_file(doc, filename, true);
 
         if (!ret)
             throw Inkscape::Extension::Output::save_failed();
@@ -312,19 +230,25 @@ CairoRendererPdfOutput::init ()
             "</param>\n"
             "<param name=\"blurToBitmap\" gui-text=\"" N_("Rasterize filter effects") "\" type=\"bool\">true</param>\n"
             "<param name=\"resolution\" gui-text=\"" N_("Resolution for rasterization (dpi):") "\" type=\"int\" min=\"1\" max=\"10000\">96</param>\n"
-            "<param name=\"area\" gui-text=\"" N_("Output page size:") "\" type=\"optiongroup\" appearance=\"radio\" >\n"
-                "<option value=\"page\">" N_("Use document's page size") "</option>"
-                "<option value=\"drawing\">" N_("Use exported object's size") "</option>"
-            "</param>"
-            "<param name=\"bleed\" gui-text=\"" N_("Bleed/margin (mm):") "\" type=\"float\" min=\"-10000\" max=\"10000\">0</param>\n"
-            "<param name=\"exportId\" gui-text=\"" N_("Limit export to the object with ID:") "\" type=\"string\"></param>\n"
-            "<output is_exported='true'>\n"
+            "<spacer size=\"10\" />"
+            "<param name=\"stretch\" gui-text=\"" N_("Rounding compensation:") "\" gui-description=\""
+                N_("Exporting to PDF rounds the document size to the next whole number in pt units. Compensation may stretch the drawing slightly (up to 0.35mm for width and/or height). When not compensating, object sizes will be preserved strictly, but this can sometimes cause white gaps along the page margins.")
+                "\" type=\"optiongroup\" appearance=\"radio\" >\n"
+                "<option value=\"relative\">" N_("Compensate for rounding (recommended)") "</option>"
+                "<option value=\"absolute\">" N_("Do not compensate") "</option>"
+            "</param><separator/>"
+            "<hbox indent=\"1\"><image>info-outline</image><spacer/><vbox><spacer/>"
+                "<label>" N_("When exporting from the Export dialog, you can choose objects to export. 'Save a copy' / 'Save as' will export all pages.") "</label>"
+                "<spacer size=\"5\" />"
+                "<label>" N_("The page bleed can be set with the Page tool.") "</label>"
+            "</vbox></hbox>"
+            "<output is_exported='true' priority='5'>\n"
                 "<extension>.pdf</extension>\n"
                 "<mimetype>application/pdf</mimetype>\n"
-                "<filetypename>Portable Document Format (*.pdf)</filetypename>\n"
+                "<filetypename>PDF (*.pdf)</filetypename>\n"
                 "<filetypetooltip>PDF File</filetypetooltip>\n"
             "</output>\n"
-        "</inkscape-extension>", new CairoRendererPdfOutput());
+        "</inkscape-extension>", std::make_unique<CairoRendererPdfOutput>());
     // clang-format on
 
     return;

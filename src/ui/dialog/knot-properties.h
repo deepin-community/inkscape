@@ -23,23 +23,23 @@
 
 class SPDesktop;
 
-namespace Inkscape {
-namespace UI {
-namespace Dialogs {
+namespace Inkscape::UI::Dialog {
 
 // Used in Measure tool to set ends of "ruler" (via Shift-click)."
 
-class KnotPropertiesDialog : public Gtk::Dialog {
- public:
-	KnotPropertiesDialog();
-    ~KnotPropertiesDialog() override;
+class KnotPropertiesDialog final : public Gtk::Dialog
+{
+public:
+    KnotPropertiesDialog();
+
+    KnotPropertiesDialog(KnotPropertiesDialog const &) = delete;
+    KnotPropertiesDialog &operator=(KnotPropertiesDialog const &) = delete;
 
     Glib::ustring     getName() const { return "LayerPropertiesDialog"; }
 
     static void showDialog(SPDesktop *desktop, const SPKnot *pt, Glib::ustring const unit_name);
 
 protected:
-
     SPKnot    *_knotpoint;
 
     Gtk::Label        _knot_x_label;
@@ -53,8 +53,6 @@ protected:
     Gtk::Button       _apply_button;
     Glib::ustring _unit_name;
 
-    sigc::connection    _destroy_connection;
-
     static KnotPropertiesDialog &_instance() {
         static KnotPropertiesDialog instance;
         return instance;
@@ -66,23 +64,13 @@ protected:
     void _close();
 
     void _setKnotPoint(Geom::Point knotpoint, Glib::ustring const unit_name);
-    void _prepareLabelRenderer(Gtk::TreeModel::const_iterator const &row);
 
-    bool _handleKeyEvent(GdkEventKey *event);
-    void _handleButtonEvent(GdkEventButton* event);
     friend class Inkscape::UI::Tools::MeasureTool;
-    
-private:
-    KnotPropertiesDialog(KnotPropertiesDialog const &); // no copy
-    KnotPropertiesDialog &operator=(KnotPropertiesDialog const &); // no assign
 };
 
-} // namespace
-} // namespace
-} // namespace
+} // namespace Inkscape::UI::Dialog
 
-
-#endif //INKSCAPE_DIALOG_LAYER_PROPERTIES_H
+#endif // INKSCAPE_DIALOG_KNOT_PROPERTIES_H
 
 /*
   Local Variables:

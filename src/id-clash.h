@@ -10,12 +10,16 @@
 #ifndef SEEN_ID_CLASH_H
 #define SEEN_ID_CLASH_H
 
-#include "document.h"
+#include <glibmm/ustring.h>  // for ustring
+
+class SPDocument;
+class SPObject;
 
 void prevent_id_clashes(SPDocument *imported_doc, SPDocument *current_doc, bool from_clipboard = false);
 void rename_id(SPObject *elem, Glib::ustring const &newname);
 void change_def_references(SPObject *replace_obj, SPObject *with_obj);
-Glib::ustring generate_unique_id(SPDocument* document, const Glib::ustring& base_name);
+Glib::ustring generate_similar_unique_id(SPDocument *document, Glib::ustring const &base_name);
+Glib::ustring sanitize_id(const Glib::ustring& id);
 
 #endif /* !SEEN_ID_CLASH_H */
 

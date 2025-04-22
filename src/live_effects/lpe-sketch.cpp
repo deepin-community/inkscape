@@ -14,10 +14,13 @@
 
 #include "live_effects/lpe-sketch.h"
 
-// You might need to include other 2geom files. You can add them here:
 #include <2geom/sbasis-math.h>
 #include <2geom/bezier-to-sbasis.h>
 #include <2geom/path-intersection.h>
+#include <gtkmm/box.h>
+#include <gtkmm/separator.h>
+
+#include "ui/pack.h"
 
 // TODO due to internal breakage in glibmm headers, this must be last:
 #include <glibmm/i18n.h>
@@ -27,58 +30,62 @@ namespace LivePathEffect {
 
 LPESketch::LPESketch(LivePathEffectObject *lpeobject) :
     Effect(lpeobject),
-    // initialise your parameters here:
     //testpointA(_("Test Point A"), _("Test A"), "ptA", &wr, this, Geom::Point(100,100)),
-    nbiter_approxstrokes(_("Strokes:"), _("Draw that many approximating strokes"), "nbiter_approxstrokes", &wr, this, 5),
-    strokelength(_("Max stroke length:"),
-                 _("Maximum length of approximating strokes"), "strokelength", &wr, this, 100.),
-    strokelength_rdm(_("Stroke length variation:"),
-                     _("Random variation of stroke length (relative to maximum length)"), "strokelength_rdm", &wr, this, .3),
-    strokeoverlap(_("Max. overlap:"),
-                  _("How much successive strokes should overlap (relative to maximum length)"), "strokeoverlap", &wr, this, .3),
-    strokeoverlap_rdm(_("Overlap variation:"),
-                      _("Random variation of overlap (relative to maximum overlap)"), "strokeoverlap_rdm", &wr, this, .3),
-    ends_tolerance(_("Max. end tolerance:"),
-                   _("Maximum distance between ends of original and approximating paths (relative to maximum length)"), "ends_tolerance", &wr, this, .1),
-    parallel_offset(_("Average offset:"),
-                    _("Average distance each stroke is away from the original path"), "parallel_offset", &wr, this, 5.),
-    tremble_size(_("Max. tremble:"),
-                 _("Maximum tremble magnitude"), "tremble_size", &wr, this, 5.),
-    tremble_frequency(_("Tremble frequency:"),
-                      _("Average number of tremble periods in a stroke"), "tremble_frequency", &wr, this, 1.)
+    nbiter_approxstrokes(_("Strokes"), _("Draw that many approximating strokes"), "nbiter_approxstrokes", &wr, this, 5),
+    parallel_offset(_("Offset"),
+                _("Average distance each stroke is away from the original path"), "parallel_offset", &wr, this, 5.),
+    strokelength(_("Stroke length max."),
+                _("Maximum length of approximating strokes"), "strokelength", &wr, this, 100.),
+    strokelength_rdm(_("Stroke length"),
+                _("Random variation of stroke length (relative to maximum length)"), "strokelength_rdm", &wr, this, .3),
+    strokeoverlap(_("Overlap max."),
+                _("How much successive strokes should overlap (relative to maximum length)"), "strokeoverlap", &wr, this, .3),
+    strokeoverlap_rdm(_("Overlap"),
+                _("Random variation of overlap (relative to maximum overlap)"), "strokeoverlap_rdm", &wr, this, .3),
+    ends_tolerance(_("Ending"),
+                _("Maximum distance between ends of original and approximating paths (relative to maximum length)"), "ends_tolerance", &wr, this, .1),
+    tremble_size(_("Displacement size"),
+                _("Maximum tremble magnitude"), "tremble_size", &wr, this, 5.),
+    tremble_frequency(_("Displacement details"),
+                _("Average number of tremble periods in a stroke"), "tremble_frequency", &wr, this, 1.)
+
 #ifdef LPE_SKETCH_USE_CONSTRUCTION_LINES
-    ,nbtangents(_("Construction lines:"),
-               _("How many construction lines (tangents) to draw"), "nbtangents", &wr, this, 5),
-    tgtscale(_("Scale:"),
-             _("Scale factor relating curvature and length of construction lines (try 5*offset)"), "tgtscale", &wr, this, 10.0),
-    tgtlength(_("Max. length:"), _("Maximum length of construction lines"), "tgtlength", &wr, this, 100.0),
-    tgtlength_rdm(_("Length variation:"), _("Random variation of the length of construction lines"), "tgtlength_rdm", &wr, this, .3),
-    tgt_places_rdmness(_("Placement randomness:"), _("0: evenly distributed construction lines, 1: purely random placement"), "tgt_places_rdmness", &wr, this, 1.)
+    ,nbtangents(_("Add extra lines"),
+                _("How many construction lines (tangents) to draw"), "nbtangents", &wr, this, 5),
+    tgtscale(_("Scale"),
+                _("Scale factor relating curvature and length of construction lines (try 5*offset)"), "tgtscale", &wr, this, 10.0),
+    tgtlength(_("Length max."),
+                _("Maximum length of construction lines"), "tgtlength", &wr, this, 100.0),
+    tgtlength_rdm(_("Length"),
+                _("Random variation of the length of construction lines"), "tgtlength_rdm", &wr, this, .3),
+    tgt_places_rdmness(_("Placement"),
+                _("0: evenly distributed construction lines, 1: purely random placement"), "tgt_places_rdmness", &wr, this, 1.)
+
 #ifdef LPE_SKETCH_USE_CURVATURE
     ,min_curvature(_("k_min:"), _("min curvature"), "k_min", &wr, this, 4.0)
     ,max_curvature(_("k_max:"), _("max curvature"), "k_max", &wr, this, 1000.0)
 #endif
 #endif
 {
-    // register all your parameters here, so Inkscape knows which parameters this effect has:
-    //Add some comment in the UI:  *warning* the precise output of this effect might change in future releases!
-    //convert to path if you want to keep exact output unchanged in future releases...
+
     //registerParameter(&testpointA) );
     registerParameter(&nbiter_approxstrokes);
+    registerParameter(&parallel_offset);
     registerParameter(&strokelength);
     registerParameter(&strokelength_rdm);
     registerParameter(&strokeoverlap);
     registerParameter(&strokeoverlap_rdm);
     registerParameter(&ends_tolerance);
-    registerParameter(&parallel_offset);
     registerParameter(&tremble_size);
     registerParameter(&tremble_frequency);
 #ifdef LPE_SKETCH_USE_CONSTRUCTION_LINES
     registerParameter(&nbtangents);
     registerParameter(&tgt_places_rdmness);
-    registerParameter(&tgtscale);
     registerParameter(&tgtlength);
     registerParameter(&tgtlength_rdm);
+    registerParameter(&tgtscale);
+
+
 #ifdef LPE_SKETCH_USE_CURVATURE
     registerParameter(&min_curvature);
     registerParameter(&max_curvature);
@@ -86,26 +93,45 @@ LPESketch::LPESketch(LivePathEffectObject *lpeobject) :
 #endif
 
     nbiter_approxstrokes.param_make_integer();
-    nbiter_approxstrokes.param_set_range(0, std::numeric_limits<gint>::max());
-    strokelength.param_set_range(1, std::numeric_limits<double>::max());
-    strokelength.param_set_increments(1., 5.);
+    nbiter_approxstrokes.addSlider(true);
+    nbiter_approxstrokes.param_set_range(1, 20);
+    nbiter_approxstrokes.param_set_increments(1, 1);
+    nbiter_approxstrokes.param_set_digits(0);
+
+    strokelength.addSlider(true);
+    strokelength.param_set_range(5, 1000);
+    strokelength.param_set_increments(0.5, 0.5);
+    
     strokelength_rdm.param_set_range(0, 1.);
+
+    strokeoverlap.addSlider(true);
     strokeoverlap.param_set_range(0, 1.);
-    strokeoverlap.param_set_increments(0.1, 0.30);
+    strokeoverlap.param_set_increments(0.05, 0.05);
+
     ends_tolerance.param_set_range(0., 1.);
-    parallel_offset.param_set_range(0, std::numeric_limits<double>::max());
-    tremble_frequency.param_set_range(0.01, 100.);
-    tremble_frequency.param_set_increments(.5, 1.5);
+
+    parallel_offset.param_set_range(0, 50);
+
+    tremble_frequency.addSlider(true);
+    tremble_frequency.param_set_range(0.01, 25.);
+    tremble_frequency.param_set_increments(.5, .5);
+    
     strokeoverlap_rdm.param_set_range(0, 1.);
 
 #ifdef LPE_SKETCH_USE_CONSTRUCTION_LINES
     nbtangents.param_make_integer();
     nbtangents.param_set_range(0, std::numeric_limits<gint>::max());
-    tgtscale.param_set_range(0, std::numeric_limits<double>::max());
-    tgtscale.param_set_increments(.1, .5);
-    tgtlength.param_set_range(0, std::numeric_limits<double>::max());
-    tgtlength.param_set_increments(1., 5.);
+
+    tgtscale.addSlider(true);
+    tgtscale.param_set_range(0, 300);
+    tgtscale.param_set_increments(.1, .1);
+
+    tgtlength.addSlider(true);
+    tgtlength.param_set_range(0, 300);
+    tgtlength.param_set_increments(1., .1);
+
     tgtlength_rdm.param_set_range(0, 1.);
+    
     tgt_places_rdmness.param_set_range(0, 1.);
     //this is not very smart, but required to avoid having lot of tangents stacked on short components.
     //Note: we could specify a density instead of an absolute number, but this would be scale dependent.
@@ -113,40 +139,36 @@ LPESketch::LPESketch(LivePathEffectObject *lpeobject) :
 #endif
 }
 
-LPESketch::~LPESketch()
-= default;
+LPESketch::~LPESketch() = default;
 
-/*
-Geom::Piecewise<Geom::D2<Geom::SBasis> >
-addLinearEnds (Geom::Piecewise<Geom::D2<Geom::SBasis> > & m){
-    using namespace Geom;
-    Piecewise<D2<SBasis> > output;
-    Piecewise<D2<SBasis> > start;
-    Piecewise<D2<SBasis> > end;
-    double x,y,vx,vy;
+Gtk::Widget *LPESketch::newWidget()
+{
+    auto const vbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
 
-    x  = m.segs.front()[0].at0();
-    y  = m.segs.front()[1].at0();
-    vx = m.segs.front()[0][1][0]+Tri(m.segs.front()[0][0]);
-    vy = m.segs.front()[1][1][0]+Tri(m.segs.front()[1][0]);
-    start = Piecewise<D2<SBasis> >(D2<SBasis>(Linear (x-vx,x),Linear (y-vy,y)));
-    start.offsetDomain(m.cuts.front()-1.);
+    for (auto const param: param_vector) {
+        if (!param->widget_is_visible) continue;
 
-    x  = m.segs.back()[0].at1();
-    y  = m.segs.back()[1].at1();
-    vx = -m.segs.back()[0][1][1]+Tri(m.segs.back()[0][0]);;
-    vy = -m.segs.back()[1][1][1]+Tri(m.segs.back()[1][0]);;
-    end = Piecewise<D2<SBasis> >(D2<SBasis>(Linear (x,x+vx),Linear (y,y+vy)));
-    //end.offsetDomain(m.cuts.back());
+        if (param->param_key == "strokelength" ||
+            param->param_key == "tremble_size" ||
+            param->param_key == "nbtangents")
+        {
+            UI::pack_start(*vbox, *Gtk::make_managed<Gtk::Separator>(Gtk::ORIENTATION_HORIZONTAL),
+                           UI::PackOptions::expand_widget);
+        }
 
-    output = start;
-    output.concat(m);
-    output.concat(end);
-    return output;
+        if (auto const widg = param->param_newWidget()) {
+            UI::pack_start(*vbox, *widg, true, true, 2);
+
+            if (auto const tip = param->param_getTooltip()) {
+                widg->set_tooltip_markup(*tip);
+            } else {
+                widg->set_tooltip_text("");
+            }
+        }
+    }
+
+    return vbox;
 }
-*/
-
-
 
 //This returns a random perturbation. Notice the domain is [s0,s0+first multiple of period>s1]...
 Geom::Piecewise<Geom::D2<Geom::SBasis> >
@@ -158,15 +180,15 @@ LPESketch::computePerturbation (double s0, double s1){
     double offsetX = 2*parallel_offset-parallel_offset.get_value();
     double offsetY = 2*parallel_offset-parallel_offset.get_value();
     Point A,dA,B,dB,offset = Point(offsetX,offsetY);
+
     //start point A
     for (unsigned dim=0; dim<2; dim++){
         A[dim]  = offset[dim] + 2*tremble_size-tremble_size.get_value();
         dA[dim] = 2*tremble_size-tremble_size.get_value();
     }
-    //compute howmany deg 3 sbasis to concat according to frequency.
 
+    //compute howmany deg 3 sbasis to concat according to frequency.
     unsigned count = unsigned((s1-s0)/strokelength*tremble_frequency)+1; 
-    //unsigned count = unsigned((s1-s0)/tremble_frequency)+1; 
 
     for (unsigned i=0; i<count; i++){
         D2<SBasis> perturb = D2<SBasis>(SBasis(2, Linear()), SBasis(2, Linear()));
@@ -187,10 +209,8 @@ LPESketch::computePerturbation (double s0, double s1){
         res.concat(Piecewise<D2<SBasis> >(perturb));
     }
     res.setDomain(Interval(s0,s0+count*strokelength/tremble_frequency));
-    //res.setDomain(Interval(s0,s0+count*tremble_frequency));
     return res;
 }
-
 
 // Main effect body...
 Geom::Piecewise<Geom::D2<Geom::SBasis> >
@@ -199,7 +219,9 @@ LPESketch::doEffect_pwd2 (Geom::Piecewise<Geom::D2<Geom::SBasis> > const & pwd2_
     using namespace Geom;
     //If the input path is empty, do nothing.
     //Note: this happens when duplicating a 3d box... dunno why.
-    if (pwd2_in.size()==0) return pwd2_in;
+    if (pwd2_in.empty() || (pwd2_in.size() == 1 && pwd2_in[0].isConstant())) {
+        return pwd2_in;
+    }
 
     Piecewise<D2<SBasis> > output;
 

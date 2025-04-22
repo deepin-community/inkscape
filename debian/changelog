@@ -1,3 +1,86 @@
+inkscape (1.4-6) unstable; urgency=medium
+
+  * Enable Build-Depends: lib2geom-dev for all architectures (Closes: #1089675)
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Mon, 17 Mar 2025 13:14:34 -0400
+
+inkscape (1.4-5) unstable; urgency=medium
+
+  * Team upload
+  * Fix the i386 build
+  * Update patch metadata
+  * Remove obsolete Python2 era patch
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Sun, 16 Mar 2025 21:52:41 -0400
+
+inkscape (1.4-4) unstable; urgency=medium
+
+  * Team upload
+  * Cherry-pick patch to fix build with poppler 25.02 (Closes: #1093308)
+  * Add patches to skip new tests failing on some architectures
+    since these tests are new to the 1.3/1.4 series
+  * Release to unstable (Closes: #1078862)
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Sun, 16 Mar 2025 20:33:23 -0400
+
+inkscape (1.4-3) experimental; urgency=medium
+
+  * Team upload
+  * Backport patches for building against poppler 25.01 (Closes: #1093308)
+
+ -- Alessandro Astone <alessandro.astone@canonical.com>  Wed, 22 Jan 2025 12:06:24 -0500
+
+inkscape (1.4-2) experimental; urgency=medium
+
+  * Team upload
+  * Remove unused Build-Depends: libgdl-3-dev
+  * Don't use ragel or lib2geom on i386
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Mon, 09 Dec 2024 11:27:02 -0500
+
+inkscape (1.4-1) experimental; urgency=medium
+
+  * Team upload.
+  * New upstream version 1.4.
+  * Drop B-D libsoup2.4-dev. (Closes: #1073953)
+  * Update patch for new version.
+
+ -- Bastian Germann <bage@debian.org>  Sun, 24 Nov 2024 22:59:28 +0000
+
+inkscape (1.3.2-1) experimental; urgency=medium
+
+  * Team upload.
+
+  [ Faidon Liambotis ]
+  * New upstream version 1.3.2+ds.
+    + https://inkscape.org/news/2023/11/18/big-small-release-inkscape-131-is-out/
+    + https://wiki.inkscape.org/wiki/index.php/Release_notes/1.3.1
+    + https://inkscape.org/news/2023/12/01/Inkscape-1-3-2-solves-data-loss-bug/
+    + https://wiki.inkscape.org/wiki/index.php/Release_notes/1.3.2
+  * Backport a patch from upstream to allow building with poppler >= 24.05.0.
+  * Refresh all patches.
+
+ -- Bastian Germann <bage@debian.org>  Sun, 24 Nov 2024 21:53:48 +0000
+
+inkscape (1.3+ds-1) experimental; urgency=medium
+
+  * New upstream version 1.3+ds.
+    + https://inkscape.org/news/2023/07/23/inkscape-launches-version-13-focus-organizing-work/
+    + https://wiki.inkscape.org/wiki/index.php/Release_notes/1.3
+  * Add dversionmangle=auto to watchfile, to handle the +ds.
+  * Refresh patches, including skipping all tests that locally fail,
+    pending investigation.
+  * Add new build-dependencies on libboost-stracktrace, libgtksourceview-4.
+
+ -- Mattia Rizzolo <mattia@debian.org>  Mon, 04 Sep 2023 14:49:51 +0530
+
+inkscape (1.2.2-7) unstable; urgency=medium
+
+  * Team upload
+  * Backport patches for building against poppler 25.01 (Closes: #1093308)
+
+ -- Alessandro Astone <alessandro.astone@canonical.com>  Wed, 22 Jan 2025 12:06:24 -0500
+
 inkscape (1.2.2-6) unstable; urgency=medium
 
   * Team upload

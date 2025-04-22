@@ -46,40 +46,40 @@ Svgz::init()
             "<id>" SP_MODULE_KEY_INPUT_SVGZ "</id>\n"
             "<dependency type=\"extension\">" SP_MODULE_KEY_INPUT_SVG "</dependency>\n"
             SVG_COMMON_INPUT_PARAMS
-            "<input>\n"
+            "<input priority='2'>\n"
                 "<extension>.svgz</extension>\n"
                 "<mimetype>image/svg+xml-compressed</mimetype>\n"
                 "<filetypename>" N_("Compressed Inkscape SVG (*.svgz)") "</filetypename>\n"
                 "<filetypetooltip>" N_("SVG file format compressed with GZip") "</filetypetooltip>\n"
             "</input>\n"
-        "</inkscape-extension>", new Svgz());
+        "</inkscape-extension>", std::make_unique<Svgz>());
 
     /* SVGZ out Inkscape */
     Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("SVGZ Output") "</name>\n"
             "<id>" SP_MODULE_KEY_OUTPUT_SVGZ_INKSCAPE "</id>\n"
-            "<output>\n"
+            "<output priority='3'>\n"
                 "<extension>.svgz</extension>\n"
                 "<mimetype>image/x-inkscape-svg-compressed</mimetype>\n"
                 "<filetypename>" N_("Compressed Inkscape SVG (*.svgz)") "</filetypename>\n"
                 "<filetypetooltip>" N_("Inkscape's native file format compressed with GZip") "</filetypetooltip>\n"
                 "<dataloss>false</dataloss>\n"
             "</output>\n"
-        "</inkscape-extension>", new Svgz());
+        "</inkscape-extension>", std::make_unique<Svgz>());
 
     /* SVGZ out */
     Inkscape::Extension::build_from_mem(
         "<inkscape-extension xmlns=\"" INKSCAPE_EXTENSION_URI "\">\n"
             "<name>" N_("SVGZ Output") "</name>\n"
             "<id>" SP_MODULE_KEY_OUTPUT_SVGZ "</id>\n"
-            "<output>\n"
+            "<output priority='4'>\n"
                 "<extension>.svgz</extension>\n"
                 "<mimetype>image/svg+xml-compressed</mimetype>\n"
                 "<filetypename>" N_("Compressed plain SVG (*.svgz)") "</filetypename>\n"
                 "<filetypetooltip>" N_("Scalable Vector Graphics format compressed with GZip") "</filetypetooltip>\n"
             "</output>\n"
-        "</inkscape-extension>\n", new Svgz());
+        "</inkscape-extension>\n", std::make_unique<Svgz>());
     // clang-format on
 
     return;

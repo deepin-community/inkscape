@@ -13,9 +13,11 @@
 
 #include "find.h"
 
-#include <gtkmm/entry.h>
 #include <glibmm/i18n.h>
 #include <glibmm/regex.h>
+#include <gtkmm/entry.h>
+#include <gtkmm/enums.h>
+#include <gtkmm/sizegroup.h>
 
 #include "desktop.h"
 #include "document-undo.h"
@@ -23,9 +25,9 @@
 #include "inkscape.h"
 #include "layer-manager.h"
 #include "message-stack.h"
+#include "selection.h"
 #include "selection-chemistry.h"
 #include "text-editing.h"
-
 #include "object/sp-defs.h"
 #include "object/sp-ellipse.h"
 #include "object/sp-flowdiv.h"
@@ -43,23 +45,20 @@
 #include "object/sp-tref.h"
 #include "object/sp-tspan.h"
 #include "object/sp-use.h"
-
-#include "ui/icon-names.h"
 #include "ui/dialog-events.h"
-
+#include "ui/icon-names.h"
+#include "ui/pack.h"
 #include "xml/attribute-record.h"
 #include "xml/node-iterators.h"
 
-
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
+namespace Inkscape::UI::Dialog {
 
 Find::Find()
     : DialogBase("/dialogs/find", "Find"),
 
       entry_find(_("F_ind:"), _("Find objects by their content or properties (exact or partial match)")),
       entry_replace(_("R_eplace:"), _("Replace match with this value")),
+      label_group{Gtk::SizeGroup::create(Gtk::SIZE_GROUP_HORIZONTAL)},
 
       check_scope_all(_("_All")),
       check_scope_layer(_("Current _layer")),
@@ -124,8 +123,27 @@ Find::Find()
       vbox_types2(Gtk::ORIENTATION_VERTICAL),
       hbox_types(Gtk::ORIENTATION_HORIZONTAL),
       hboxbutton_row(Gtk::ORIENTATION_HORIZONTAL)
-
 {
+    auto const label1 = entry_find.getLabel();
+    entry_find.getEntry()->set_hexpand();
+    entry_find.getEntry()->set_halign(Gtk::ALIGN_FILL);
+    label_group->add_widget(*label1);
+    label1->set_xalign(0);
+    label1->set_hexpand(false);
+    auto const label2 = entry_replace.getLabel();
+    entry_replace.getEntry()->set_hexpand();
+    entry_replace.getEntry()->set_halign(Gtk::ALIGN_FILL);
+    label_group->add_widget(*label2);
+    label2->set_xalign(0);
+    label2->set_hexpand(false);
+
+    static constexpr int MARGIN = 4;
+    set_margin_start(MARGIN);
+    set_margin_end(MARGIN);
+    entry_find.set_margin_top(MARGIN);
+    entry_replace.set_margin_top(MARGIN);
+    frame_searchin.set_margin_top(MARGIN);
+    frame_scope.set_margin_top(MARGIN);
     button_find.set_use_underline();
     button_find.set_tooltip_text(_("Select all objects matching the selection criteria"));
     button_replace.set_use_underline();
@@ -208,49 +226,45 @@ Find::Find()
     check_offsets.set_active(false);
 
     entry_find.getEntry()->set_width_chars(25);
-    entry_find.child_property_fill(*entry_find.getEntry()) = true;
-    entry_find.child_property_expand(*entry_find.getEntry()) = true;
     entry_replace.getEntry()->set_width_chars(25);
-    entry_replace.child_property_fill(*entry_replace.getEntry()) = true;
-    entry_replace.child_property_expand(*entry_replace.getEntry()) = true;
 
     Gtk::RadioButtonGroup grp_searchin = check_searchin_text.get_group();
     check_searchin_property.set_group(grp_searchin);
-    vbox_searchin.pack_start(check_searchin_text, Gtk::PACK_SHRINK);
-    vbox_searchin.pack_start(check_searchin_property, Gtk::PACK_SHRINK);
+    UI::pack_start(vbox_searchin, check_searchin_text, UI::PackOptions::shrink);
+    UI::pack_start(vbox_searchin, check_searchin_property, UI::PackOptions::shrink);
     frame_searchin.add(vbox_searchin);
 
     Gtk::RadioButtonGroup grp_scope = check_scope_all.get_group();
     check_scope_layer.set_group(grp_scope);
     check_scope_selection.set_group(grp_scope);
-    vbox_scope.pack_start(check_scope_all, Gtk::PACK_SHRINK);
-    vbox_scope.pack_start(check_scope_layer, Gtk::PACK_SHRINK);
-    vbox_scope.pack_start(check_scope_selection, Gtk::PACK_SHRINK);
+    UI::pack_start(vbox_scope, check_scope_all, UI::PackOptions::shrink);
+    UI::pack_start(vbox_scope, check_scope_layer, UI::PackOptions::shrink);
+    UI::pack_start(vbox_scope, check_scope_selection, UI::PackOptions::shrink);
     hbox_searchin.set_spacing(12);
-    hbox_searchin.pack_start(frame_searchin, Gtk::PACK_SHRINK);
-    hbox_searchin.pack_start(frame_scope, Gtk::PACK_SHRINK);
+    UI::pack_start(hbox_searchin, frame_searchin, UI::PackOptions::shrink);
+    UI::pack_start(hbox_searchin, frame_scope, UI::PackOptions::shrink);
     frame_scope.add(vbox_scope);
 
-    vbox_options1.pack_start(check_case_sensitive, Gtk::PACK_SHRINK);
-    vbox_options1.pack_start(check_include_hidden, Gtk::PACK_SHRINK);
-    vbox_options2.pack_start(check_exact_match, Gtk::PACK_SHRINK);
-    vbox_options2.pack_start(check_include_locked, Gtk::PACK_SHRINK);
+    UI::pack_start(vbox_options1, check_case_sensitive, UI::PackOptions::shrink);
+    UI::pack_start(vbox_options1, check_include_hidden, UI::PackOptions::shrink);
+    UI::pack_start(vbox_options2, check_exact_match, UI::PackOptions::shrink);
+    UI::pack_start(vbox_options2, check_include_locked, UI::PackOptions::shrink);
     _left_size_group->add_widget(check_case_sensitive);
     _left_size_group->add_widget(check_include_hidden);
     _right_size_group->add_widget(check_exact_match);
     _right_size_group->add_widget(check_include_locked);
     hbox_options.set_spacing(4);
-    hbox_options.pack_start(vbox_options1, Gtk::PACK_SHRINK);
-    hbox_options.pack_start(vbox_options2, Gtk::PACK_SHRINK);
+    UI::pack_start(hbox_options, vbox_options1, UI::PackOptions::shrink);
+    UI::pack_start(hbox_options, vbox_options2, UI::PackOptions::shrink);
     frame_options.add(hbox_options);
 
-    vbox_properties1.pack_start(check_ids, Gtk::PACK_SHRINK);
-    vbox_properties1.pack_start(check_style, Gtk::PACK_SHRINK);
-    vbox_properties1.pack_start(check_font, Gtk::PACK_SHRINK);
-    vbox_properties1.pack_start(check_desc, Gtk::PACK_SHRINK);
-    vbox_properties1.pack_start(check_title, Gtk::PACK_SHRINK);
-    vbox_properties2.pack_start(check_attributevalue, Gtk::PACK_SHRINK);
-    vbox_properties2.pack_start(check_attributename, Gtk::PACK_SHRINK);
+    UI::pack_start(vbox_properties1, check_ids, UI::PackOptions::shrink);
+    UI::pack_start(vbox_properties1, check_style, UI::PackOptions::shrink);
+    UI::pack_start(vbox_properties1, check_font, UI::PackOptions::shrink);
+    UI::pack_start(vbox_properties1, check_desc, UI::PackOptions::shrink);
+    UI::pack_start(vbox_properties1, check_title, UI::PackOptions::shrink);
+    UI::pack_start(vbox_properties2, check_attributevalue, UI::PackOptions::shrink);
+    UI::pack_start(vbox_properties2, check_attributename, UI::PackOptions::shrink);
     vbox_properties2.set_valign(Gtk::ALIGN_START);
     _left_size_group->add_widget(check_ids);
     _left_size_group->add_widget(check_style);
@@ -260,21 +274,21 @@ Find::Find()
     _right_size_group->add_widget(check_attributevalue);
     _right_size_group->add_widget(check_attributename);
     hbox_properties.set_spacing(4);
-    hbox_properties.pack_start(vbox_properties1, Gtk::PACK_SHRINK);
-    hbox_properties.pack_start(vbox_properties2, Gtk::PACK_SHRINK);
+    UI::pack_start(hbox_properties, vbox_properties1, UI::PackOptions::shrink);
+    UI::pack_start(hbox_properties, vbox_properties2, UI::PackOptions::shrink);
     frame_properties.add(hbox_properties);
 
-    vbox_types1.pack_start(check_alltypes, Gtk::PACK_SHRINK);
-    vbox_types1.pack_start(check_paths, Gtk::PACK_SHRINK);
-    vbox_types1.pack_start(check_texts, Gtk::PACK_SHRINK);
-    vbox_types1.pack_start(check_groups, Gtk::PACK_SHRINK);
-    vbox_types1.pack_start(check_clones, Gtk::PACK_SHRINK);
-    vbox_types1.pack_start(check_images, Gtk::PACK_SHRINK);
-    vbox_types2.pack_start(check_offsets, Gtk::PACK_SHRINK);
-    vbox_types2.pack_start(check_rects, Gtk::PACK_SHRINK);
-    vbox_types2.pack_start(check_ellipses, Gtk::PACK_SHRINK);
-    vbox_types2.pack_start(check_stars, Gtk::PACK_SHRINK);
-    vbox_types2.pack_start(check_spirals, Gtk::PACK_SHRINK);
+    UI::pack_start(vbox_types1, check_alltypes, UI::PackOptions::shrink);
+    UI::pack_start(vbox_types1, check_paths, UI::PackOptions::shrink);
+    UI::pack_start(vbox_types1, check_texts, UI::PackOptions::shrink);
+    UI::pack_start(vbox_types1, check_groups, UI::PackOptions::shrink);
+    UI::pack_start(vbox_types1, check_clones, UI::PackOptions::shrink);
+    UI::pack_start(vbox_types1, check_images, UI::PackOptions::shrink);
+    UI::pack_start(vbox_types2, check_offsets, UI::PackOptions::shrink);
+    UI::pack_start(vbox_types2, check_rects, UI::PackOptions::shrink);
+    UI::pack_start(vbox_types2, check_ellipses, UI::PackOptions::shrink);
+    UI::pack_start(vbox_types2, check_stars, UI::PackOptions::shrink);
+    UI::pack_start(vbox_types2, check_spirals, UI::PackOptions::shrink);
     vbox_types2.set_valign(Gtk::ALIGN_END);
     _left_size_group->add_widget(check_alltypes);
     _left_size_group->add_widget(check_paths);
@@ -288,32 +302,32 @@ Find::Find()
     _right_size_group->add_widget(check_stars);
     _right_size_group->add_widget(check_spirals);
     hbox_types.set_spacing(4);
-    hbox_types.pack_start(vbox_types1, Gtk::PACK_SHRINK);
-    hbox_types.pack_start(vbox_types2, Gtk::PACK_SHRINK);
+    UI::pack_start(hbox_types, vbox_types1, UI::PackOptions::shrink);
+    UI::pack_start(hbox_types, vbox_types2, UI::PackOptions::shrink);
     frame_types.add(hbox_types);
 
     vbox_expander.set_spacing(4);
-    vbox_expander.pack_start(frame_options, true, true);
-    vbox_expander.pack_start(frame_properties, true, true);
-    vbox_expander.pack_start(frame_types, true, true);
+    UI::pack_start(vbox_expander, frame_options, true, true);
+    UI::pack_start(vbox_expander, frame_properties, true, true);
+    UI::pack_start(vbox_expander, frame_types, true, true);
 
     expander_options.set_use_underline();
     expander_options.add(vbox_expander);
 
-    box_buttons.set_layout(Gtk::BUTTONBOX_END);
     box_buttons.set_spacing(6);
-    box_buttons.pack_start(button_find, true, true);
-    box_buttons.pack_start(button_replace, true, true);
+    box_buttons.set_homogeneous(true);
+    UI::pack_end(box_buttons, button_replace, false, true);
+    UI::pack_end(box_buttons, button_find, false, true);
     hboxbutton_row.set_spacing(6);
-    hboxbutton_row.pack_start(status, true, true);
-    hboxbutton_row.pack_end(box_buttons, true, true);
+    UI::pack_start(hboxbutton_row, status, true, true);
+    UI::pack_end(hboxbutton_row, box_buttons, false, true);
 
     set_spacing(6);
-    pack_start(entry_find, false, false);
-    pack_start(entry_replace, false, false);
-    pack_start(hbox_searchin, false, false);
-    pack_start(expander_options, false, false);
-    pack_end(hboxbutton_row, false, false);
+    UI::pack_start(*this, entry_find, false, false);
+    UI::pack_start(*this, entry_replace, false, false);
+    UI::pack_start(*this, hbox_searchin, false, false);
+    UI::pack_start(*this, expander_options, false, false);
+    UI::pack_end(*this, hboxbutton_row, false, false);
 
     checkProperties.push_back(&check_ids);
     checkProperties.push_back(&check_style);
@@ -359,6 +373,8 @@ Find::Find()
     //button_find.grab_default(); // activatable by Enter
     entry_find.getEntry()->grab_focus();
 }
+
+Find::~Find() = default;
 
 void Find::desktopReplaced()
 {
@@ -499,16 +515,12 @@ bool Find::item_text_match (SPItem *item, const gchar *find, bool exact, bool ca
 
 bool Find::item_id_match (SPItem *item, const gchar *id, bool exact, bool casematch, bool replace/*=false*/)
 {
-    if (item->getRepr() == nullptr) {
-        return false;
-    }
-
-    if (dynamic_cast<SPString *>(item)) { // SPStrings have "on demand" ids which are useless for searching
+    if (!item->getRepr()) {
         return false;
     }
 
     const gchar *item_id = item->getRepr()->attribute("id");
-    if (item_id == nullptr) {
+    if (!item_id) {
         return false;
     }
 
@@ -676,7 +688,7 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
     if (check_searchin_text.get_active()) {
         for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
             SPObject *obj = *i;
-            SPItem *item = dynamic_cast<SPItem *>(obj);
+            auto item = cast<SPItem>(obj);
             g_assert(item != nullptr);
             if (item_text_match(item, text, exact, casematch)) {
                 if (out.end()==find(out.begin(),out.end(), *i)) {
@@ -701,7 +713,7 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
         if (ids) {
             for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
                 SPObject *obj = *i;
-                SPItem *item = dynamic_cast<SPItem *>(obj);
+                auto item = cast<SPItem>(obj);
                 if (item_id_match(item, text, exact, casematch)) {
                     if (out.end()==find(out.begin(),out.end(), *i)) {
                         out.push_back(*i);
@@ -717,7 +729,7 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
         if (style) {
             for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
                 SPObject *obj = *i;
-                SPItem *item = dynamic_cast<SPItem *>(obj);
+                auto item = cast<SPItem>(obj);
                 g_assert(item != nullptr);
                 if (item_style_match(item, text, exact, casematch)) {
                     if (out.end()==find(out.begin(),out.end(), *i)){
@@ -734,7 +746,7 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
         if (attrname) {
             for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
                 SPObject *obj = *i;
-                SPItem *item = dynamic_cast<SPItem *>(obj);
+                auto item = cast<SPItem>(obj);
                 g_assert(item != nullptr);
                 if (item_attr_match(item, text, exact, casematch)) {
                     if (out.end()==find(out.begin(),out.end(), *i)) {
@@ -751,7 +763,7 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
         if (attrvalue) {
             for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
                 SPObject *obj = *i;
-                SPItem *item = dynamic_cast<SPItem *>(obj);
+                auto item = cast<SPItem>(obj);
                 g_assert(item != nullptr);
                 if (item_attrvalue_match(item, text, exact, casematch)) {
                     if (out.end()==find(out.begin(),out.end(), *i)) {
@@ -768,7 +780,7 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
         if (font) {
             for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
                 SPObject *obj = *i;
-                SPItem *item = dynamic_cast<SPItem *>(obj);
+                auto item = cast<SPItem>(obj);
                 g_assert(item != nullptr);
                 if (item_font_match(item, text, exact, casematch)) {
                     if (out.end()==find(out.begin(),out.end(),*i)) {
@@ -783,7 +795,7 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
         if (desc) {
             for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
                 SPObject *obj = *i;
-                SPItem *item = dynamic_cast<SPItem *>(obj);
+                auto item = cast<SPItem>(obj);
                 g_assert(item != nullptr);
                 if (item_desc_match(item, text, exact, casematch)) {
                     if (out.end()==find(out.begin(),out.end(),*i)) {
@@ -798,7 +810,7 @@ std::vector<SPItem*> Find::filter_fields (std::vector<SPItem*> &l, bool exact, b
         if (title) {
             for (std::vector<SPItem*>::const_reverse_iterator i=in.rbegin(); in.rend() != i; ++i) {
                 SPObject *obj = *i;
-                SPItem *item = dynamic_cast<SPItem *>(obj);
+                auto item = cast<SPItem>(obj);
                 g_assert(item != nullptr);
                 if (item_title_match(item, text, exact, casematch)) {
                     if (out.end()==find(out.begin(),out.end(),*i)) {
@@ -823,38 +835,38 @@ bool Find::item_type_match (SPItem *item)
 {
     bool all  =check_alltypes.get_active();
 
-    if ( dynamic_cast<SPRect *>(item)) {
+    if (is<SPRect>(item)) {
         return ( all ||check_rects.get_active());
 
-    } else if (dynamic_cast<SPGenericEllipse *>(item)) {
+    } else if (is<SPGenericEllipse>(item)) {
         return ( all ||  check_ellipses.get_active());
 
-    } else if (dynamic_cast<SPStar *>(item) || dynamic_cast<SPPolygon *>(item)) {
+    } else if (is<SPStar>(item) || is<SPPolygon>(item)) {
         return ( all || check_stars.get_active());
 
-    } else if (dynamic_cast<SPSpiral *>(item)) {
+    } else if (is<SPSpiral>(item)) {
         return ( all || check_spirals.get_active());
 
-    } else if (dynamic_cast<SPPath *>(item) || dynamic_cast<SPLine *>(item) || dynamic_cast<SPPolyLine *>(item)) {
+    } else if (is<SPPath>(item) || is<SPLine>(item) || is<SPPolyLine>(item)) {
         return (all || check_paths.get_active());
 
-    } else if (dynamic_cast<SPText *>(item) || dynamic_cast<SPTSpan *>(item) ||
-	           dynamic_cast<SPTRef *>(item) || dynamic_cast<SPString *>(item) ||
-			   dynamic_cast<SPFlowtext *>(item) || dynamic_cast<SPFlowdiv *>(item) ||
-			   dynamic_cast<SPFlowtspan *>(item) || dynamic_cast<SPFlowpara *>(item)) {
+    } else if (is<SPText>(item) || is<SPTSpan>(item) ||
+               is<SPTRef>(item) ||
+               is<SPFlowtext>(item) || is<SPFlowdiv>(item) ||
+               is<SPFlowtspan>(item) || is<SPFlowpara>(item)) {
         return (all || check_texts.get_active());
 
-    } else if (dynamic_cast<SPGroup *>(item) &&
+    } else if (is<SPGroup>(item) &&
                !getDesktop()->layerManager().isLayer(item)) { // never select layers!
         return (all || check_groups.get_active());
 
-    } else if (dynamic_cast<SPUse *>(item)) {
+    } else if (is<SPUse>(item)) {
         return (all || check_clones.get_active());
 
-    } else if (dynamic_cast<SPImage *>(item)) {
+    } else if (is<SPImage>(item)) {
         return (all || check_images.get_active());
 
-    } else if (dynamic_cast<SPOffset *>(item)) {
+    } else if (is<SPOffset>(item)) {
         return (all || check_offsets.get_active());
     }
 
@@ -866,7 +878,7 @@ std::vector<SPItem*> Find::filter_types (std::vector<SPItem*> &l)
     std::vector<SPItem*> n;
     for (std::vector<SPItem*>::const_reverse_iterator i=l.rbegin(); l.rend() != i; ++i) {
         SPObject *obj = *i;
-        SPItem *item = dynamic_cast<SPItem *>(obj);
+        auto item = cast<SPItem>(obj);
         g_assert(item != nullptr);
         if (item_type_match(item)) {
         	n.push_back(*i);
@@ -885,7 +897,7 @@ std::vector<SPItem*> &Find::filter_list (std::vector<SPItem*> &l, bool exact, bo
 
 std::vector<SPItem*> &Find::all_items (SPObject *r, std::vector<SPItem*> &l, bool hidden, bool locked)
 {
-    if (dynamic_cast<SPDefs *>(r)) {
+    if (is<SPDefs>(r)) {
         return l; // we're not interested in items in defs
     }
 
@@ -895,7 +907,7 @@ std::vector<SPItem*> &Find::all_items (SPObject *r, std::vector<SPItem*> &l, boo
 
     auto desktop = getDesktop();
     for (auto& child: r->children) {
-        SPItem *item = dynamic_cast<SPItem *>(&child);
+        auto item = cast<SPItem>(&child);
         if (item && !child.cloned && !desktop->layerManager().isLayer(item)) {
             if ((hidden || !desktop->itemIsHidden(item)) && (locked || !item->isLocked())) {
                 l.insert(l.begin(),(SPItem*)&child);
@@ -912,7 +924,7 @@ std::vector<SPItem*> &Find::all_selection_items (Inkscape::Selection *s, std::ve
     auto itemlist = s->items();
     for (auto i=boost::rbegin(itemlist); boost::rend(itemlist) != i; ++i) {
         SPObject *obj = *i;
-        SPItem *item = dynamic_cast<SPItem *>(obj);
+        auto item = cast<SPItem>(obj);
         g_assert(item != nullptr);
         if (item && !item->cloned && !desktop->layerManager().isLayer(item)) {
             if (!ancestor || ancestor->isAncestorOf(item)) {
@@ -968,9 +980,9 @@ void Find::onAction()
     std::vector<SPItem*> l;
     if (check_scope_selection.get_active()) {
         if (check_scope_layer.get_active()) {
-            l = all_selection_items (desktop->selection, l, desktop->layerManager().currentLayer(), hidden, locked);
+            l = all_selection_items (desktop->getSelection(), l, desktop->layerManager().currentLayer(), hidden, locked);
         } else {
-            l = all_selection_items (desktop->selection, l, nullptr, hidden, locked);
+            l = all_selection_items (desktop->getSelection(), l, nullptr, hidden, locked);
         }
     } else {
         if (check_scope_layer.get_active()) {
@@ -1006,7 +1018,7 @@ void Find::onAction()
         selection->clear();
         selection->setList(n);
         SPObject *obj = n[0];
-        SPItem *item = dynamic_cast<SPItem *>(obj);
+        auto item = cast<SPItem>(obj);
         g_assert(item != nullptr);
         scroll_to_show_item(desktop, item);
 
@@ -1115,10 +1127,7 @@ void Find::squeeze_window()
     // set_size_request(-1, -1);
 }
 
-} // namespace Dialog
-} // namespace UI
-} // namespace Inkscape
-
+} // namespace Inkscape::UI::Dialog
 
 /*
   Local Variables:

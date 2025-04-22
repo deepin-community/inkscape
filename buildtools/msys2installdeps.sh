@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
 # -------------------------------------------------------------------------------
-# This script installs all dependencies required for building Inkscape with MSYS2
-#   execute it once on an MSYS shell, i.e.
-#    - use the "MSYS2 MSYS" shortcut in the start menu or
-#    - run "msys2.exe" in MSYS2's installation folder
+# This script installs all dependencies required for building Inkscape with MSYS2.
+#
+# See https://wiki.inkscape.org/wiki/Compiling_Inkscape_on_Windows_with_MSYS2 for
+# detailed instructions.
+#
+# The following instructions assume you are building for the standard x86_64 processor architecture,
+# which means that you use the UCRT64 variant of msys2.
+# Else, replace UCRT64 with the appropriate variant for your architecture.
+#
+# To run this script, execute it once on an UCRT64 shell, i.e.
+#    - use the "MSYS2 UCRT64" shortcut in the start menu or
+#    - run "ucrt64.exe" in MSYS2's installation folder
 #
 # MSYS2 and installed libraries can be updated later by executing
 #   pacman -Syu
-# in an MSYS shell
 # -------------------------------------------------------------------------------
 
 # select if you want to build 32-bit (i686), 64-bit (x86_64), or both
@@ -17,6 +24,15 @@ case "$MSYSTEM" in
     ;;
   MINGW64)
     ARCH=mingw-w64-x86_64
+    ;;
+  UCRT64)
+    ARCH=mingw-w64-ucrt-x86_64
+    ;;
+  CLANG64)
+    ARCH=mingw-w64-clang-x86_64
+    ;;
+  CLANGARM64)
+    ARCH=mingw-w64-clang-aarch64
     ;;
   *)
     ARCH={mingw-w64-i686,mingw-w64-x86_64}
@@ -39,7 +55,8 @@ $ARCH-toolchain \
 $ARCH-autotools \
 $ARCH-cmake \
 $ARCH-meson \
-$ARCH-ninja
+$ARCH-ninja \
+$ARCH-ccache
 
 # install Inkscape dependencies (required)
 eval pacman -S $PACMAN_OPTIONS \
@@ -50,8 +67,7 @@ $ARCH-libxslt \
 $ARCH-boost \
 $ARCH-gtk3 \
 $ARCH-gtk-doc \
-$ARCH-gtkmm3 \
-$ARCH-libsoup
+$ARCH-gtkmm3
 
 # install Inkscape dependencies (optional)
 eval pacman -S $PACMAN_OPTIONS \
@@ -63,6 +79,7 @@ $ARCH-libwpg \
 $ARCH-aspell \
 $ARCH-aspell-en \
 $ARCH-gspell \
+$ARCH-gtksourceview4 \
 $ARCH-graphicsmagick \
 $ARCH-libjxl
 
@@ -73,12 +90,15 @@ $ARCH-python-pip \
 $ARCH-python-lxml \
 $ARCH-python-numpy \
 $ARCH-python-cssselect \
+$ARCH-python-webencodings \
+$ARCH-python-tinycss2 \
 $ARCH-python-pillow \
 $ARCH-python-six \
 $ARCH-python-gobject \
 $ARCH-python-pyserial \
 $ARCH-python-coverage \
 $ARCH-python-packaging \
+$ARCH-python-zstandard \
 $ARCH-scour
 
 # install modules needed by extensions manager and clipart importer
@@ -105,26 +125,17 @@ for arch in $(eval echo $ARCH); do
     mingw-w64-x86_64)
       #/mingw64/bin/pip3 install --upgrade ${PACKAGES}
       ;;
+    mingw-w64-ucrt-x86_64)
+      #/ucrt64/bin/pip3 install --upgrade ${PACKAGES}
+      ;;
+    mingw-w64-clang-x86_64)
+      #/clang64/bin/pip3 install --upgrade ${PACKAGES}
+      ;;
+    mingw-w64-clang-aarch64)
+      #/clangarm64/bin/pip3 install --upgrade ${PACKAGES}
+      ;;
   esac
 done
 
 
-# gettext hack - to remove once gettext has the match
-function hack_libintl(){
-f=/$1/include/libintl.h
-sed -i '/^extern int sprintf/a #ifdef __cplusplus\nnamespace std { using ::libintl_sprintf; }\n#endif' $f
-cat $f
-}
-
-case "$MSYSTEM" in
-  MINGW32)
-    hack_libintl mingw32
-    ;;
-  MINGW64)
-    hack_libintl mingw64
-    ;;
-  *)
-    hack_libintl mingw32
-    hack_libintl mingw64
-    ;;
-esac
+echo "Done :-)"

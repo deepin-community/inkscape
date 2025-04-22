@@ -11,8 +11,9 @@
 #ifndef INKSCAPE_EXTENSION_PATHEFFECT_H__
 #define INKSCAPE_EXTENSION_PATHEFFECT_H__
 
-#include "document.h"
 #include "extension.h"
+
+class SPDocument;
 
 namespace Inkscape {
 namespace Extension {
@@ -20,7 +21,7 @@ namespace Extension {
 class PathEffect : public Extension {
 
 public:
-    PathEffect(Inkscape::XML::Node *in_repr, Implementation::Implementation *in_imp, std::string *base_directory);
+    PathEffect(Inkscape::XML::Node *in_repr, ImplementationHolder implementation, std::string *base_directory);
     ~PathEffect() override;
 
     void         processPath (SPDocument * doc,

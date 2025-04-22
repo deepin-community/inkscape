@@ -25,8 +25,7 @@ import json
 import logging
 from shutil import which
 
-from inkex.inx import InxFile
-from inkex.command import call, CommandNotFound, ProgramRunError
+from inkex.command import call
 
 from .archive import Archive, UnrecognizedArchiveFormat
 from .remote import RemoteArchive, LocalFile
@@ -77,11 +76,13 @@ class BasicTarget(object):
         else:
             location = "pkg"
             fname = info["id"] + ".json"
-            info["files"] = [self.write_file(filename, os.path.basename(filename))]
+            info["files"] = [
+                self.write_file(filename, os.path.basename(filename))
+            ]
 
         self.write_file(json.dumps(info).encode("utf8"), fname, extra=location)
 
-        return f"Package installed! Remember to restart inkscape to use it!"
+        return "Package installed! Remember to restart inkscape to use it!"
 
     def _uninstall(self, info, json_file):
         self._installed = None
@@ -95,7 +96,9 @@ class BasicTarget(object):
         """Install the files in the zip filename as non-pip files"""
         with Archive(filename) as archive:
             for filename in archive.filenames():
-                yield self.write_file(archive.read(filename), filename, extra=location)
+                yield self.write_file(
+                    archive.read(filename), filename, extra=location
+                )
 
     def generate_id(self, filename):
         """User submitted zip file, generate an id as best we can"""
@@ -137,7 +140,9 @@ class BasicTarget(object):
 
                         for pkg_file in item.get_files(missing=True):
                             orphans.remove_file(pkg_file, item)
-                            orphans.remove_file(os.path.join(root, pkg_file), item)
+                            orphans.remove_file(
+                                os.path.join(root, pkg_file), item
+                            )
                 else:
                     orphans.add_file(name)
 
@@ -222,11 +227,14 @@ class ExtensionsTarget(BasicTarget):
                 info["pip"] = True
                 info["id"] = results.strip().split()[-1]
                 fname = info["id"] + ".json"
-                self.write_file(json.dumps(info).encode("utf8"), fname, extra="lib")
-                return (
-                    f"Python Package installed! Remember to restart inkscape to use it!"
+                self.write_file(
+                    json.dumps(info).encode("utf8"), fname, extra="lib"
                 )
-            return f"Failed to install, something is wrong with your setup."
+                return (
+                    "Python Package installed! "
+                    "Remember to restart inkscape to use it!"
+                )
+            return "Failed to install, something is wrong with your setup."
 
         return super()._install(filename, info)
 
@@ -260,43 +268,46 @@ class ExtensionsTarget(BasicTarget):
                 "This package requires python VirtualEnv which is not available on your system."
             )
             return None
-        try:
-            results = call(
-                pip,
-                "install",
-                ("isolated", True),
-                ("disable-pip-version-check", True),
-                ("cache-dir", CACHE_DIR),
-                filename,
-            ).decode("utf8")
-        except ProgramRunError as err:
-            raise
+        results = call(
+            pip,
+            "install",
+            ("isolated", True),
+            ("disable-pip-version-check", True),
+            ("cache-dir", CACHE_DIR),
+            filename,
+        ).decode("utf8")
         return results
 
     def pip_uninstall(self, name):
         """Uninstall the given pip package name"""
-        try:
-            results = call(
-                self.get_pip(), "uninstall", ("disable-pip-version-check", True), name
-            ).decode("utf8")
-        except ProgramRunError as err:
-            raise
+        results = call(
+            self.get_pip(),
+            "uninstall",
+            ("disable-pip-version-check", True),
+            name,
+        ).decode("utf8")
         return results
 
     def generate_id(self, filename):
         """Extensions have an id internally, try and use it"""
         try:
             with Archive(filename) as archive:
-                inxes = [item for item in archive.filenames() if item.endswith(".inx")]
+                inxes = [
+                    item
+                    for item in archive.filenames()
+                    if item.endswith(".inx")
+                ]
                 if not inxes:
-                    raise IOError("Refusing to install extension without inx file!")
+                    raise IOError(
+                        "Refusing to install extension without inx file!"
+                    )
                 inx = ExtensionInx(archive.read(inxes[0]).decode("utf-8"))
             return inx.ident
         except UnrecognizedArchiveFormat:
             raise IOError(
                 "Refusing the install extension without inx file (unknown archive)"
             )
-        except:
+        except:  # noqa: E722
             raise IOError("Refusing the install extension with bad inx file!")
 
     def _list_installed(self):

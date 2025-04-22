@@ -19,6 +19,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -30,37 +31,48 @@
 
 #include "toolbar.h"
 
-#include <gtkmm/adjustment.h>
+namespace Gtk {
+class Builder;
+class ToggleButton;
+} // namespace Gtk
 
 class SPDesktop;
 
 namespace Inkscape {
 namespace UI {
+
 namespace Widget {
+class SpinButton;
 class UnitTracker;
 }
 
 namespace Toolbar {
-class MeasureToolbar : public Toolbar {
+
+class MeasureToolbar final : public Toolbar
+{
+public:
+    MeasureToolbar(SPDesktop *desktop);
+    ~MeasureToolbar() override;
+
 private:
+    using ValueChangedMemFun = void (MeasureToolbar::*)();
+
+    Glib::RefPtr<Gtk::Builder> _builder;
     UI::Widget::UnitTracker *_tracker;
-    Glib::RefPtr<Gtk::Adjustment> _font_size_adj;
-    Glib::RefPtr<Gtk::Adjustment> _precision_adj;
-    Glib::RefPtr<Gtk::Adjustment> _scale_adj;
-    Glib::RefPtr<Gtk::Adjustment> _offset_adj;
+    UI::Widget::SpinButton &_font_size_item;
+    UI::Widget::SpinButton &_precision_item;
+    UI::Widget::SpinButton &_scale_item;
 
-    Gtk::ToggleToolButton *_only_selected_item;
-    Gtk::ToggleToolButton *_ignore_1st_and_last_item;
-    Gtk::ToggleToolButton *_inbetween_item;
-    Gtk::ToggleToolButton *_show_hidden_item;
-    Gtk::ToggleToolButton *_all_layers_item;
+    Gtk::ToggleButton &_only_selected_btn;
+    Gtk::ToggleButton &_ignore_1st_and_last_btn;
+    Gtk::ToggleButton &_inbetween_btn;
+    Gtk::ToggleButton &_show_hidden_btn;
+    Gtk::ToggleButton &_all_layers_btn;
 
-    Gtk::ToolButton *_reverse_item;
-    Gtk::ToolButton *_to_phantom_item;
-    Gtk::ToolButton *_to_guides_item;
-    Gtk::ToolButton *_to_item_item;
-    Gtk::ToolButton *_mark_dimension_item;
+    UI::Widget::SpinButton &_offset_item;
 
+    void setup_derived_spin_button(UI::Widget::SpinButton &btn, Glib::ustring const &name, double default_value,
+                                   ValueChangedMemFun const value_change_mem_fun);
     void fontsize_value_changed();
     void unit_changed(int notUsed);
     void precision_value_changed();
@@ -76,14 +88,7 @@ private:
     void to_guides();
     void to_item();
     void to_mark_dimension();
-
-protected:
-    MeasureToolbar(SPDesktop *desktop);
-
-public:
-    static GtkWidget * create(SPDesktop *desktop);
 };
-
 }
 }
 }

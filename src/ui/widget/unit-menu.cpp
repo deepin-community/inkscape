@@ -12,17 +12,17 @@
 
 #include "unit-menu.h"
 
-using Inkscape::Util::unit_table;
-
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 UnitMenu::UnitMenu() : _type(UNIT_TYPE_NONE)
 {
     set_active(0);
-    add_events(Gdk::SCROLL_MASK | Gdk::SMOOTH_SCROLL_MASK);
-    signal_scroll_event().connect([](GdkEventScroll*){ return false; });
+}
+
+UnitMenu::UnitMenu(BaseObjectType * const cobject, Glib::RefPtr<Gtk::Builder> const &builder)
+    : ScrollProtected{cobject, builder}
+{
+    // We assume the UI file sets the active item & thus we do not do that here.
 }
 
 UnitMenu::~UnitMenu() = default;
@@ -30,7 +30,8 @@ UnitMenu::~UnitMenu() = default;
 bool UnitMenu::setUnitType(UnitType unit_type) 
 {
     // Expand the unit widget with unit entries from the unit table
-    UnitTable::UnitMap m = unit_table.units(unit_type);
+    auto const &unit_table = Util::UnitTable::get();
+    auto const &m = unit_table.units(unit_type);
 
     for (auto & i : m) {
         append(i.first);
@@ -50,12 +51,13 @@ bool UnitMenu::resetUnitType(UnitType unit_type)
 
 void UnitMenu::addUnit(Unit const& u)
 {
-    unit_table.addUnit(u, false);
+    Util::UnitTable::get().addUnit(u, false);
     append(u.abbr);
 }
 
 Unit const * UnitMenu::getUnit() const
 {
+    auto const &unit_table = Util::UnitTable::get();
     if (get_active_text() == "") {
         g_assert(_type != UNIT_TYPE_NONE);
         return unit_table.getUnit(unit_table.primary(_type));
@@ -97,8 +99,8 @@ int UnitMenu::getDefaultDigits() const
 
 double UnitMenu::getDefaultStep() const
 { 
-    int factor_digits = -1*int(log10(getUnit()->factor));
-    return pow(10.0, factor_digits);
+    int factor_digits = -1 * static_cast<int>(std::log10(getUnit()->factor));
+    return std::pow(10.0, factor_digits);
 }
 
 double UnitMenu::getDefaultPage() const
@@ -108,6 +110,8 @@ double UnitMenu::getDefaultPage() const
 
 double UnitMenu::getConversion(Glib::ustring const &new_unit_abbr, Glib::ustring const &old_unit_abbr) const
 {
+    auto const &unit_table = Util::UnitTable::get();
+
     double old_factor = getUnit()->factor;
     if (old_unit_abbr != "no_unit") {
         old_factor = unit_table.getUnit(old_unit_abbr)->factor;
@@ -134,11 +138,7 @@ bool UnitMenu::isRadial() const
     return getUnitType() == UNIT_TYPE_RADIAL;
 }
 
-bool UnitMenu::on_scroll_event(GdkEventScroll *event) { return false; }
-
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 /*
   Local Variables:

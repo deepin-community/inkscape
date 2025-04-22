@@ -1,127 +1,163 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /** @file
- * @brief Inkscape color swatch UI item.
+ * @brief Color item used in palettes and swatches UI.
  */
-/* Authors:
- *   Jon A. Cruz
- *
- * Copyright (C) 2010 Jon A. Cruz
- *
+/* Authors: PBS <pbs3141@gmail.com>
+ * Copyright (C) 2022 PBS
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef SEEN_DIALOGS_COLOR_ITEM_H
-#define SEEN_DIALOGS_COLOR_ITEM_H
+#ifndef INKSCAPE_UI_DIALOG_COLOR_ITEM_H
+#define INKSCAPE_UI_DIALOG_COLOR_ITEM_H
 
-#include <boost/ptr_container/ptr_vector.hpp>
+#include <array>
+#include <string>
+#include <variant>
+#include <cairomm/refptr.h>
+#include <glibmm/refptr.h>
+#include <glibmm/ustring.h>
+#include <gtk/gtk.h> // GtkEventControllerMotion
+#include <gtkmm/drawingarea.h>
+#include <gtkmm/gesture.h> // Gtk::EventSequenceState
 
-#include "widgets/ege-paint-def.h"
-#include "ui/previewable.h"
+#include "widgets/paintdef.h"
+
+namespace Cairo {
+class Context;
+class ImageSurface;
+} // namespace Cairo
+
+namespace Gtk {
+class GestureMultiPress;
+} // namespace Gtk
 
 class SPGradient;
 
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
+namespace Inkscape::UI::Dialog {
 
-class ColorItem;
-
-class SwatchPage
-{
-public:
-    SwatchPage();
-    ~SwatchPage();
-
-    Glib::ustring _name;
-    int _prefWidth;
-    boost::ptr_vector<ColorItem> _colors;
-};
-
+class DialogBase;
 
 /**
- * The color swatch you see on screen as a clickable box.
+ * The color item you see on-screen as a clickable box.
+ *
+ * Note: This widget must be outlived by its parent dialog, passed in the constructor.
  */
-class ColorItem : public Inkscape::UI::Previewable
+class ColorItem final : public Gtk::DrawingArea
 {
-    friend void _loadPaletteFile( gchar const *filename );
 public:
-    ColorItem( ege::PaintDef::ColorType type );
-    ColorItem( unsigned int r, unsigned int g, unsigned int b,
-               Glib::ustring& name );
-    ~ColorItem() override;
-    ColorItem(ColorItem const &other);
-    virtual ColorItem &operator=(ColorItem const &other);
-    Gtk::Widget* getPreview(UI::Widget::PreviewStyle style,
-                            UI::Widget::ViewType     view,
-                            UI::Widget::PreviewSize  size,
-                            guint                    ratio,
-                            guint                    border) override;
-    void buttonClicked(bool secondary = false);
+    /// Create a static color from a paintdef.
+    ColorItem(PaintDef const&, DialogBase*);
+    /// Add new group or filler element.
+    ColorItem(Glib::ustring name);
+    ~ColorItem() final;
 
-    void setGradient(SPGradient *grad);
-    SPGradient * getGradient() const { return _grad; }
-    void setPattern(cairo_pattern_t *pattern);
-    void setName(const Glib::ustring name);
+    // Returns true if this is group heading rather than a color
+    bool is_group() const;
+    // Returns true if this is alignmet filler item, not a color
+    bool is_filler() const;
+    // Is paint "None"?
+    bool is_paint_none() const;
 
-    void setState( bool fill, bool stroke );
-    bool isFill() { return _isFill; }
-    bool isStroke() { return _isStroke; }
+    /**
+     * Create a dynamically-updating color from a gradient, to which it remains linked.
+     * If the gradient is destroyed, the widget will go into an inactive state.
+     */
+    ColorItem(SPGradient*, DialogBase*);
 
-    ege::PaintDef def;
+    /// Update the fill indicator, showing this widget is the fill of the current selection.
+    void set_fill(bool);
 
-    Gtk::Widget* createWidget();
+    /// Update the stroke indicator, showing this widget is the stroke of the current selection.
+    void set_stroke(bool);
+
+    /// Update whether this item is pinned.
+    bool is_pinned() const;
+    void set_pinned_pref(const std::string &path);
+
+    const Glib::ustring &get_description() const { return description; }
+
+    sigc::signal<void ()>& signal_modified() { return _signal_modified; };
+    sigc::signal<void ()>& signal_pinned() { return _signal_pinned; };
 
 private:
-    Gtk::Widget* _getPreview(UI::Widget::PreviewStyle style,
-		  UI::Widget::ViewType view, UI::Widget::PreviewSize size,
-		  guint ratio, guint border);
+    bool on_draw(Cairo::RefPtr<Cairo::Context> const&) override;
+    void on_size_allocate(Gtk::Allocation&) override;
+    void on_drag_data_get(Glib::RefPtr<Gdk::DragContext> const &context, Gtk::SelectionData &selection_data, guint info, guint time) override;
+    void on_drag_begin(Glib::RefPtr<Gdk::DragContext> const&) override;
 
-    static void _dropDataIn( GtkWidget *widget,
-                             GdkDragContext *drag_context,
-                             gint x, gint y,
-                             GtkSelectionData *data,
-                             guint info,
-                             guint event_time,
-                             gpointer user_data);
+    // Common post-construction setup.
+    void common_setup();
 
-    void _dragGetColorData(const Glib::RefPtr<Gdk::DragContext> &drag_context,
-                           Gtk::SelectionData                   &data,
-                           guint                                 info,
-                           guint                                 time);
+    void on_motion_enter(GtkEventControllerMotion const *motion,
+                         double x, double y);
+    void on_motion_leave(GtkEventControllerMotion const *motion);
 
-    static void _wireMagicColors( SwatchPage *colorSet );
-    static void _colorDefChanged(void* data);
+    Gtk::EventSequenceState on_click_pressed (Gtk::GestureMultiPress const &click,
+                                              int n_press, double x, double y);
+    Gtk::EventSequenceState on_click_released(Gtk::GestureMultiPress const &click,
+                                              int n_press, double x, double y);
 
-    void _updatePreviews();
-    void _regenPreview(UI::Widget::Preview * preview);
+    // Perform the on-click action of setting the fill or stroke.
+    void on_click(bool stroke);
 
-    void _linkTint( ColorItem& other, int percent );
-    void _linkTone( ColorItem& other, int percent, int grayLevel );
-    void drag_begin(const Glib::RefPtr<Gdk::DragContext> &dc);
-    void handleClick();
-    void handleSecondaryClick(gint arg1);
-    bool handleEnterNotify(GdkEventCrossing* event);
-    bool handleLeaveNotify(GdkEventCrossing* event);
+    // Perform the right-click action of showing the context menu.
+    void on_rightclick();
 
-    std::vector<Gtk::Widget*> _previews;
+    // Actions
+    void action_set_fill();
+    void action_set_stroke();
+    void action_delete();
+    void action_edit();
+    void action_toggle_pin();
+    void action_convert(Glib::ustring const &name);
 
-    bool _isFill;
-    bool _isStroke;
-    bool _isLive;
-    bool _linkIsTone;
-    int _linkPercent;
-    int _linkGray;
-    ColorItem* _linkSrc;
-    SPGradient* _grad;
-    cairo_pattern_t *_pattern;
-    std::vector<ColorItem*> _listeners;
+    // Draw the color only (i.e. no indicators) to a Cairo context. Used for drawing both the widget and the drag/drop icon.
+    void draw_color(Cairo::RefPtr<Cairo::Context> const &cr, int w, int h) const;
+
+    // Construct an equivalent paintdef for use during drag/drop.
+    PaintDef to_paintdef() const;
+
+    // Return the color (or average if a gradient), for choosing the color of the fill/stroke indicators.
+    std::array<double, 3> average_color() const;
+
+    // Description of the color, shown in help text.
+    Glib::ustring description;
+    Glib::ustring color_id;
+    Glib::ustring tooltip;
+
+    /// The pinned preference path
+    Glib::ustring pinned_pref;
+    bool pinned_default = false;
+
+    // The color.
+    struct RGBData { std::array<unsigned, 3> rgb; };
+    struct GradientData { SPGradient *gradient; };
+    enum Undefined {};
+    enum PaintNone {};
+    std::variant<Undefined, PaintNone, RGBData, GradientData> data;
+
+    // The dialog this widget belongs to. Used for determining what desktop to take action on.
+    DialogBase *dialog = nullptr;
+
+    // Whether this color is in use as the fill or stroke of the current selection.
+    bool is_fill = false;
+    bool is_stroke = false;
+
+    // A cache of the widget contents, if necessary.
+    Cairo::RefPtr<Cairo::ImageSurface> cache;
+    bool cache_dirty = true;
+    bool was_grad_pinned = false;
+
+    // For ensuring that clicks that release outside the widget don't count.
+    bool mouse_inside = false;
+
+    sigc::signal<void ()> _signal_modified;
+    sigc::signal<void ()> _signal_pinned;
 };
 
-} // namespace Dialog
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Dialog
 
-#endif // SEEN_DIALOGS_COLOR_ITEM_H
+#endif // INKSCAPE_UI_DIALOG_COLOR_ITEM_H
 
 /*
   Local Variables:

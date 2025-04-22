@@ -15,154 +15,125 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-// This has to be included prior to anything that includes setjmp.h, it croaks otherwise
 #include "export.h"
+
+#include <set>
 
 #include <glibmm/convert.h>
 #include <glibmm/i18n.h>
+#include <glibmm/fileutils.h>
 #include <glibmm/miscutils.h>
-#include <gtkmm.h>
-#include <png.h>
+#include <gtkmm/box.h>
+#include <gtkmm/builder.h>
+#include <gtkmm/notebook.h>
 
 #include "desktop.h"
-#include "document-undo.h"
 #include "document.h"
-#include "extension/db.h"
-#include "extension/output.h"
-#include "file.h"
-#include "helper/png-write.h"
-#include "inkscape-window.h"
 #include "inkscape.h"
-#include "io/resource.h"
-#include "io/sys.h"
-#include "message-stack.h"
-#include "object/object-set.h"
-#include "object/sp-namedview.h"
-#include "object/sp-root.h"
-#include "object/sp-page.h"
 #include "preferences.h"
-#include "selection-chemistry.h"
-#include "ui/dialog-events.h"
-#include "ui/dialog/export-single.h"
+#include "message.h"                        // for MessageType
+#include "message-stack.h"
+
+#include "color/color-conv.h"
+#include "extension/output.h"
+#include "helper/png-write.h"
+#include "io/resource.h"
+#include "io/sys.h"                         // for sanitizeString, file_test
+#include "object/object-set.h"              // for ObjectSet
+#include "object/sp-item.h"                 // for SPItem
+#include "object/sp-object.h"               // for SPObject
+#include "object/sp-page.h"                 // for SPPage
+#include "object/sp-root.h"                 // for SPRoot
+#include "object/weakptr.h"                 // for SPWeakPtr
+#include "ui/builder-utils.h"
 #include "ui/dialog/export-batch.h"
-#include "ui/dialog/dialog-notebook.h"
-#include "ui/dialog/filedialog.h"
+#include "ui/dialog/export-single.h"
 #include "ui/interface.h"
-#include "ui/widget/scrollprotected.h"
-#include "ui/widget/unit-menu.h"
 
-#ifdef _WIN32
-
-#endif
-
-using Inkscape::Util::unit_table;
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
+namespace Inkscape::UI::Dialog {
 
 Export::Export()
     : DialogBase("/dialogs/export/", "Export")
+    , builder(create_builder("dialog-export.glade"))
+    , container       (get_widget<Gtk::Box>            (builder, "export-box"))
+    , export_notebook (get_widget<Gtk::Notebook>       (builder, "export-notebook"))
+    // Initialise Single Export and its objects
+    , single_image    (get_derived_widget<SingleExport>(builder, "single-image"))
+    // Initialise Batch Export and its objects
+    , batch_export    (get_derived_widget<BatchExport> (builder, "batch-export"))
 {
-    std::string gladefile = get_filename_string(Inkscape::IO::Resource::UIS, "dialog-export.glade");
-
-    try {
-        builder = Gtk::Builder::create_from_file(gladefile);
-    } catch (const Glib::Error &ex) {
-        g_error("Glade file loading failed for export screen");
-        return;
-    }
-
     prefs = Inkscape::Preferences::get();
 
-    builder->get_widget("Export Dialog Box", container);
-    add(*container);
+    add(container);
     show_all_children();
 
-    builder->get_widget("Export Notebook", export_notebook);
-
-    // Initialise Single Export and its objects
-    builder->get_widget_derived("Single Image", single_image);
-    single_image->initialise(builder);
-
-    // Initialise Batch Export and its objects
-    builder->get_widget_derived("Batch Export", batch_export);
-    batch_export->initialise(builder);
-
-    container->signal_realize().connect([=]() {
-        single_image->setup();
-        batch_export->setup();
+    container.signal_realize().connect([=, this]() {
         setDefaultNotebookPage();
-        notebook_signal = export_notebook->signal_switch_page().connect(sigc::mem_fun(*this, &Export::onNotebookPageSwitch));
+        notebook_signal = export_notebook.signal_switch_page().connect(sigc::mem_fun(*this, &Export::onNotebookPageSwitch));
     });
-    container->signal_unrealize().connect([=]() {
+    container.signal_unrealize().connect([this]() {
         notebook_signal.disconnect();
     });
 }
 
-Export::~Export()
-{
-    single_image->setDocument(nullptr);
-    single_image->setDesktop(nullptr);
-    batch_export->setDocument(nullptr);
-    batch_export->setDesktop(nullptr);
-}
+Export::~Export() = default;
 
 // Set current page based on preference/last visited page
 void Export::setDefaultNotebookPage()
 {
-    pages[BATCH_EXPORT] = export_notebook->page_num(*batch_export);
-    pages[SINGLE_IMAGE] = export_notebook->page_num(*single_image);
-    export_notebook->set_current_page(pages[SINGLE_IMAGE]);
+    pages[BATCH_EXPORT] = export_notebook.page_num(*batch_export.get_parent());
+    pages[SINGLE_IMAGE] = export_notebook.page_num(*single_image.get_parent());
+    export_notebook.set_current_page(pages[SINGLE_IMAGE]);
 }
 
 void Export::documentReplaced()
 {
-    single_image->setDocument(getDocument());
-    batch_export->setDocument(getDocument());
+    single_image.setDocument(getDocument());
+    batch_export.setDocument(getDocument());
 }
 
 void Export::desktopReplaced()
 {
-    single_image->setDesktop(getDesktop());
-    single_image->setApp(getApp());
-    batch_export->setDesktop(getDesktop());
-    batch_export->setApp(getApp());
+    single_image.setDesktop(getDesktop());
+    single_image.setApp(getApp());
+    batch_export.setDesktop(getDesktop());
+    batch_export.setApp(getApp());
     // Called previously, but we need post-desktop call too
     documentReplaced();
 }
 
 void Export::selectionChanged(Inkscape::Selection *selection)
 {
-    auto current_page = export_notebook->get_current_page();
+    auto current_page = export_notebook.get_current_page();
     if (current_page == pages[SINGLE_IMAGE]) {
-        single_image->selectionChanged(selection);
+        single_image.selectionChanged(selection);
     }
     if (current_page == pages[BATCH_EXPORT]) {
-        batch_export->selectionChanged(selection);
+        batch_export.selectionChanged(selection);
     }
 }
-void Export::selectionModified(Inkscape::Selection *selection, guint flags)
+void Export::selectionModified(Inkscape::Selection *selection, unsigned flags)
 {
-    auto current_page = export_notebook->get_current_page();
+    auto current_page = export_notebook.get_current_page();
     if (current_page == pages[SINGLE_IMAGE]) {
-        single_image->selectionModified(selection, flags);
+        single_image.selectionModified(selection, flags);
     }
     if (current_page == pages[BATCH_EXPORT]) {
-        batch_export->selectionModified(selection, flags);
+        batch_export.selectionModified(selection, flags);
     }
 }
 
-void Export::onNotebookPageSwitch(Widget *page, guint page_number)
+void Export::onNotebookPageSwitch(Widget *page, unsigned page_number)
 {
     auto desktop = getDesktop();
     if (desktop) {
         auto selection = desktop->getSelection();
 
         if (page_number == pages[SINGLE_IMAGE]) {
-            single_image->selectionChanged(selection);
+            single_image.selectionChanged(selection);
         }
         if (page_number == pages[BATCH_EXPORT]) {
-            batch_export->selectionChanged(selection);
+            batch_export.selectionChanged(selection);
         }
     }
 }
@@ -183,10 +154,10 @@ std::string Export::absolutizePath(SPDocument *doc, const std::string &filename)
     return path;
 }
 
-bool Export::unConflictFilename(SPDocument *doc, Glib::ustring &filename, Glib::ustring const extension)
+bool Export::unConflictFilename(SPDocument *doc, std::string &filename, std::string const extension)
 {
-    std::string path = absolutizePath(doc, Glib::filename_from_utf8(filename));
-    Glib::ustring test_filename = path + extension;
+    std::string path = absolutizePath(doc, filename);
+    std::string test_filename = path + extension;
     if (!Inkscape::IO::file_test(test_filename.c_str(), G_FILE_TEST_EXISTS)) {
         filename = test_filename;
         return true;
@@ -201,11 +172,34 @@ bool Export::unConflictFilename(SPDocument *doc, Glib::ustring &filename, Glib::
     return false;
 }
 
+// Checks if the directory exists and if not, tries to create the directory and if failed, displays an error message.
+bool Export::checkOrCreateDirectory(std::string const &filename)
+{
+    SPDesktop *desktop = SP_ACTIVE_DESKTOP;
+    if (!desktop) {
+        return false;
+    }
+
+    std::string path = absolutizePath(desktop->getDocument(), filename);
+    std::string dirname = Glib::path_get_dirname(path);
+
+    if (dirname.empty() || !Inkscape::IO::file_test(dirname.c_str(), (GFileTest)(G_FILE_TEST_EXISTS | G_FILE_TEST_IS_DIR))) {
+        if (g_mkdir_with_parents(dirname.c_str(), S_IRWXU) != 0) {
+            Glib::ustring safeDir = Inkscape::IO::sanitizeString(dirname.c_str());
+            Glib::ustring error = g_strdup_printf(_("Directory <b>%s</b> does not exist and can't be created.\n"), safeDir.c_str());
+            desktop->messageStack()->flash(Inkscape::ERROR_MESSAGE, error.c_str());
+            sp_ui_error_dialog(error.c_str());
+            return false;
+        }
+    }
+    return true;
+}
+
 bool Export::exportRaster(
         Geom::Rect const &area, unsigned long int const &width, unsigned long int const &height,
-        float const &dpi, Glib::ustring const &filename, bool overwrite,
-        unsigned (*callback)(float, void *), ExportProgressDialog *&prog_dialog,
-        Inkscape::Extension::Output *extension, std::vector<SPItem *> *items)
+        float const &dpi, guint32 bg_color, Glib::ustring const &filename, bool overwrite,
+        unsigned (*callback)(float, void *), void *data,
+        Inkscape::Extension::Output *extension, std::vector<SPItem const *> *items)
 {
     SPDesktop *desktop = SP_ACTIVE_DESKTOP;
     if (!desktop)
@@ -241,21 +235,9 @@ bool Export::exportRaster(
     int color_type = (val & 0xF0) >> 4;
 
     std::string path = absolutizePath(doc, Glib::filename_from_utf8(filename));
-    Glib::ustring dirname = Glib::path_get_dirname(path);
-
-    if (dirname.empty() ||
-        !Inkscape::IO::file_test(dirname.c_str(), (GFileTest)(G_FILE_TEST_EXISTS | G_FILE_TEST_IS_DIR))) {
-        Glib::ustring safeDir = Inkscape::IO::sanitizeString(dirname.c_str());
-        Glib::ustring error =
-            g_strdup_printf(_("Directory <b>%s</b> does not exist or is not a directory.\n"), safeDir.c_str());
-
-        desktop->messageStack()->flash(Inkscape::ERROR_MESSAGE, error.c_str());
-        sp_ui_error_dialog(error.c_str());
-        return false;
-    }
 
     // Do the over-write protection now, since the png is just a temp file.
-    if (!overwrite && !sp_ui_overwrite_file(path.c_str())) {
+    if (!overwrite && !sp_ui_overwrite_file(path)) {
         return false;
     }
 
@@ -268,20 +250,18 @@ bool Export::exportRaster(
     }
 
     // Export Start Here
-    std::vector<SPItem *> selected;
+    std::vector<SPItem const *> selected;
     if (items && items->size() > 0) {
         selected = *items;
     }
 
-    auto bg_color = doc->getPageManager().background_color;
     ExportResult result = sp_export_png_file(desktop->getDocument(), png_filename.c_str(), area, width, height, pHYs,
                                              pHYs, // previously xdpi, ydpi.
-                                             bg_color, callback, (void *)prog_dialog, true, selected,
+                                             bg_color, callback, data, true, selected,
                                              use_interlacing, color_type, bit_depth, zlib, antialiasing);
 
-    bool failed = result == EXPORT_ERROR || prog_dialog->get_stopped();
-    delete prog_dialog;
-    prog_dialog = nullptr;
+    bool failed = result == EXPORT_ERROR; // || prog_dialog->get_stopped();
+
     if (failed) {
         Glib::ustring safeFile = Inkscape::IO::sanitizeString(path.c_str());
         Glib::ustring error = g_strdup_printf(_("Could not export to filename <b>%s</b>.\n"), safeFile.c_str());
@@ -302,12 +282,6 @@ bool Export::exportRaster(
         return false;
     }
 
-    auto recentmanager = Gtk::RecentManager::get_default();
-    if (recentmanager && Glib::path_is_absolute(path)) {
-        Glib::ustring uri = Glib::filename_to_uri(path);
-        recentmanager->add_item(uri);
-    }
-
     Glib::ustring safeFile = Inkscape::IO::sanitizeString(path.c_str());
     desktop->messageStack()->flashF(Inkscape::INFORMATION_MESSAGE, _("Drawing exported to <b>%s</b>."),
                                     safeFile.c_str());
@@ -319,7 +293,31 @@ bool Export::exportRaster(
 bool Export::exportVector(
         Inkscape::Extension::Output *extension, SPDocument *doc,
         Glib::ustring const &filename,
-        bool overwrite, std::vector<SPItem *> *items, SPPage *page)
+        bool overwrite, Geom::Rect const &area)
+{
+    doc->ensureUpToDate();
+    doc->getPageManager().disablePages();
+    doc->fitToRect(area, false);
+    doc->getPageManager().enablePages();
+    auto page = doc->getPageManager().getFirstPage();
+    return exportVector(extension, doc, filename, overwrite, {}, {page});
+}
+
+bool Export::exportVector(
+        Inkscape::Extension::Output *extension, SPDocument *doc,
+        Glib::ustring const &filename,
+        bool overwrite, const std::vector<SPItem const *> &items, SPPage const *page)
+{
+    std::vector<SPPage const *> pages;
+    if (page)
+        pages.push_back(page);
+    return exportVector(extension, doc, filename, overwrite, items, pages);
+}
+
+bool Export::exportVector(
+        Inkscape::Extension::Output *extension, SPDocument *copy_doc,
+        Glib::ustring const &filename,
+        bool overwrite, const std::vector<SPItem const *> &items, const std::vector<SPPage const *> &pages)
 {
     SPDesktop *desktop = SP_ACTIVE_DESKTOP;
     if (!desktop)
@@ -337,59 +335,62 @@ bool Export::exportVector(
         return false;
     }
 
-    std::string path = absolutizePath(doc, Glib::filename_from_utf8(filename));
-    Glib::ustring dirname = Glib::path_get_dirname(path);
+    std::string path = absolutizePath(copy_doc, Glib::filename_from_utf8(filename));
     Glib::ustring safeFile = Inkscape::IO::sanitizeString(path.c_str());
-    Glib::ustring safeDir = Inkscape::IO::sanitizeString(dirname.c_str());
-
-    if (dirname.empty() ||
-        !Inkscape::IO::file_test(dirname.c_str(), (GFileTest)(G_FILE_TEST_EXISTS | G_FILE_TEST_IS_DIR))) {
-        Glib::ustring error =
-            g_strdup_printf(_("Directory <b>%s</b> does not exist or is not a directory.\n"), safeDir.c_str());
-
-        desktop->messageStack()->flash(Inkscape::ERROR_MESSAGE, error.c_str());
-        sp_ui_error_dialog(error.c_str());
-
-        return false;
-    }
 
     // Do the over-write protection now
-    if (!overwrite && !sp_ui_overwrite_file(path.c_str())) {
+    if (!overwrite && !sp_ui_overwrite_file(path)) {
         return false;
     }
-    doc->ensureUpToDate();
-    auto copy_doc = doc->copy();
     copy_doc->ensureUpToDate();
 
-    std::vector<SPItem *> objects = *items;
+    std::vector<SPItem const *> objects = items;
+    std::set<std::string> obj_ids;
     std::set<std::string> page_ids;
-    if (page) {
+    for (auto page : pages) {
+        if (auto _id = page->getId()) {
+            page_ids.insert(std::string(_id));
+        }
         // If page then our item set is limited to the overlapping items
-        auto page_items = page->getOverlappingItems();
+        auto page_items = page->getOverlappingItems(true, true);
 
-        if (items->size() == 0) {
+        if (items.empty()) {
             // Items is page_items, remove all items not in this page.
-            objects = page_items;
+            objects.insert(objects.end(), page_items.begin(), page_items.end());
         } else {
             for (auto &item : page_items) {
-                item->getIds(page_ids);
+                item->getIds(obj_ids);
             }
         }
     }
 
-    // Save the page rect, must be done before disabledPages in case page is from copy doc.
-    Geom::OptRect page_rect = page ? page->getDesktopRect() : Geom::OptRect();
+    // Delete any pages not specified, delete all pages if none specified
+    auto &pm = copy_doc->getPageManager();
 
-    // We never export multiple pages here, must be done before fitToRect and fitCanvas
-    copy_doc->getPageManager().disablePages();
+    // Make weak pointers to pages, since deletePage() can delete more than just the requested page.
+    std::vector<SPWeakPtr<SPPage>> copy_pages;
+    copy_pages.reserve(pm.getPageCount());
+    for (auto *page : pm.getPages()) {
+        copy_pages.emplace_back(page);
+    }
+
+    // We refuse to delete anything if everything would be deleted.
+    for (auto &page : copy_pages) {
+        if (page) {
+            auto _id = page->getId();
+            if (_id && page_ids.find(_id) == page_ids.end()) {
+                pm.deletePage(page.get(), false);
+            }
+        }
+    }
 
     // Page export ALWAYS restricts, even if nothing would be on the page.
-    if (objects.size() > 0 || page) {
+    if (!objects.empty() || !pages.empty()) {
         std::vector<SPObject *> objects_to_export;
-        Inkscape::ObjectSet object_set(copy_doc.get());
+        Inkscape::ObjectSet object_set(copy_doc);
         for (auto &object : objects) {
             auto _id = object->getId();
-            if (!_id || (!page_ids.empty() && page_ids.find(_id) == page_ids.end())) {
+            if (!_id || (!obj_ids.empty() && obj_ids.find(_id) == obj_ids.end())) {
                 // This item is off the page so can be ignored for export
                 continue;
             }
@@ -411,11 +412,8 @@ bool Export::exportVector(
 
         copy_doc->getRoot()->cropToObjects(objects_to_export);
 
-        if (page) {
-            // Resize to page here.
-            copy_doc->fitToRect(*page_rect, true);
-        } else {
-            object_set.fitCanvas(true, true);
+        if (pages.empty()) {
+            object_set.fitCanvas(false, true);
         }
     }
 
@@ -423,7 +421,7 @@ bool Export::exportVector(
     copy_doc->vacuumDocument();
 
     try {
-        extension->save(copy_doc.get(), path.c_str());
+        extension->save(copy_doc, path.c_str());
     } catch (Inkscape::Extension::Output::save_failed &e) {
         Glib::ustring safeFile = Inkscape::IO::sanitizeString(path.c_str());
         Glib::ustring error = g_strdup_printf(_("Could not export to filename <b>%s</b>.\n"), safeFile.c_str());
@@ -434,37 +432,44 @@ bool Export::exportVector(
         return false;
     }
 
-    auto recentmanager = Gtk::RecentManager::get_default();
-    if (recentmanager && Glib::path_is_absolute(path)) {
-        Glib::ustring uri = Glib::filename_to_uri(path);
-        recentmanager->add_item(uri);
-    }
-
     desktop->messageStack()->flashF(Inkscape::INFORMATION_MESSAGE, _("Drawing exported to <b>%s</b>."),
                                     safeFile.c_str());
     return true;
 }
 
-std::string Export::filePathFromObject(SPDocument *doc, SPObject *obj, const Glib::ustring &file_entry_text)
+std::string Export::filePathFromObject(SPDocument *doc, SPObject *obj, const std::string &file_entry_text)
 {
     Glib::ustring id = _("bitmap");
     if (obj && obj->getId()) {
         id = obj->getId();
     }
-    return filePathFromId(doc, id, file_entry_text);
+    return prependDirectory(id, file_entry_text, doc);
 }
 
-std::string Export::filePathFromId(SPDocument *doc, Glib::ustring id, const Glib::ustring &file_entry_text)
+/**
+ * Adds the full directory path to the final part of a file name.
+ *
+ * @arg name - The final name part of a path, if absolute path, this is returned unchanged.
+ * @arg orig - The original filename, an optional path used previously which this name
+ *             will be appanded in order to produce the full path.
+ * @arg doc - The document to take a fallback directory from if orig is empty.
+ */
+std::string Export::prependDirectory(Glib::ustring name, const std::string &orig, SPDocument *doc)
 {
-    g_assert(!id.empty());
+    if (Glib::path_is_absolute(name) || name.empty())
+        return name;
 
     std::string directory;
 
-    if (!file_entry_text.empty()) {
-        directory = Glib::path_get_dirname(Glib::filename_from_utf8(file_entry_text));
+    if (!orig.empty()) {
+        if (name.size() < orig.size() && std::equal(name.rbegin(), name.rend(), orig.rbegin())) {
+            // Original string ends with requested name, return as it's not different
+            return orig;
+        }
+        directory = Glib::path_get_dirname(orig);
     }
 
-    if (directory.empty()) {
+    if (directory.empty() && doc) {
         /* Grab document directory */
         const gchar *docFilename = doc->getDocumentFilename();
         if (docFilename) {
@@ -473,30 +478,42 @@ std::string Export::filePathFromId(SPDocument *doc, Glib::ustring id, const Glib
     }
 
     if (directory.empty()) {
-        directory = Inkscape::IO::Resource::homedir_path(nullptr);
+        directory = Inkscape::IO::Resource::homedir_path();
     }
 
-    return Glib::build_filename(directory, Glib::filename_from_utf8(id));
+    auto fname = Glib::build_filename(directory, Glib::filename_from_utf8(name));
+    return orig.empty() ? fname : Glib::canonicalize_filename(fname, orig);
 }
 
-Glib::ustring Export::defaultFilename(SPDocument *doc, Glib::ustring &filename_entry_text, Glib::ustring extension)
+std::string Export::defaultFilename(SPDocument *doc, std::string &filename_entry_text, std::string extension)
 {
-    Glib::ustring filename;
+    std::string filename;
     if (doc && doc->getDocumentFilename()) {
         filename = doc->getDocumentFilename();
         //appendExtensionToFilename(filename, extension);
     } else if (doc) {
-        filename = filePathFromId(doc, _("bitmap"), filename_entry_text);
+        filename = prependDirectory(_("bitmap"), filename_entry_text, doc);
         filename = filename + extension;
     }
     return filename;
 }
 
+void set_export_bg_color(SPObject* object, guint32 color) {
+    if (object) {
+        object->setAttribute("inkscape:export-bgcolor", Inkscape::Util::rgba_color_to_string(color).c_str());
+    }
+}
 
+guint32 get_export_bg_color(SPObject* object, guint32 default_color) {
+    if (object) {
+        if (auto color = Inkscape::Util::string_to_rgba_color(object->getAttribute("inkscape:export-bgcolor"))) {
+            return *color;
+        }
+    }
+    return default_color;
+}
 
-} // namespace Dialog
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Dialog
 
 /*
   Local Variables:
@@ -507,5 +524,4 @@ Glib::ustring Export::defaultFilename(SPDocument *doc, Glib::ustring &filename_e
   fill-column:99
   End:
 */
-// vim: filetype=cpp:expandtab:shiftwidth=4:tabstop=8:softtabstop=4:fileencoding=utf-8:textwidth=99 :
 // vim: filetype=cpp:expandtab:shiftwidth=4:tabstop=8:softtabstop=4:fileencoding=utf-8:textwidth=99 :

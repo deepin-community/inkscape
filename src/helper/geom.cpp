@@ -11,10 +11,15 @@
  */
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include "helper/geom.h"
 #include "helper/geom-curves.h"
+#include <glib.h>
 #include <2geom/curves.h>
 #include <2geom/sbasis-to-bezier.h>
+#include <2geom/path-intersection.h>
+#include <2geom/convex-hull.h>
 
 using Geom::X;
 using Geom::Y;
@@ -145,54 +150,30 @@ bounds_fast_transformed(Geom::PathVector const & pv, Geom::Affine const & t)
 //    return Geom::bounds_fast(pv * t);
 }
 
-Geom::OptRect
-bounds_exact_transformed(Geom::PathVector const & pv, Geom::Affine const & t)
+Geom::OptRect bounds_exact_transformed(Geom::PathVector const &pv, Geom::Affine const &t)
 {
-    if (pv.empty())
-        return Geom::OptRect();
+    if (pv.empty()) {
+        return {};
+    }
 
-    Geom::Point initial = pv.front().initialPoint() * t;
-    Geom::Rect bbox(initial, initial);        // obtain well defined bbox as starting point to unionWith
+    auto const initial = pv.front().initialPoint() * t;
 
-    for (const auto & it : pv) {
-        bbox.expandTo(it.initialPoint() * t);
+    // Obtain non-empty initial bbox to avoid having to deal with OptRect.
+    auto bbox = Geom::Rect(initial, initial);
 
-        // don't loop including closing segment, since that segment can never increase the bbox
-        for (Geom::Path::const_iterator cit = it.begin(); cit != it.end_open(); ++cit) {
-            Geom::Curve const &c = *cit;
+    for (auto const &path : pv) {
+        bbox.expandTo(path.initialPoint() * t);
 
-            unsigned order = 0;
-            if (Geom::BezierCurve const* b = dynamic_cast<Geom::BezierCurve const*>(&c)) {
-                order = b->order();
-            }
-
-            if (order == 1) { // line segment
-                bbox.expandTo(c.finalPoint() * t);
-
-            // TODO: we can make the case for quadratics faster by degree elevating them to
-            // cubic and then taking the bbox of that.
-
-            } else if (order == 3) { // cubic bezier
-                Geom::CubicBezier const &cubic_bezier = static_cast<Geom::CubicBezier const&>(c);
-                Geom::Point c0 = cubic_bezier[0] * t;
-                Geom::Point c1 = cubic_bezier[1] * t;
-                Geom::Point c2 = cubic_bezier[2] * t;
-                Geom::Point c3 = cubic_bezier[3] * t;
-                cubic_bbox(c0[0], c0[1], c1[0], c1[1], c2[0], c2[1], c3[0], c3[1], bbox);
-            } else {
-                // should handle all not-so-easy curves:
-                Geom::Curve *ctemp = cit->transformed(t);
-                bbox.unionWith( ctemp->boundsExact());
-                delete ctemp;
-            }
+        // Don't loop including closing segment, since that segment can never increase the bbox.
+        for (auto curve = path.begin(); curve != path.end_open(); ++curve) {
+            curve->expandToTransformed(bbox, t);
         }
     }
-    //return Geom::bounds_exact(pv * t);
+
     return bbox;
 }
 
-bool 
-pathv_similar(Geom::PathVector const &apv, Geom::PathVector const &bpv, double precission) 
+bool pathv_similar(Geom::PathVector const &apv, Geom::PathVector const &bpv, double precision)
 {
     if (apv == bpv) {
         return true;
@@ -201,22 +182,11 @@ pathv_similar(Geom::PathVector const &apv, Geom::PathVector const &bpv, double p
     if (totala != bpv.curveCount()) {
         return false;
     }
-    std::vector<Geom::Coord> pos;
     for (size_t i = 0; i < totala; i++) {
-        Geom::Point pointa = apv.pointAt(float(i)+0.2);
-        Geom::Point pointb = bpv.pointAt(float(i)+0.2);
-        Geom::Point pointc = apv.pointAt(float(i)+0.4);
-        Geom::Point pointd = bpv.pointAt(float(i)+0.4);
-        Geom::Point pointe = apv.pointAt(float(i));
-        Geom::Point pointf = bpv.pointAt(float(i));
-        if (!Geom::are_near(pointa[Geom::X], pointb[Geom::X], precission) ||
-            !Geom::are_near(pointa[Geom::Y], pointb[Geom::Y], precission) ||
-            !Geom::are_near(pointc[Geom::X], pointd[Geom::X], precission) ||
-            !Geom::are_near(pointc[Geom::Y], pointd[Geom::Y], precission) ||
-            !Geom::are_near(pointe[Geom::X], pointf[Geom::X], precission) ||
-            !Geom::are_near(pointe[Geom::Y], pointf[Geom::Y], precission)) 
-        {
-            return false;
+        for (auto f : { 0.2, 0.4, 0.0 }) {
+            if (!Geom::are_near(apv.pointAt(i + f), bpv.pointAt(i + f), precision)) {
+                return false;
+            }
         }
     }
     return true;
@@ -421,11 +391,15 @@ geom_curve_bbox_wind_distance(Geom::Curve const & c, Geom::Affine const &m,
         p0 = p3;
     } else { 
         //this case handles sbasis as well as all other curve types
-        Geom::Path sbasis_path = Geom::cubicbezierpath_from_sbasis(c.toSBasis(), 0.1);
-
-        //recurse to convert the new path resulting from the sbasis to svgd
-        for (const auto & iter : sbasis_path) {
-            geom_curve_bbox_wind_distance(iter, m, pt, bbox, wind, dist, tolerance, viewbox, p0);
+        try {
+            Geom::Path sbasis_path = Geom::cubicbezierpath_from_sbasis(c.toSBasis(), 0.1);
+            //recurse to convert the new path resulting from the sbasis to svgd
+            for (const auto & iter : sbasis_path) {
+                geom_curve_bbox_wind_distance(iter, m, pt, bbox, wind, dist, tolerance, viewbox, p0);
+            }
+        } catch (const Geom::Exception &e) {
+            // Curve isFinite failed.
+            g_warning("Error parsing curve: %s", e.what());
         }
     }
 }
@@ -495,9 +469,18 @@ pathv_matrix_point_bbox_wind_distance (Geom::PathVector const & pathv, Geom::Aff
 //#################################################################################
 
 /**
- * Basic check on intersecting path vectors
+ * An exact check for whether the two pathvectors intersect or overlap, including the case of
+ * a line crossing through a solid shape.
  */
-bool is_intersecting(Geom::PathVector const&a, Geom::PathVector const&b) {
+bool pathvs_have_nonempty_overlap(Geom::PathVector const &a, Geom::PathVector const &b)
+{
+    // Fast negative check using bounds.
+    auto intersected_bounds = a.boundsFast() & b.boundsFast();
+    if (!intersected_bounds) {
+        return false;
+    }
+
+    // Slightly slower positive check using vertex containment.
     for (auto &node : b.nodes()) {
         if (a.winding(node)) {
             return true;
@@ -507,6 +490,18 @@ bool is_intersecting(Geom::PathVector const&a, Geom::PathVector const&b) {
         if (b.winding(node)) {
             return true;
         }
+    }
+
+    // The winding method may not detect nodeless Bézier arcs in one pathvector glancing
+    // the edge of the other pathvector. We must deal with this possibility by also checking for
+    // intersections of boundaries.
+    auto crossings = Geom::SimpleCrosser().crossings(a, b);
+    if (crossings.empty()) {
+        return false;
+    }
+    auto is_empty = [](Geom::Crossings const &xings) -> bool { return xings.empty(); };
+    if (!std::all_of(crossings.begin(), crossings.end(), is_empty)) { // An intersection has been found
+        return true;
     }
     return false;
 }
@@ -536,9 +531,15 @@ pathv_to_linear_and_cubic_beziers( Geom::PathVector const &pathv )
                     output.back().append(b);
                 } else {
                     // convert all other curve types to cubicbeziers
-                    Geom::Path cubicbezier_path = Geom::cubicbezierpath_from_sbasis(cit->toSBasis(), 0.1);
-                    cubicbezier_path.close(false);
-                    output.back().append(cubicbezier_path);
+                    try {
+                        Geom::Path cubicbezier_path = Geom::cubicbezierpath_from_sbasis(cit->toSBasis(), 0.1);
+                        cubicbezier_path.close(false);
+                        output.back().append(cubicbezier_path);
+                    } catch (const Geom::Exception &e) {
+                        // Curve isFinite failed.
+                        g_warning("Error parsing curve: %s", e.what());
+                        break;
+                    }
                 }
             }
         }
@@ -614,10 +615,9 @@ pathv_to_linear( Geom::PathVector const &pathv, double /*maxdisp*/)
  * The straight curve part is needed as is for the effect to work appropriately
  */
 Geom::PathVector
-pathv_to_cubicbezier( Geom::PathVector const &pathv)
+pathv_to_cubicbezier( Geom::PathVector const &pathv, bool nolines)
 {
     Geom::PathVector output;
-    double cubicGap = 0.01;
     for (const auto & pit : pathv) {
         if (pit.empty()) {
             continue;
@@ -627,7 +627,7 @@ pathv_to_cubicbezier( Geom::PathVector const &pathv)
         output.back().close( pit.closed() );
         bool end_open = false;
         if (pit.closed()) {
-            const Geom::Curve &closingline = pit.back_closed();
+            auto const &closingline = pit.back_closed();
             if (!are_near(closingline.initialPoint(), closingline.finalPoint())) {
                 end_open = true;
             }
@@ -639,19 +639,21 @@ pathv_to_cubicbezier( Geom::PathVector const &pathv)
             pitCubic.close(true);
         }
         for (Geom::Path::iterator cit = pitCubic.begin(); cit != pitCubic.end_open(); ++cit) {
-            if (is_straight_curve(*cit)) {
-                Geom::CubicBezier b(cit->initialPoint(), cit->pointAt(0.3334) + Geom::Point(cubicGap,cubicGap), cit->finalPoint(), cit->finalPoint());
+            Geom::BezierCurve const *curve = dynamic_cast<Geom::BezierCurve const *>(&*cit);
+            // is_straight curves dont work for bspline
+            if (nolines && is_straight_curve(*cit)) {
+                Geom::CubicBezier b(cit->initialPoint(), cit->pointAt(0.3334), cit->finalPoint(), cit->finalPoint());
                 output.back().append(b);
+            } else if (!curve || curve->order() != 3) {
+                // convert all other curve types to cubicbeziers
+                Geom::Path cubicbezier_path = Geom::cubicbezierpath_from_sbasis(cit->toSBasis(), 0.1);
+                output.back().append(cubicbezier_path);
+            } else if (Geom::are_near((*curve)[0],(*curve)[1]) && Geom::are_near((*curve)[2],(*curve)[3])){
+                Geom::LineSegment ls(cit->initialPoint(), cit->finalPoint());
+                output.back().append(ls);
             } else {
-                Geom::BezierCurve const *curve = dynamic_cast<Geom::BezierCurve const *>(&*cit);
-                if (curve && curve->order() == 3) {
-                    Geom::CubicBezier b((*curve)[0], (*curve)[1], (*curve)[2], (*curve)[3]);
-                    output.back().append(b);
-                } else {
-                    // convert all other curve types to cubicbeziers
-                    Geom::Path cubicbezier_path = Geom::cubicbezierpath_from_sbasis(cit->toSBasis(), 0.1);
-                    output.back().append(cubicbezier_path);
-                }
+                Geom::CubicBezier b((*curve)[0], (*curve)[1], (*curve)[2], (*curve)[3]);
+                output.back().append(b);
             }
         }
     }
@@ -660,22 +662,86 @@ pathv_to_cubicbezier( Geom::PathVector const &pathv)
 }
 
 //Study move to 2Geom
-size_t 
+size_t
 count_pathvector_nodes(Geom::PathVector const &pathv) {
     size_t tot = 0;
-    for (auto subpath : pathv) {
+    for (auto const &subpath : pathv) {
         tot += count_path_nodes(subpath);
     }
     return tot;
 }
-size_t count_path_nodes(Geom::Path const &path)
+
+size_t
+count_pathvector_curves(Geom::PathVector const &pathv) {
+    size_t tot = 0;
+    for (auto const &subpath : pathv) {
+        tot += count_path_curves(subpath);
+    }
+    return tot;
+}
+
+size_t
+count_pathvector_degenerations(Geom::PathVector const &pathv) {
+    size_t tot = 0;
+    for (auto const &subpath : pathv) {
+        tot += count_path_degenerations(subpath);
+    }
+    return tot;
+}
+
+size_t count_path_degenerations(Geom::Path const &path)
 {
-    size_t tot = path.size_closed();
+    size_t tot = 0;
+    Geom::Path::const_iterator curve_it = path.begin();
+    Geom::Path::const_iterator curve_endit = path.end_default();
     if (path.closed()) {
-        const Geom::Curve &closingline = path.back_closed();
+        auto const &closingline = path.back_closed();
         // the closing line segment is always of type
         // Geom::LineSegment.
         if (are_near(closingline.initialPoint(), closingline.finalPoint())) {
+            // closingline.isDegenerate() did not work, because it only checks for
+            // *exact* zero length, which goes wrong for relative coordinates and
+            // rounding errors...
+            // the closing line segment has zero-length. So stop before that one!
+            curve_endit = path.end_open();
+        }
+    }
+    while (curve_it != curve_endit) {
+        if (Geom::are_near((*curve_it).length(),0)) {
+            tot += 1;
+        }
+        ++curve_it;
+    }
+    return tot;
+}
+
+size_t count_path_nodes(Geom::Path const &path)
+{
+    size_t tot = path.size_default() + 1; // if degenerate closing line one is erased no need to duple
+    if (path.closed()) {
+        tot -= 1;
+        auto const &closingline = path.back_closed();
+        // the closing line segment is always of type
+        // Geom::LineSegment.
+        if (!closingline.isDegenerate() && are_near(closingline.initialPoint(), closingline.finalPoint())) {
+            // closingline.isDegenerate() did not work, because it only checks for
+            // *exact* zero length, which goes wrong for relative coordinates and
+            // rounding errors...
+            // the closing line segment has zero-length. So stop before that one!
+            tot -= 1;
+        }
+    }
+    return tot;
+}
+
+size_t count_path_curves(Geom::Path const &path)
+{
+    size_t tot = path.size_default(); // if degenerate closing line one is erased no need to duple
+    if (path.closed()) {
+        auto const &closingline = path.back_closed();
+        // the closing line segment is always of type
+        // Geom::LineSegment.
+        if (!closingline.isDegenerate() && are_near(closingline.initialPoint(), closingline.finalPoint())) {
             // closingline.isDegenerate() did not work, because it only checks for
             // *exact* zero length, which goes wrong for relative coordinates and
             // rounding errors...
@@ -935,11 +1001,25 @@ recursive_bezier4(const double x1, const double y1,
         recursive_bezier4(x1234, y1234, x234, y234, x34, y34, x4, y4, m_points, level + 1); 
 }
 
-void 
-swap(Geom::Point &A, Geom::Point &B){
-    Geom::Point tmp = A;
-    A = B;
-    B = tmp;
+/**
+ * Returns whether an affine transformation is approximately a dihedral transformation, i.e.
+ * it maps the axis-aligned unit square centred at the origin to itself.
+ */
+bool approx_dihedral(Geom::Affine const &affine, double eps)
+{
+    // Ensure translation is zero.
+    if (std::abs(affine[4]) > eps || std::abs(affine[5]) > eps) return false;
+
+    // Ensure matrix has integer components.
+    std::array<int, 4> arr;
+    for (int i = 0; i < 4; i++) {
+        arr[i] = std::round(affine[i]);
+        if (std::abs(affine[i] - arr[i]) > eps) return false;
+        arr[i] = std::abs(arr[i]);
+    }
+
+    // Ensure rounded matrix is correct.
+    return arr == std::array {1, 0, 0, 1 } || arr == std::array{ 0, 1, 1, 0 };
 }
 
 /*

@@ -19,6 +19,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -28,13 +29,14 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "toolbar.h"
-
 #include "axis-manip.h"
+#include "toolbar.h"
+#include "xml/node-observer.h"
 
 namespace Gtk {
-class Adjustment;
-}
+class Builder;
+class ToggleButton;
+} // namespace Gtk
 
 class Persp3D;
 class SPDesktop;
@@ -48,7 +50,7 @@ class Node;
 
 namespace UI {
 namespace Widget {
-class SpinButtonToolItem;
+class SpinButton;
 }
 
 namespace Tools {
@@ -56,53 +58,49 @@ class ToolBase;
 }
 
 namespace Toolbar {
-class Box3DToolbar : public Toolbar {
+
+class Box3DToolbar final
+    : public Toolbar
+    , private XML::NodeObserver
+{
+public:
+    Box3DToolbar(SPDesktop *desktop);
+    ~Box3DToolbar() override;
+
 private:
-    UI::Widget::SpinButtonToolItem *_angle_x_item;
-    UI::Widget::SpinButtonToolItem *_angle_y_item;
-    UI::Widget::SpinButtonToolItem *_angle_z_item;
+    Glib::RefPtr<Gtk::Builder> _builder;
 
-    Glib::RefPtr<Gtk::Adjustment> _angle_x_adj;
-    Glib::RefPtr<Gtk::Adjustment> _angle_y_adj;
-    Glib::RefPtr<Gtk::Adjustment> _angle_z_adj;
+    UI::Widget::SpinButton &_angle_x_item;
+    UI::Widget::SpinButton &_angle_y_item;
+    UI::Widget::SpinButton &_angle_z_item;
 
-    Gtk::ToggleToolButton *_vp_x_state_item;
-    Gtk::ToggleToolButton *_vp_y_state_item;
-    Gtk::ToggleToolButton *_vp_z_state_item;
+    Gtk::ToggleButton &_vp_x_state_btn;
+    Gtk::ToggleButton &_vp_y_state_btn;
+    Gtk::ToggleButton &_vp_z_state_btn;
 
-    XML::Node *_repr;
-    bool _freeze;
+    XML::Node *_repr{nullptr};
+    bool _freeze{false};
 
     void angle_value_changed(Glib::RefPtr<Gtk::Adjustment> &adj,
                              Proj::Axis                     axis);
     void vp_state_changed(Proj::Axis axis);
-    void check_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec);
+    void check_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* tool);
     void selection_changed(Inkscape::Selection *selection);
     void resync_toolbar(Inkscape::XML::Node *persp_repr);
-    void set_button_and_adjustment(Persp3D                        *persp,
-                                   Proj::Axis                      axis,
-                                   Glib::RefPtr<Gtk::Adjustment>&  adj,
-                                   UI::Widget::SpinButtonToolItem *spin_btn,
-                                   Gtk::ToggleToolButton          *toggle_btn);
-    double normalize_angle(double a);
+    void set_button_and_adjustment(Persp3D *persp, Proj::Axis axis, UI::Widget::SpinButton &spin_btn,
+                                   Gtk::ToggleButton &toggle_btn);
 
     sigc::connection _changed;
 
-protected:
-    Box3DToolbar(SPDesktop *desktop);
-    ~Box3DToolbar() override;
+	void notifyAttributeChanged(Inkscape::XML::Node &node, GQuark name,
+								Inkscape::Util::ptr_shared old_value,
+								Inkscape::Util::ptr_shared new_value) final;
 
-public:
-    static GtkWidget * create(SPDesktop *desktop);
-    static void event_attr_changed(Inkscape::XML::Node *repr,
-                                   gchar const         *name,
-                                   gchar const         *old_value,
-                                   gchar const         *new_value,
-                                   bool                 is_interactive,
-                                   gpointer             data);
-
+    void setup_derived_spin_button(UI::Widget::SpinButton &btn, Glib::ustring const &name, Proj::Axis const axis);
 };
+
 }
 }
 }
+
 #endif /* !SEEN_BOX3D_TOOLBAR_H */

@@ -34,53 +34,28 @@
   </object>
   <object class="GtkImage" id="image-linked">
     <property name="visible">True</property>
-    <property name="can-focus">False</property>
     <property name="icon-name">entries-linked-symbolic</property>
-    <property name="icon_size">3</property>
+    <property name="icon-size">3</property>
   </object>
   <object class="GtkImage" id="image-unlinked">
     <property name="visible">True</property>
-    <property name="can-focus">False</property>
     <property name="icon-name">entries-unlinked-symbolic</property>
-    <property name="icon_size">3</property>
-  </object>
-  <object class="GtkImage" id="image1">
-    <property name="visible">True</property>
-    <property name="can-focus">False</property>
-    <property name="icon-name">orient-auto-reverse</property>
-  </object>
-  <object class="GtkImage" id="image2">
-    <property name="visible">True</property>
-    <property name="can-focus">False</property>
-    <property name="icon-name">orient-auto</property>
-  </object>
-  <object class="GtkImage" id="image3">
-    <property name="visible">True</property>
-    <property name="can-focus">False</property>
-    <property name="icon-name">orient-angle</property>
-  </object>
-  <object class="GtkImage" id="image4">
-    <property name="visible">True</property>
-    <property name="can-focus">False</property>
-    <property name="icon-name">object-flip-horizontal-symbolic</property>
+    <property name="icon-size">3</property>
   </object>
   <object class="GtkRadioButton" id="radio-orient">
     <property name="label">radiobutton</property>
     <property name="visible">True</property>
     <property name="can-focus">True</property>
-    <property name="receives-default">False</property>
     <property name="active">True</property>
     <property name="draw-indicator">True</property>
   </object>
   <object class="GtkPopover" id="popover">
-    <property name="can-focus">False</property>
     <property name="constrain-to">none</property>
     <child>
       <object class="GtkBox">
         <property name="width-request">378</property>
         <property name="height-request">500</property>
         <property name="visible">True</property>
-        <property name="can-focus">False</property>
         <property name="orientation">vertical</property>
         <child>
           <object class="GtkScrolledWindow">
@@ -91,12 +66,11 @@
             <child>
               <object class="GtkViewport">
                 <property name="visible">True</property>
-                <property name="can-focus">False</property>
                 <property name="vscroll-policy">natural</property>
                 <child>
                   <object class="GtkFlowBox" id="flowbox">
                     <property name="visible">True</property>
-                    <property name="can-focus">True</property>
+                    <property name="can-focus">False</property>
                     <property name="halign">start</property>
                     <property name="valign">start</property>
                     <property name="min-children-per-line">8</property>
@@ -106,36 +80,26 @@
               </object>
             </child>
           </object>
-          <packing>
-            <property name="expand">False</property>
-            <property name="fill">True</property>
-            <property name="position">0</property>
-          </packing>
         </child>
         <child>
           <object class="GtkSeparator">
             <property name="visible">True</property>
-            <property name="can-focus">False</property>
             <property name="valign">center</property>
           </object>
           <packing>
-            <property name="expand">False</property>
-            <property name="fill">True</property>
             <property name="position">1</property>
           </packing>
         </child>
+        <!-- n-columns=4 n-rows=8 -->
         <child>
-          <!-- n-columns=4 n-rows=8 -->
           <object class="GtkGrid" id="input-grid">
             <property name="visible">True</property>
-            <property name="can-focus">False</property>
             <property name="margin-end">4</property>
             <property name="margin-bottom">4</property>
             <property name="row-spacing">4</property>
             <child>
               <object class="GtkLabel">
                 <property name="visible">True</property>
-                <property name="can-focus">False</property>
                 <property name="halign">start</property>
                 <property name="label" translatable="yes">Size X:</property>
               </object>
@@ -161,7 +125,6 @@
             <child>
               <object class="GtkLabel">
                 <property name="visible">True</property>
-                <property name="can-focus">False</property>
                 <property name="halign">start</property>
                 <property name="label" translatable="yes">Size Y:</property>
               </object>
@@ -189,7 +152,6 @@
                 <property name="label" translatable="yes">Scale with stroke</property>
                 <property name="visible">True</property>
                 <property name="can-focus">True</property>
-                <property name="receives-default">False</property>
                 <property name="halign">end</property>
                 <property name="draw-indicator">True</property>
               </object>
@@ -202,7 +164,6 @@
             <child>
               <object class="GtkLabel">
                 <property name="visible">True</property>
-                <property name="can-focus">False</property>
                 <property name="halign">start</property>
                 <property name="margin-end">4</property>
                 <property name="label" translatable="yes">Orientation:</property>
@@ -216,7 +177,6 @@
             <child>
               <object class="GtkBox">
                 <property name="visible">True</property>
-                <property name="can-focus">False</property>
                 <property name="spacing">4</property>
                 <child>
                   <object class="GtkRadioButton" id="orient-auto-rev">
@@ -224,19 +184,18 @@
                     <property name="can-focus">True</property>
                     <property name="receives-default">True</property>
                     <property name="tooltip-text" translatable="yes">Orient along the path, reversing at the start</property>
-                    <property name="image">image1</property>
-                    <property name="always-show-image">True</property>
                     <property name="draw-indicator">False</property>
                     <property name="group">radio-orient</property>
                     <style>
                       <class name="tight-button"/>
                     </style>
+                    <child>
+                      <object class="GtkImage" id="image1">
+                        <property name="visible">True</property>
+                        <property name="icon-name">orient-auto-reverse</property>
+                      </object>
+                    </child>
                   </object>
-                  <packing>
-                    <property name="expand">False</property>
-                    <property name="fill">True</property>
-                    <property name="position">0</property>
-                  </packing>
                 </child>
                 <child>
                   <object class="GtkRadioButton" id="orient-auto">
@@ -244,17 +203,19 @@
                     <property name="can-focus">True</property>
                     <property name="receives-default">True</property>
                     <property name="tooltip-text" translatable="yes">Orient along the path</property>
-                    <property name="image">image2</property>
-                    <property name="always-show-image">True</property>
                     <property name="draw-indicator">False</property>
                     <property name="group">radio-orient</property>
                     <style>
                       <class name="tight-button"/>
                     </style>
+                    <child>
+                      <object class="GtkImage" id="image2">
+                        <property name="visible">True</property>
+                        <property name="icon-name">orient-auto</property>
+                      </object>
+                    </child>
                   </object>
                   <packing>
-                    <property name="expand">False</property>
-                    <property name="fill">True</property>
                     <property name="position">1</property>
                   </packing>
                 </child>
@@ -262,37 +223,41 @@
                   <object class="GtkRadioButton" id="orient-angle">
                     <property name="visible">True</property>
                     <property name="can-focus">True</property>
-                    <property name="receives-default">False</property>
                     <property name="tooltip-text" translatable="yes">Fixed specified angle</property>
-                    <property name="image">image3</property>
                     <property name="active">True</property>
                     <property name="draw-indicator">False</property>
                     <property name="group">radio-orient</property>
                     <style>
                       <class name="tight-button"/>
                     </style>
+                    <child>
+                      <object class="GtkImage" id="image3">
+                        <property name="visible">True</property>
+                        <property name="icon-name">orient-angle</property>
+                      </object>
+                    </child>
                   </object>
                   <packing>
-                    <property name="expand">False</property>
-                    <property name="fill">True</property>
                     <property name="position">2</property>
                   </packing>
                 </child>
                 <child>
                   <object class="GtkButton" id="btn-horz-flip">
                     <property name="visible">True</property>
-                    <property name="can-focus">False</property>
                     <property name="receives-default">True</property>
                     <property name="tooltip-text" translatable="yes">Flip marker horizontally</property>
                     <property name="margin-start">8</property>
-                    <property name="image">image4</property>
                     <style>
                       <class name="tight-button"/>
                     </style>
+                    <child>
+                      <object class="GtkImage" id="image4">
+                        <property name="visible">True</property>
+                        <property name="icon-name">object-flip-horizontal-symbolic</property>
+                      </object>
+                    </child>
                   </object>
                   <packing>
-                    <property name="expand">False</property>
-                    <property name="fill">True</property>
                     <property name="position">3</property>
                   </packing>
                 </child>
@@ -305,7 +270,6 @@
             <child>
               <object class="GtkLabel">
                 <property name="visible">True</property>
-                <property name="can-focus">False</property>
                 <property name="halign">start</property>
                 <property name="margin-end">4</property>
                 <property name="label" translatable="yes">Fixed angle:</property>
@@ -331,7 +295,6 @@
             <child>
               <object class="GtkLabel">
                 <property name="visible">True</property>
-                <property name="can-focus">False</property>
                 <property name="halign">start</property>
                 <property name="margin-end">4</property>
                 <property name="label" translatable="yes">Offset X:</property>
@@ -345,7 +308,6 @@
             <child>
               <object class="GtkLabel">
                 <property name="visible">True</property>
-                <property name="can-focus">False</property>
                 <property name="halign">start</property>
                 <property name="margin-end">4</property>
                 <property name="label" translatable="yes">Offset Y:</property>
@@ -399,28 +361,23 @@
             <child>
               <object class="GtkBox">
                 <property name="visible">True</property>
-                <property name="can-focus">False</property>
                 <property name="margin-top">4</property>
                 <property name="hexpand">True</property>
                 <property name="orientation">vertical</property>
                 <child>
                   <object class="GtkImage" id="preview">
                     <property name="visible">True</property>
-                    <property name="can-focus">False</property>
                     <property name="margin-end">4</property>
                     <property name="hexpand">True</property>
                   </object>
                   <packing>
                     <property name="expand">True</property>
-                    <property name="fill">True</property>
                     <property name="pack-type">end</property>
-                    <property name="position">0</property>
                   </packing>
                 </child>
                 <child>
                   <object class="GtkLabel" id="marker-id">
                     <property name="visible">True</property>
-                    <property name="can-focus">False</property>
                     <property name="margin-left">4</property>
                     <property name="margin-right">4</property>
                     <property name="margin-start">4</property>
@@ -430,8 +387,6 @@
                     <property name="ellipsize">middle</property>
                   </object>
                   <packing>
-                    <property name="expand">False</property>
-                    <property name="fill">True</property>
                     <property name="position">1</property>
                   </packing>
                 </child>
@@ -464,7 +419,6 @@
             <child>
               <object class="GtkImage" id="spacer">
                 <property name="visible">True</property>
-                <property name="can-focus">False</property>
                 <property name="pixel-size">5</property>
               </object>
               <packing>
@@ -472,16 +426,8 @@
                 <property name="top-attach">5</property>
               </packing>
             </child>
-            <child>
-              <placeholder/>
-            </child>
-            <child>
-              <placeholder/>
-            </child>
           </object>
           <packing>
-            <property name="expand">False</property>
-            <property name="fill">True</property>
             <property name="position">2</property>
           </packing>
         </child>
@@ -497,29 +443,22 @@
     <child>
       <object class="GtkBox" id="btn-box">
         <property name="visible">True</property>
-        <property name="can-focus">False</property>
         <child>
           <object class="GtkImage" id="current-img">
             <property name="visible">True</property>
-            <property name="can-focus">False</property>
             <property name="hexpand">True</property>
-            <property name="stock">gtk-missing-image</property>
+            <property name="icon-name">image-missing</property>
           </object>
-          <packing>
-            <property name="expand">False</property>
-            <property name="fill">True</property>
-            <property name="position">0</property>
-          </packing>
         </child>
         <child>
           <object class="GtkImage">
             <property name="visible">True</property>
-            <property name="can-focus">False</property>
             <property name="icon-name">pan-down-symbolic</property>
+            <style>
+              <class name="arrow"/>
+            </style>
           </object>
           <packing>
-            <property name="expand">False</property>
-            <property name="fill">True</property>
             <property name="pack-type">end</property>
             <property name="position">1</property>
           </packing>

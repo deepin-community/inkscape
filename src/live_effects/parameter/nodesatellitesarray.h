@@ -25,6 +25,7 @@
 #include "live_effects/effect-enum.h"
 #include "live_effects/parameter/array.h"
 #include "ui/knot/knot-holder-entity.h"
+#include "ui/knot/knot-holder.h"
 
 namespace Inkscape {
 
@@ -60,23 +61,17 @@ public:
     void updateAmmount(double amount);
     void setPathVectorNodeSatellites(PathVectorNodeSatellites *pathVectorNodeSatellites, bool write = true);
 
-    void set_oncanvas_looks(Inkscape::CanvasItemCtrlShape shape,
-                            Inkscape::CanvasItemCtrlMode mode,
-                            guint32 color);
+    void set_oncanvas_looks(Inkscape::CanvasItemCtrlShape shape, uint32_t color);
 
 
     friend class FilletChamferKnotHolderEntity;
     friend class LPEFilletChamfer;
     ParamType paramType() const override { return ParamType::NODE_SATELLITE_ARRAY; };
-protected:
-    KnotHolder *_knoth;
-
 private:
     NodeSatelliteArrayParam(const NodeSatelliteArrayParam &) = delete;
     NodeSatelliteArrayParam &operator=(const NodeSatelliteArrayParam &) = delete;
 
     Inkscape::CanvasItemCtrlShape _knot_shape = Inkscape::CANVAS_ITEM_CTRL_SHAPE_DIAMOND;
-    Inkscape::CanvasItemCtrlMode  _knot_mode = Inkscape::CANVAS_ITEM_CTRL_MODE_XOR;
     guint32 _knot_color = 0xaaff8800;
     Geom::PathVector _hp;
     bool _use_distance = false;
@@ -89,13 +84,10 @@ private:
 class FilletChamferKnotHolderEntity : public KnotHolderEntity {
 public:
     FilletChamferKnotHolderEntity(NodeSatelliteArrayParam *p, size_t index);
-    ~FilletChamferKnotHolderEntity() override
-    {
-        _pparam->_knoth = nullptr;
-    }
     void knot_set(Geom::Point const &p, Geom::Point const &origin,
                           guint state) override;
     Geom::Point knot_get() const override;
+    Geom::Point knot_get_gap();    
     void knot_click(guint state) override;
     void knot_ungrabbed(Geom::Point const &p, Geom::Point const &origin, guint state) override;
     void knot_set_offset(NodeSatellite);
@@ -109,6 +101,8 @@ public:
 private:
     NodeSatelliteArrayParam *_pparam;
     size_t _index;
+    bool _updating = false;
+    mutable bool _set_circle = false;
 };
 
 } //namespace LivePathEffect

@@ -13,7 +13,11 @@
 #define INK_ACTIONS_EFFECT_H
 
 class InkscapeApplication;
+class SPDocument;
 
 void add_actions_effect(InkscapeApplication* app);
+void add_document_actions_effect(SPDocument *doc);
+
+void enable_effect_actions(InkscapeApplication* app, bool enabled);
 
 #endif // INK_ACTIONS_EFFECT_H

@@ -21,9 +21,7 @@
 #include <png.h>
 
 #include "document.h"
-#include "inkscape.h"
 #include "png-write.h"
-#include "preferences.h"
 #include "rdf.h"
 
 #include "display/cairo-utils.h"
@@ -37,7 +35,6 @@
 #include "object/sp-root.h"
 
 #include "ui/interface.h"
-#include "util/units.h"
 
 /* This is an example of how to use libpng to read and write PNG files.
  * The file libpng.txt is much more verbose then this.  If you have not
@@ -126,8 +123,8 @@ void PngTextList::add(gchar const* key, gchar const* text)
 static bool
 sp_png_write_rgba_striped(SPDocument *doc,
                           gchar const *filename, unsigned long int width, unsigned long int height, double xdpi, double ydpi,
-                          int (* get_rows)(guchar const **rows, void **to_free, int row, int num_rows, void *data, int color_type, int bit_depth, int antialias),
-                          void *data, bool interlace, int color_type, int bit_depth, int zlib, int antialiasing)
+                          int (* get_rows)(guchar const **rows, void **to_free, int row, int num_rows, void *data, int color_type, int bit_depth),
+                          void *data, bool interlace, int color_type, int bit_depth, int zlib)
 {
     g_return_val_if_fail(filename != nullptr, false);
     g_return_val_if_fail(data != nullptr, false);
@@ -237,7 +234,7 @@ sp_png_write_rgba_striped(SPDocument *doc,
         }
 
 
-        struct rdf_license_t *license =  rdf_get_license(doc);
+        struct rdf_license_t *license =  rdf_get_license(doc, true);
         if (license) {
             if (license->name && license->uri) {
                 gchar* tmp = g_strdup_printf("%s %s", license->name, license->uri);
@@ -289,7 +286,7 @@ sp_png_write_rgba_striped(SPDocument *doc,
         r = 0;
         while (r < static_cast<png_uint_32>(height)) {
             void *to_free;
-            int n = get_rows((unsigned char const **) row_pointers, &to_free, r, height-r, data, color_type, bit_depth, antialiasing);
+            int n = get_rows((unsigned char const **) row_pointers, &to_free, r, height-r, data, color_type, bit_depth);
             if (!n) break;
             png_write_rows(png_ptr, row_pointers, n);
             g_free(to_free);
@@ -323,7 +320,7 @@ sp_png_write_rgba_striped(SPDocument *doc,
  *
  */
 static int
-sp_export_get_rows(guchar const **rows, void **to_free, int row, int num_rows, void *data, int color_type, int bit_depth, int antialiasing)
+sp_export_get_rows(guchar const **rows, void **to_free, int row, int num_rows, void *data, int color_type, int bit_depth)
 {
     struct SPEBP *ebp = (struct SPEBP *) data;
 
@@ -355,7 +352,7 @@ sp_export_get_rows(guchar const **rows, void **to_free, int row, int num_rows, v
     dc.setOperator(CAIRO_OPERATOR_OVER);
 
     /* Render */
-    ebp->drawing->render(dc, bbox, 0, antialiasing);
+    ebp->drawing->render(dc, bbox, 0);
     cairo_surface_destroy(s);
 
     // PNG stores data as unpremultiplied big-endian RGBA, which means
@@ -371,36 +368,13 @@ sp_export_get_rows(guchar const **rows, void **to_free, int row, int num_rows, v
     return num_rows;
 }
 
-/**
- * Hide all items that are not listed in list, recursively, skipping groups and defs.
- */
-static void hide_other_items_recursively(SPObject *o, const std::vector<SPItem*> &list, unsigned dkey)
-{
-    if ( SP_IS_ITEM(o)
-         && !SP_IS_DEFS(o)
-         && !SP_IS_ROOT(o)
-         && !SP_IS_GROUP(o)
-         && list.end()==find(list.begin(),list.end(),o))
-    {
-        SP_ITEM(o)->invoke_hide(dkey);
-    }
-
-    // recurse
-    if (list.end()==find(list.begin(),list.end(),o)) {
-        for (auto& child: o->children) {
-            hide_other_items_recursively(&child, list, dkey);
-        }
-    }
-}
-
-
 ExportResult sp_export_png_file(SPDocument *doc, gchar const *filename,
                                 double x0, double y0, double x1, double y1,
                                 unsigned long int width, unsigned long int height, double xdpi, double ydpi,
                                 unsigned long bgcolor,
                                 unsigned int (*status) (float, void *),
                                 void *data, bool force_overwrite,
-                                const std::vector<SPItem*> &items_only, bool interlace, int color_type, int bit_depth, int zlib, int antialiasing)
+                                const std::vector<SPItem const *> &items_only, bool interlace, int color_type, int bit_depth, int zlib, int antialiasing)
 {
     return sp_export_png_file(doc, filename, Geom::Rect(Geom::Point(x0,y0),Geom::Point(x1,y1)),
                               width, height, xdpi, ydpi, bgcolor, status, data, force_overwrite, items_only, interlace, color_type, bit_depth, zlib, antialiasing);
@@ -417,7 +391,7 @@ ExportResult sp_export_png_file(SPDocument *doc, gchar const *filename,
                                 unsigned long bgcolor,
                                 unsigned (*status)(float, void *),
                                 void *data, bool force_overwrite,
-                                const std::vector<SPItem*> &items_only, bool interlace, int color_type, int bit_depth, int zlib, int antialiasing)
+                                const std::vector<SPItem const *> &items_only, bool interlace, int color_type, int bit_depth, int zlib, int antialiasing)
 {
     g_return_val_if_fail(doc != nullptr, EXPORT_ERROR);
     g_return_val_if_fail(filename != nullptr, EXPORT_ERROR);
@@ -462,18 +436,18 @@ ExportResult sp_export_png_file(SPDocument *doc, gchar const *filename,
 
     /* Create new drawing */
     Inkscape::Drawing drawing;
-    drawing.setExact(true); // export with maximum blur rendering quality
     unsigned const dkey = SPItem::display_key_new(1);
-
-    // Create ArenaItems and set transform
     drawing.setRoot(doc->getRoot()->invoke_show(drawing, dkey, SP_ITEM_SHOW_DISPLAY));
     drawing.root()->setTransform(affine);
+    drawing.setExact(); // export with maximum blur rendering quality
+    drawing.setAntialiasingOverride(static_cast<Inkscape::Antialiasing>(antialiasing));
+
     ebp.drawing = &drawing;
 
     // We show all and then hide all items we don't want, instead of showing only requested items,
     // because that would not work if the shown item references something in defs
     if (!items_only.empty()) {
-        hide_other_items_recursively(doc->getRoot(), items_only, dkey);
+        doc->getRoot()->invoke_hide_except(dkey, items_only);
     }
 
     ebp.status = status;
@@ -485,7 +459,7 @@ ExportResult sp_export_png_file(SPDocument *doc, gchar const *filename,
     ebp.px = g_try_new(guchar, 4 * ebp.sheight * width);
 
     if (ebp.px) {
-        write_status = sp_png_write_rgba_striped(doc, filename, width, height, xdpi, ydpi, sp_export_get_rows, &ebp, interlace, color_type, bit_depth, zlib, antialiasing);
+        write_status = sp_png_write_rgba_striped(doc, filename, width, height, xdpi, ydpi, sp_export_get_rows, &ebp, interlace, color_type, bit_depth, zlib);
         g_free(ebp.px);
     }
 

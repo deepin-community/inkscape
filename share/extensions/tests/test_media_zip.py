@@ -46,7 +46,7 @@ class CmoTestEmbed(TestCase):
             fontlist = f.read("fontlist.txt").decode("utf8")
             fontlist = fontlist.splitlines()[1:]
             self.assertEqual(
-                fontlist,
+                [i.replace('"', "'") for i in fontlist],  # normalize quote delimiters
                 [
                     "'Courier New' normal",
                     "'Times New Roman'",

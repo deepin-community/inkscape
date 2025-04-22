@@ -16,12 +16,10 @@
 #include "scalar.h"
 #include "unit-menu.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 /**
- * A labelled text box, with spin buttons and optional icon or suffix, for
+ * A labelled text box, with spin buttons and optional icon, for
  * entering the values of various unit types.
  *
  * A ScalarUnit is a control for entering, viewing, or manipulating
@@ -39,10 +37,10 @@ public:
     /**
      * Construct a ScalarUnit.
      *
-     * @param label      Label.
+     * @param label     Label, as per the Labelled base class.
+     * @param tooltip   Tooltip, as per the Labelled base class.
      * @param unit_type  Unit type (defaults to UNIT_TYPE_LINEAR).
-     * @param suffix     Suffix, placed after the widget (defaults to "").
-     * @param icon       Icon filename, placed before the label (defaults to "").
+     * @param icon       Icon name, placed before the label (defaults to empty).
      * @param unit_menu  UnitMenu drop down; if not specified, one will be created
      *                   and displayed after the widget (defaults to NULL).
      * @param mnemonic   Mnemonic toggle; if true, an underscore (_) in the label
@@ -51,27 +49,24 @@ public:
      */
     ScalarUnit(Glib::ustring const &label, Glib::ustring const &tooltip,
                UnitType unit_type = UNIT_TYPE_LINEAR,
-               Glib::ustring const &suffix = "",
-               Glib::ustring const &icon = "",
+               Glib::ustring const &icon = {},
                UnitMenu *unit_menu = nullptr,
                bool mnemonic = true);
 
     /**
      * Construct a ScalarUnit.
      *
-     * @param label      Label.
-     * @param tooltip    Tooltip text.
+     * @param label     Label, as per the Labelled base class.
+     * @param tooltip   Tooltip, as per the Labelled base class.
      * @param take_unitmenu  Use the unitmenu from this parameter.
-     * @param suffix     Suffix, placed after the widget (defaults to "").
-     * @param icon       Icon filename, placed before the label (defaults to "").
+     * @param icon       Icon name, placed before the label (defaults to empty).
      * @param mnemonic   Mnemonic toggle; if true, an underscore (_) in the label
      *                   indicates the next character should be used for the
      *                   mnemonic accelerator key (defaults to true).
      */
     ScalarUnit(Glib::ustring const &label, Glib::ustring const &tooltip,
                ScalarUnit &take_unitmenu,
-               Glib::ustring const &suffix = "",
-               Glib::ustring const &icon = "",
+               Glib::ustring const &icon = {},
                bool mnemonic = true);
 
     /**
@@ -162,7 +157,7 @@ public:
     void setFromPercentage(double value);
 
     /**
-     * Signal handler for updating the value and suffix label when unit is changed.
+     * Signal handler for updating the value when unit is changed.
      */
     void on_unit_changed();
 
@@ -178,9 +173,7 @@ protected:
     Glib::ustring lastUnits; // previously selected unit, for conversions
 };
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 #endif // INKSCAPE_UI_WIDGET_SCALAR_UNIT_H
 

@@ -15,14 +15,16 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "live_effects/lpe-lattice.h"
+#include "lpe-lattice.h"
 
-#include "display/curve.h"
+#include <glibmm/i18n.h>
 
 #include <2geom/sbasis-2d.h>
 #include <2geom/bezier-to-sbasis.h>
-// TODO due to internal breakage in glibmm headers, this must be last:
-#include <glibmm/i18n.h>
+
+#include "display/curve.h"
+#include "object/sp-lpe-item.h"
+
 using namespace Geom;
 
 namespace Inkscape {
@@ -71,9 +73,7 @@ LPELattice::LPELattice(LivePathEffectObject *lpeobject) :
     apply_to_clippath_and_mask = true;
 }
 
-LPELattice::~LPELattice()
-= default;
-
+LPELattice::~LPELattice() = default;
 
 Geom::Piecewise<Geom::D2<Geom::SBasis> >
 LPELattice::doEffect_pwd2 (Geom::Piecewise<Geom::D2<Geom::SBasis> > const & pwd2_in)
@@ -171,7 +171,7 @@ LPELattice::resetDefaults(SPItem const* item)
 {
     Effect::resetDefaults(item);
 
-    original_bbox(SP_LPE_ITEM(item), false, true);
+    original_bbox(cast<SPLPEItem>(item), false, true);
     
     // place the 16 control points
     grid_point0[Geom::X] = boundingbox_X.min();

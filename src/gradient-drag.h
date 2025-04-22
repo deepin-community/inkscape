@@ -30,6 +30,7 @@
 
 #include "object/sp-gradient.h" // TODO refactor enums to external .h file
 #include "object/sp-mesh-array.h"
+#include "display/control/canvas-item-ptr.h"
 
 class SPKnot;
 
@@ -45,6 +46,7 @@ class SPStop;
 namespace Inkscape {
 class Selection;
 class CanvasItemCurve;
+struct KeyPressEvent;
 } // namespace Inkscape
 
 /**
@@ -125,7 +127,6 @@ struct GrDragger {
     void fireDraggables(bool write_repr, bool scale_radial = false, bool merging_focus = false);
 
 protected:
-    void updateControlSizesOverload(SPKnot * knot);
     void updateControlSizes();
 
 private:
@@ -170,6 +171,8 @@ public: // FIXME: make more of this private!
     void selectByStop(SPStop *stop,  bool add_to_selection = true, bool override = true);
     void selectRect(Geom::Rect const &r);
 
+    void addColorToDragger(GrDragger &dragger, const char *color);
+    void dropColorOnCorrespondingRegion(const char *color, Geom::Point p);
     bool dropColor(SPItem *item, gchar const *c, Geom::Point p);
 
     SPStop *addStopNearPoint(SPItem *item, Geom::Point mouse_p, double tolerance);
@@ -195,7 +198,16 @@ public: // FIXME: make more of this private!
     std::vector<double> vert_levels;
 
     std::vector<GrDragger *> draggers;
-    std::vector<Inkscape::CanvasItemCurve *> item_curves;
+
+    struct ItemCurve
+    {
+        SPItem *item;
+        CanvasItemPtr<Inkscape::CanvasItemCurve> curve;
+        bool is_fill = true; // Fill or stroke, used by meshes.
+        int corner0 = -1; // For meshes
+        int corner1 = -1; // For meshes
+    };
+    std::vector<ItemCurve> item_curves;
 
     void updateDraggers();
     void refreshDraggers();
@@ -208,7 +220,7 @@ public: // FIXME: make more of this private!
     void selected_move(double x, double y, bool write_repr = true, bool scale_radial = false);
     void selected_move_screen(double x, double y);
 
-    bool key_press_handler(GdkEvent *event);
+    bool key_press_handler(Inkscape::KeyPressEvent const &event);
 
     GrDragger *select_next();
     GrDragger *select_prev();

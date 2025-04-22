@@ -115,7 +115,7 @@ bool sp_file_save_dialog (Gtk::Window &parentWindow, SPDocument *doc, Inkscape::
 ## I M P O R T
 ######################*/
 
-void sp_import_document(SPDesktop *desktop, SPDocument *clipdoc, bool in_place);
+void sp_import_document(SPDesktop *desktop, SPDocument *clipdoc, bool in_place, bool on_page = false);
 
 /**
  * Displays a file selector dialog, to allow the
@@ -131,7 +131,7 @@ void file_import_pages(SPDocument *this_doc, SPDocument *that_doc);
 /**
  * Imports a resource
  */
-SPObject* file_import(SPDocument *in_doc, const Glib::ustring &uri,
+SPObject* file_import(SPDocument *in_doc, const std::string &path,
                  Inkscape::Extension::Extension *key);
 
 /*######################

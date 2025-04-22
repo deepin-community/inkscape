@@ -9,66 +9,64 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef INKSCAPE_UI_CURRENT_STYLE_H
-#define INKSCAPE_UI_CURRENT_STYLE_H
+#ifndef SEEN_INKSCAPE_UI_SELECTED_STYLE_H
+#define SEEN_INKSCAPE_UI_SELECTED_STYLE_H
 
+#include <memory>
+#include <vector>
+#include <glibmm/refptr.h>
 #include <gtkmm/box.h>
-#include <gtkmm/grid.h>
-
-#include <gtkmm/label.h>
-#include <gtkmm/eventbox.h>
 #include <gtkmm/enums.h>
-#include <gtkmm/menu.h>
-#include <gtkmm/menuitem.h>
-#include <gtkmm/adjustment.h>
-#include <gtkmm/radiobuttongroup.h>
-#include <gtkmm/radiomenuitem.h>
+#include <gtkmm/gesture.h> // Gtk::EventSequenceState
+#include <gtkmm/grid.h>
+#include <gtkmm/label.h>
+
+#include "helper/auto-connection.h"
+#include "rotateable.h"
+#include "ui/popup-menu.h"
 #include "ui/widget/spinbutton.h"
 
-#include <cstddef>
-#include <sigc++/sigc++.h>
-
-#include "rotateable.h"
-
-constexpr int SELECTED_STYLE_SB_WIDTH = 48;
-constexpr int SELECTED_STYLE_PLACE_WIDTH = 50;
-constexpr int SELECTED_STYLE_STROKE_WIDTH = 40;
-constexpr int SELECTED_STYLE_FLAG_WIDTH = 12;
-constexpr int SELECTED_STYLE_WIDTH = 250;
+namespace Gtk {
+class Adjustment;
+class GestureMultiPress;
+class RadioButton;
+} // namespace Gtk
 
 class SPDesktop;
 
 namespace Inkscape {
 
 namespace Util {
-    class Unit;
-}
+class Unit;
+} // namespace Util
 
-namespace UI {
-namespace Widget {
+namespace UI::Widget {
 
-enum {
+class PopoverMenu;
+class PopoverMenuItem;
+
+enum PaintType {
     SS_NA,
     SS_NONE,
     SS_UNSET,
+    SS_MANY,
     SS_PATTERN,
+    SS_HATCH,
     SS_LGRADIENT,
     SS_RGRADIENT,
-#ifdef WITH_MESH
     SS_MGRADIENT,
-#endif
-    SS_MANY,
-    SS_COLOR,
-    SS_HATCH
+    SS_COLOR
 };
 
-enum {
+enum FillOrStroke {
     SS_FILL,
     SS_STROKE
 };
 
+class ColorPreview;
 class GradientImage;
 class SelectedStyle;
+class SelectedStyleDropTracker;
 
 class RotateableSwatch : public Rotateable {
   public:
@@ -91,7 +89,7 @@ private:
 
     gchar const *undokey = "ssrot1";
 
-    bool cr_set = false;
+    int cursor_state = -1;
 };
 
 class RotateableStrokeWidth : public Rotateable {
@@ -119,9 +117,8 @@ private:
 class SelectedStyle : public Gtk::Box
 {
 public:
+    bool dragging;
     SelectedStyle(bool layout = true);
-
-    ~SelectedStyle() override;
 
     void setDesktop(SPDesktop *desktop);
     SPDesktop *getDesktop() {return _desktop;}
@@ -132,85 +129,37 @@ public:
 
     guint _mode[2];
 
-    double current_stroke_width;
-    Inkscape::Util::Unit const *_sw_unit; // points to object in UnitTable, do not delete
+    double current_stroke_width = 0.0;
+    Inkscape::Util::Unit const *_sw_unit = nullptr; // points to object in UnitTable, do not delete
 
 protected:
-    SPDesktop *_desktop;
+    SPDesktop *_desktop = nullptr;
 
-    Gtk::Grid _table;
+    // Widgets
+    Gtk::Grid  *grid;
 
-    Gtk::Label _fill_label;
-    Gtk::Label _stroke_label;
-    Gtk::Label _opacity_label;
+    Gtk::Label *label[2];    // 'Fill' and 'Stroke'
+    Gtk::Label *tag[2];      // 'a', 'm', or empty.
 
-    RotateableSwatch _fill_place;
-    RotateableSwatch _stroke_place;
+    std::unique_ptr<Gtk::Label> type_label[2]; // 'L', 'R', 'M', or empty.
+    std::unique_ptr<GradientImage> gradient_preview[2];
+    std::unique_ptr<ColorPreview> color_preview[2];
+    Gtk::Box   *type_box[2]; // Wraps one or two of: "type_label", "gradient_preview", "color_preview"
+    RotateableSwatch *swatch[2]; // Wraps "type_box".
 
-    Gtk::EventBox _fill_flag_place;
-    Gtk::EventBox _stroke_flag_place;
+    Gtk::Label *stroke_width; // Stroke width
+    RotateableStrokeWidth *stroke_width_rotateable;
 
-    Gtk::EventBox _opacity_place;
-    Glib::RefPtr<Gtk::Adjustment> _opacity_adjustment;
-    Inkscape::UI::Widget::SpinButton _opacity_sb;
-
-    Gtk::Label _na[2];
-    Glib::ustring __na[2];
-
-    Gtk::Label _none[2];
-    Glib::ustring __none[2];
-
-    Gtk::Label _pattern[2];
-    Glib::ustring __pattern[2];
-
-    Gtk::Label _hatch[2];
-    Glib::ustring __hatch[2];
-
-    Gtk::Label _lgradient[2];
-    Glib::ustring __lgradient[2];
-
-    GradientImage *_gradient_preview_l[2];
-    Gtk::Box _gradient_box_l[2];
-
-    Gtk::Label _rgradient[2];
-    Glib::ustring __rgradient[2];
-
-    GradientImage *_gradient_preview_r[2];
-    Gtk::Box _gradient_box_r[2];
-
-#ifdef WITH_MESH
-    Gtk::Label _mgradient[2];
-    Glib::ustring __mgradient[2];
-
-    GradientImage *_gradient_preview_m[2];
-    Gtk::Box _gradient_box_m[2];
-#endif
-
-    Gtk::Label _many[2];
-    Glib::ustring __many[2];
-
-    Gtk::Label _unset[2];
-    Glib::ustring __unset[2];
-
-    Gtk::Widget *_color_preview[2];
-    Glib::ustring __color[2];
-
-    Gtk::Label _averaged[2];
-    Glib::ustring __averaged[2];
-    Gtk::Label _multiple[2];
-    Glib::ustring __multiple[2];
-
-    Gtk::Box _fill;
-    Gtk::Box _stroke;
-    RotateableStrokeWidth _stroke_width_place;
-    Gtk::Label _stroke_width;
-    Gtk::Label _fill_empty_space;
+    Gtk::Button *opacity_btn;
+    Glib::RefPtr<Gtk::Adjustment> opacity_adjustment;
+    Inkscape::UI::Widget::SpinButton *opacity_sb;
 
     Glib::ustring _paintserver_id[2];
 
-    sigc::connection *selection_changed_connection;
-    sigc::connection *selection_modified_connection;
-    sigc::connection *subselection_changed_connection;
+    // Signals
+    auto_connection selection_changed_connection;
+    auto_connection selection_modified_connection;
+    auto_connection subselection_changed_connection;
 
     static void dragDataReceived( GtkWidget *widget,
                                   GdkDragContext *drag_context,
@@ -220,14 +169,21 @@ protected:
                                   guint event_time,
                                   gpointer user_data );
 
-    bool on_fill_click(GdkEventButton *event);
-    bool on_stroke_click(GdkEventButton *event);
-    bool on_opacity_click(GdkEventButton *event);
-    bool on_sw_click(GdkEventButton *event);
+    Gtk::EventSequenceState on_fill_click   (Gtk::GestureMultiPress const &click,
+                                             int n_press, double x, double y);
+    Gtk::EventSequenceState on_stroke_click (Gtk::GestureMultiPress const &click,
+                                             int n_press, double x, double y);
+    Gtk::EventSequenceState on_opacity_click(Gtk::GestureMultiPress const &click,
+                                             int n_press, double x, double y);
+    Gtk::EventSequenceState on_sw_click     (Gtk::GestureMultiPress const &click,
+                                             int n_press, double x, double y);
 
-    bool _opacity_blocked;
+    bool _opacity_blocked = false;
+
+    std::unique_ptr<UI::Widget::PopoverMenu> _popup_opacity;
+    void make_popup_opacity();
     void on_opacity_changed();
-    void on_opacity_menu(Gtk::Menu *menu);
+    bool on_opacity_popup(PopupMenuOptionalClick);
     void opacity_0();
     void opacity_025();
     void opacity_05();
@@ -258,37 +214,25 @@ protected:
     void on_fill_opaque();
     void on_stroke_opaque();
 
-    Gtk::Menu _popup[2];
-    Gtk::MenuItem _popup_edit[2];
-    Gtk::MenuItem _popup_lastused[2];
-    Gtk::MenuItem _popup_lastselected[2];
-    Gtk::MenuItem _popup_invert[2];
-    Gtk::MenuItem _popup_white[2];
-    Gtk::MenuItem _popup_black[2];
-    Gtk::MenuItem _popup_copy[2];
-    Gtk::MenuItem _popup_paste[2];
-    Gtk::MenuItem _popup_swap[2];
-    Gtk::MenuItem _popup_opaque[2];
-    Gtk::MenuItem _popup_unset[2];
-    Gtk::MenuItem _popup_remove[2];
+    std::unique_ptr<UI::Widget::PopoverMenu> _popup[2];
+    UI::Widget::PopoverMenuItem *_popup_copy[2]{};
+    void make_popup(FillOrStroke i);
 
-    Gtk::Menu _popup_sw;
-    Gtk::RadioButtonGroup _sw_group;
-    std::vector<Gtk::RadioMenuItem*> _unit_mis;
+    std::unique_ptr<UI::Widget::PopoverMenu> _popup_sw;
+    std::vector<Gtk::RadioButton *> _unit_mis;
+    void make_popup_units();
     void on_popup_units(Inkscape::Util::Unit const *u);
     void on_popup_preset(int i);
-    Gtk::MenuItem _popup_sw_remove;
 
-    void *_drop[2];
-    bool _dropEnabled[2];
+    std::unique_ptr<SelectedStyleDropTracker> drop[2];
+    bool dropEnabled[2] = {false, false};
 };
 
+} // namespace UI::Widget
 
-} // namespace Widget
-} // namespace UI
 } // namespace Inkscape
 
-#endif // INKSCAPE_UI_WIDGET_BUTTON_H
+#endif // SEEN_INKSCAPE_UI_SELECTED_STYLE_H
 
 /*
   Local Variables:

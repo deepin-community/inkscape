@@ -11,12 +11,10 @@
 
 #include "ui/widget/iconrenderer.h"
 
-#include "ui/icon-loader.h"
-#include "ui/icon-names.h"
+#include <utility>
+#include <sigc++/functors/mem_fun.h>
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 IconRenderer::IconRenderer() :
     Glib::ObjectBase(typeid(IconRenderer)),
@@ -24,7 +22,10 @@ IconRenderer::IconRenderer() :
     _property_icon(*this, "icon", 0)
 {
     property_mode() = Gtk::CELL_RENDERER_MODE_ACTIVATABLE;
-    set_pixbuf();
+    property_stock_size().set_value(Gtk::ICON_SIZE_BUTTON);
+
+    set_icon_name();
+    property_icon().signal_changed().connect(sigc::mem_fun(*this, &IconRenderer::set_icon_name));
 }
 
 /*
@@ -35,9 +36,9 @@ IconRenderer::type_signal_activated IconRenderer::signal_activated()
     return m_signal_activated;
 }
 
-void IconRenderer::get_preferred_height_vfunc(Gtk::Widget& widget,
-                                              int& min_h,
-                                              int& nat_h) const
+void IconRenderer::get_preferred_height_vfunc(Gtk::Widget &widget,
+                                              int &min_h,
+                                              int &nat_h) const
 {
     Gtk::CellRendererPixbuf::get_preferred_height_vfunc(widget, min_h, nat_h);
 
@@ -50,9 +51,9 @@ void IconRenderer::get_preferred_height_vfunc(Gtk::Widget& widget,
     }
 }
 
-void IconRenderer::get_preferred_width_vfunc(Gtk::Widget& widget,
-                                             int& min_w,
-                                             int& nat_w) const
+void IconRenderer::get_preferred_width_vfunc(Gtk::Widget &widget,
+                                             int &min_w,
+                                             int &nat_w) const
 {
     Gtk::CellRendererPixbuf::get_preferred_width_vfunc(widget, min_w, nat_w);
 
@@ -65,23 +66,12 @@ void IconRenderer::get_preferred_width_vfunc(Gtk::Widget& widget,
     }
 }
 
-void IconRenderer::render_vfunc( const Cairo::RefPtr<Cairo::Context>& cr,
-                                 Gtk::Widget& widget,
-                                 const Gdk::Rectangle& background_area,
-                                 const Gdk::Rectangle& cell_area,
-                                 Gtk::CellRendererState flags )
-{
-    set_pixbuf();
-    
-    Gtk::CellRendererPixbuf::render_vfunc( cr, widget, background_area, cell_area, flags );
-}
-
-bool IconRenderer::activate_vfunc(GdkEvent* /*event*/,
-                               Gtk::Widget& /*widget*/,
-                               const Glib::ustring& path,
-                               const Gdk::Rectangle& /*background_area*/,
-                               const Gdk::Rectangle& /*cell_area*/,
-                               Gtk::CellRendererState /*flags*/)
+bool IconRenderer::activate_vfunc(GdkEvent * /*event*/,
+                                  Gtk::Widget &/*widget*/,
+                                  const Glib::ustring &path,
+                                  const Gdk::Rectangle &/*background_area*/,
+                                  const Gdk::Rectangle &/*cell_area*/,
+                                  Gtk::CellRendererState /*flags*/)
 {
     m_signal_activated.emit(path);
     return true;
@@ -89,23 +79,25 @@ bool IconRenderer::activate_vfunc(GdkEvent* /*event*/,
 
 void IconRenderer::add_icon(Glib::ustring name)
 {
-    _icons.push_back(sp_get_icon_pixbuf(name.c_str(), GTK_ICON_SIZE_BUTTON));
+    // If we add name for current index (especially 0), ensure we set :icon-name
+    if (property_icon().get_value() == _icons.size()) {
+        property_icon_name().set_value(name);
+    }
+
+    _icons.push_back(std::move(name));
 }
 
-void IconRenderer::set_pixbuf()
+void IconRenderer::set_icon_name()
 {
     int icon_index = property_icon().get_value();
     if(icon_index >= 0 && icon_index < _icons.size()) {
-        property_pixbuf() = _icons[icon_index];
+        property_icon_name().set_value(_icons[icon_index]);
     } else {
-        property_pixbuf() = sp_get_icon_pixbuf("image-missing", GTK_ICON_SIZE_BUTTON);
+        property_icon_name().set_value("image-missing");
     }
 }
 
-
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 /*
   Local Variables:

@@ -16,14 +16,15 @@
 
 #include "knot-holder.h"
 
+#include <glibmm/i18n.h>
+
 #include "desktop.h"
 #include "document-undo.h"
-#include "document.h"
 #include "knot-holder-entity.h"
 #include "knot.h"
+#include "style.h"
 
-#include "live_effects/effect.h"
-#include "live_effects/lpeobject.h"
+#include "display/control/snap-indicator.h"
 
 #include "object/box3d.h"
 #include "object/sp-ellipse.h"
@@ -35,7 +36,7 @@
 #include "object/sp-spiral.h"
 #include "object/sp-star.h"
 #include "object/sp-marker.h"
-#include "style.h"
+#include "object/filters/gaussian-blur.h"
 
 #include "ui/icon-names.h"
 #include "ui/shape-editor.h"
@@ -45,14 +46,8 @@
 #include "ui/tools/spiral-tool.h"
 #include "ui/tools/tweak-tool.h"
 
-#include "display/control/snap-indicator.h"
-
-// TODO due to internal breakage in glibmm headers, this must be last:
-#include <glibmm/i18n.h>
 
 using Inkscape::DocumentUndo;
-
-class SPDesktop;
 
 KnotHolder::KnotHolder(SPDesktop *desktop, SPItem *item, SPKnotHolderReleasedFunc relhandler) :
     desktop(desktop),
@@ -66,7 +61,7 @@ KnotHolder::KnotHolder(SPDesktop *desktop, SPItem *item, SPKnotHolderReleasedFun
     _edit_transform(Geom::identity())
 {
     if (!desktop || !item) {
-        g_print ("Error! Throw an exception, please!\n");
+        g_warning ("Error! Throw an exception, please!");
     }
 
     sp_object_ref(item);
@@ -74,7 +69,13 @@ KnotHolder::KnotHolder(SPDesktop *desktop, SPItem *item, SPKnotHolderReleasedFun
 
 KnotHolder::~KnotHolder() {
     sp_object_unref(item);
+    clear();
+}
 
+// this allow clear knothoolder before a destruction
+void
+KnotHolder::clear()
+{
     for (auto & i : entity) {
         delete i;
     }
@@ -162,7 +163,7 @@ KnotHolder::knot_clicked_handler(SPKnot *knot, guint state)
     }
 
     {
-        SPShape *savedShape = dynamic_cast<SPShape *>(saved_item);
+        auto savedShape = cast<SPShape>(saved_item);
         if (savedShape) {
             savedShape->set_shape();
         }
@@ -173,20 +174,20 @@ KnotHolder::knot_clicked_handler(SPKnot *knot, guint state)
     Glib::ustring icon_name;
 
     // TODO extract duplicated blocks;
-    if (dynamic_cast<SPRect *>(saved_item)) {
+    if (is<SPRect>(saved_item)) {
         icon_name = INKSCAPE_ICON("draw-rectangle");
-    } else if (dynamic_cast<SPBox3D *>(saved_item)) {
+    } else if (is<SPBox3D>(saved_item)) {
         icon_name = INKSCAPE_ICON("draw-cuboid");
-    } else if (dynamic_cast<SPGenericEllipse *>(saved_item)) {
+    } else if (is<SPGenericEllipse>(saved_item)) {
         icon_name = INKSCAPE_ICON("draw-ellipse");
-    } else if (dynamic_cast<SPStar *>(saved_item)) {
+    } else if (is<SPStar>(saved_item)) {
         icon_name = INKSCAPE_ICON("draw-polygon-star");
-    } else if (dynamic_cast<SPSpiral *>(saved_item)) {
+    } else if (is<SPSpiral>(saved_item)) {
         icon_name = INKSCAPE_ICON("draw-spiral");
-    } else if (dynamic_cast<SPMarker *>(saved_item)) {
+    } else if (is<SPMarker>(saved_item)) {
         icon_name = INKSCAPE_ICON("tool-pointer");
     } else {
-        SPOffset *offset = dynamic_cast<SPOffset *>(saved_item);
+        auto offset = cast<SPOffset>(saved_item);
         if (offset) {
             if (offset->sourceHref) {
                 icon_name = INKSCAPE_ICON("path-offset-linked");
@@ -198,11 +199,11 @@ KnotHolder::knot_clicked_handler(SPKnot *knot, guint state)
 
     // for drag, this is done by ungrabbed_handler, but for click we must do it here
 
-    if (saved_item) { //increasingly aggressive sanity checks
-       if (saved_item->document) {
-           DocumentUndo::done(saved_item->document, _("Change handle"), icon_name);
-       }
-    } // else { abort(); }
+    if (saved_item && saved_item->document) { // increasingly aggressive sanity checks
+       DocumentUndo::done(saved_item->document, _("Change handle"), icon_name);
+    } else {
+        std::terminate();
+    }
 }
 
 void
@@ -218,7 +219,7 @@ KnotHolder::transform_selected(Geom::Affine transform){
 
 void
 KnotHolder::unselect_knots(){
-    Inkscape::UI::Tools::NodeTool *nt = dynamic_cast<Inkscape::UI::Tools::NodeTool*>(desktop->event_context);
+    Inkscape::UI::Tools::NodeTool *nt = dynamic_cast<Inkscape::UI::Tools::NodeTool*>(desktop->getTool());
     if (nt) {
         for (auto &_shape_editor : nt->_shape_editors) {
             Inkscape::UI::ShapeEditor *shape_editor = _shape_editor.second.get();
@@ -236,11 +237,26 @@ KnotHolder::unselect_knots(){
     }
 }
 
+/** Notifies an entity that its knot has just been grabbed. */
+void KnotHolder::knot_grabbed_handler(SPKnot *knot, unsigned state)
+{
+    auto grab_entity = std::find_if(entity.begin(), entity.end(),
+                                    [=](KnotHolderEntity *khe) -> bool { return khe->knot == knot; });
+    if (grab_entity == entity.end()) {
+        return;
+    }
+    auto const item_origin = (*grab_entity)->knot->drag_origin * item->dt2i_affine()
+                             * _edit_transform.inverse();
+    (*grab_entity)->knot_grabbed(item_origin, state);
+}
+
 void
 KnotHolder::knot_moved_handler(SPKnot *knot, Geom::Point const &p, guint state)
 {
-    if (this->dragging == false) {
-    	this->dragging = true;
+    if (!dragging) {
+        // The knot has just been grabbed
+        knot_grabbed_handler(knot, state);
+        dragging = true;
     }
 
     // this was a local change and the knotholder does not need to be recreated:
@@ -254,7 +270,7 @@ KnotHolder::knot_moved_handler(SPKnot *knot, Geom::Point const &p, guint state)
         }
     }
 
-    SPShape *shape = dynamic_cast<SPShape *>(item);
+    auto shape = cast<SPShape>(item);
     if (shape) {
         shape->set_shape();
     }
@@ -266,7 +282,7 @@ void
 KnotHolder::knot_ungrabbed_handler(SPKnot *knot, guint state)
 {
     this->dragging = false;
-    desktop->snapindicator->remove_snaptarget();
+    desktop->getSnapIndicator()->remove_snaptarget();
 
     if (this->released) {
         this->released(this->item);
@@ -279,6 +295,9 @@ KnotHolder::knot_ungrabbed_handler(SPKnot *knot, guint state)
             for(auto e : this->entity) {
                 if (e->knot == knot) {
                     e->knot_ungrabbed(e->knot->position(), e->knot->drag_origin * item->i2dt_affine().inverse() * _edit_transform.inverse(), state);
+                    if (e->knot->is_lpe) {
+                        return;
+                    }
                     break;
                 }
             }
@@ -292,42 +311,28 @@ KnotHolder::knot_ungrabbed_handler(SPKnot *knot, guint state)
         // (such as object).
         object->updateRepr();
 
-        /* do cleanup tasks (e.g., for LPE items write the parameter values
-         * that were changed by dragging the handle to SVG)
-         */
-        SPLPEItem *lpeItem = dynamic_cast<SPLPEItem *>(object);
-        if (lpeItem) {
-            // This writes all parameters to SVG. Is this sufficiently efficient or should we only
-            // write the ones that were changed?
-            Inkscape::LivePathEffect::Effect *lpe = lpeItem->getCurrentLPE();
-            if (lpe) {
-                LivePathEffectObject *lpeobj = lpe->getLPEObj();
-                lpeobj->updateRepr();
-            }
-        }
 
         SPFilter *filter = (object->style) ? object->style->getFilter() : nullptr;
         if (filter) {
             filter->updateRepr();
         }
-
         Glib::ustring icon_name;
 
         // TODO extract duplicated blocks;
-        if (dynamic_cast<SPRect *>(object)) {
+        if (is<SPRect>(object)) {
             icon_name = INKSCAPE_ICON("draw-rectangle");
-        } else if (dynamic_cast<SPBox3D *>(object)) {
+        } else if (is<SPBox3D>(object)) {
             icon_name = INKSCAPE_ICON("draw-cuboid");
-        } else if (dynamic_cast<SPGenericEllipse *>(object)) {
+        } else if (is<SPGenericEllipse>(object)) {
             icon_name = INKSCAPE_ICON("draw-ellipse");
-        } else if (dynamic_cast<SPStar *>(object)) {
+        } else if (is<SPStar>(object)) {
             icon_name = INKSCAPE_ICON("draw-polygon-star");
-        } else if (dynamic_cast<SPSpiral *>(object)) {
+        } else if (is<SPSpiral>(object)) {
             icon_name = INKSCAPE_ICON("draw-spiral");
-        } else if (dynamic_cast<SPMarker *>(object)) {
+        } else if (is<SPMarker>(object)) {
             icon_name = INKSCAPE_ICON("tool-pointer");
         } else {
-            SPOffset *offset = dynamic_cast<SPOffset *>(object);
+            auto offset = cast<SPOffset>(object);
             if (offset) {
                 if (offset->sourceHref) {
                     icon_name = INKSCAPE_ICON("path-offset-linked");
@@ -346,13 +351,27 @@ void KnotHolder::add(KnotHolderEntity *e)
     entity.push_back(e);
 }
 
+void KnotHolder::remove(KnotHolderEntity *e)
+{
+    std::size_t counter = -1;
+    for (auto & i : entity) {
+        ++ counter;
+        if (e == i) {
+            entity.remove_if([i=&i](auto& x){return &x==i;});
+            delete i;
+            break;
+        }
+    }
+    entity.clear(); // is this necessary?
+}
+
 void KnotHolder::add_pattern_knotholder()
 {
-    if ((item->style->fill.isPaintserver()) && dynamic_cast<SPPattern *>(item->style->getFillPaintServer())) {
-        PatternKnotHolderEntityXY *entity_xy = new PatternKnotHolderEntityXY(true);
-        PatternKnotHolderEntityAngle *entity_angle = new PatternKnotHolderEntityAngle(true);
-        PatternKnotHolderEntityScale *entity_scale = new PatternKnotHolderEntityScale(true);
-        entity_xy->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_POINT, "Pattern:Fill:xy",
+    if (is<SPPattern>(item->style->getFillPaintServer())) {
+        auto entity_xy = new PatternKnotHolderEntityXY(true);
+        auto entity_angle = new PatternKnotHolderEntityAngle(true);
+        auto entity_scale = new PatternKnotHolderEntityScale(true);
+        entity_xy->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_SIZER, "Pattern:Fill:xy",
                           // TRANSLATORS: This refers to the pattern that's inside the object
                           _("<b>Move</b> the pattern fill inside the object"));
 
@@ -367,11 +386,11 @@ void KnotHolder::add_pattern_knotholder()
         entity.push_back(entity_scale);
     }
 
-    if ((item->style->stroke.isPaintserver()) && dynamic_cast<SPPattern *>(item->style->getStrokePaintServer())) {
-        PatternKnotHolderEntityXY *entity_xy = new PatternKnotHolderEntityXY(false);
-        PatternKnotHolderEntityAngle *entity_angle = new PatternKnotHolderEntityAngle(false);
-        PatternKnotHolderEntityScale *entity_scale = new PatternKnotHolderEntityScale(false);
-        entity_xy->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_POINT, "Pattern:Stroke:xy",
+    if (is<SPPattern>(item->style->getStrokePaintServer())) {
+        auto entity_xy = new PatternKnotHolderEntityXY(false);
+        auto entity_angle = new PatternKnotHolderEntityAngle(false);
+        auto entity_scale = new PatternKnotHolderEntityScale(false);
+        entity_xy->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_MARKER, "Pattern:Stroke:xy",
                           // TRANSLATORS: This refers to the pattern that's inside the object
                           _("<b>Move</b> the stroke's pattern inside the object"));
 
@@ -385,15 +404,18 @@ void KnotHolder::add_pattern_knotholder()
         entity.push_back(entity_angle);
         entity.push_back(entity_scale);
     }
+
+    // watch patterns and update knots when they change
+    install_modification_watch();
 }
 
 void KnotHolder::add_hatch_knotholder()
 {
-    if ((item->style->fill.isPaintserver()) && dynamic_cast<SPHatch *>(item->style->getFillPaintServer())) {
+    if ((item->style->fill.isPaintserver()) && cast<SPHatch>(item->style->getFillPaintServer())) {
         HatchKnotHolderEntityXY *entity_xy = new HatchKnotHolderEntityXY(true);
         HatchKnotHolderEntityAngle *entity_angle = new HatchKnotHolderEntityAngle(true);
         HatchKnotHolderEntityScale *entity_scale = new HatchKnotHolderEntityScale(true);
-        entity_xy->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_POINT, "Hatch:Fill:xy",
+        entity_xy->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_MARKER, "Hatch:Fill:xy",
                           // TRANSLATORS: This refers to the hatch that's inside the object
                           _("<b>Move</b> the hatch fill inside the object"));
 
@@ -408,11 +430,11 @@ void KnotHolder::add_hatch_knotholder()
         entity.push_back(entity_scale);
     }
 
-    if ((item->style->stroke.isPaintserver()) && dynamic_cast<SPHatch *>(item->style->getStrokePaintServer())) {
+    if ((item->style->stroke.isPaintserver()) && cast<SPHatch>(item->style->getStrokePaintServer())) {
         HatchKnotHolderEntityXY *entity_xy = new HatchKnotHolderEntityXY(false);
         HatchKnotHolderEntityAngle *entity_angle = new HatchKnotHolderEntityAngle(false);
         HatchKnotHolderEntityScale *entity_scale = new HatchKnotHolderEntityScale(false);
-        entity_xy->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_POINT, "Hatch:Stroke:xy",
+        entity_xy->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_MARKER, "Hatch:Stroke:xy",
                           // TRANSLATORS: This refers to the pattern that's inside the object
                           _("<b>Move</b> the hatch stroke inside the object"));
 
@@ -429,18 +451,67 @@ void KnotHolder::add_hatch_knotholder()
 }
 
 void KnotHolder::add_filter_knotholder() {
-    if (!item->style->filter.set || !item->style->getFilter() || item->style->getFilter()->auto_region) {
-        return;
+    if (auto filter = item->style->getFilter()) {
+        if (!filter->auto_region) {
+            auto entity_tl = new FilterKnotHolderEntity(true);
+            auto entity_br = new FilterKnotHolderEntity(false);
+            entity_tl->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_MARKER, "Filter:TopLeft",
+                              _("<b>Resize</b> the filter effect region"));
+            entity_br->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_MARKER, "Filter:BottomRight",
+                              _("<b>Resize</b> the filter effect region"));
+            entity.push_back(entity_tl);
+            entity.push_back(entity_br);
+        }
     }
 
-    FilterKnotHolderEntity *entity_tl = new FilterKnotHolderEntity(true);
-    FilterKnotHolderEntity *entity_br = new FilterKnotHolderEntity(false);
-    entity_tl->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_POINT, "Filter:TopLeft",
-                      _("<b>Resize</b> the filter effect region"));
-    entity_br->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_POINT, "Filter:BottomRight",
-                      _("<b>Resize</b> the filter effect region"));
-    entity.push_back(entity_tl);
-    entity.push_back(entity_br);
+    // always install blur nodes, they default to disabled.
+    auto entity_x = new BlurKnotHolderEntity(Geom::X);
+    auto entity_y = new BlurKnotHolderEntity(Geom::Y);
+    entity_x->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_ROTATE, "Filter:BlurX",
+                      _("<b>Drag</b> to <b>adjust</b> blur in x direction; <b>Ctrl</b>+<b>Drag</b> makes x equal to y; <b>Shift</b>+<b>Ctrl</b>+<b>Drag</b> scales blur proportionately "));
+    entity_y->create(desktop, item, this, Inkscape::CANVAS_ITEM_CTRL_TYPE_ROTATE, "Filter:BlurY",
+                      _("<b>Drag</b> to <b>adjust</b> blur in y direction; <b>Ctrl</b>+<b>Drag</b> makes y equal to x; <b>Shift</b>+<b>Ctrl</b>+<b>Drag</b> scales blur proportionately "));
+    entity.push_back(entity_x);
+    entity.push_back(entity_y);
+}
+
+/**
+ * When editing an object, this extra information tells out knots
+ * where the user has clicked on the item.
+ */
+bool KnotHolder::set_item_clickpos(Geom::Point loc)
+{
+    bool ret = false;
+    for (auto i : entity) {
+        ret = i->set_item_clickpos(loc) || ret;
+    }
+    return ret;
+}
+
+/**
+ * When object being edited has some attributes changed (fill, stroke)
+ * update what objects we watch
+ */
+void KnotHolder::install_modification_watch() {
+    g_assert(item); 
+
+    if (auto pattern = cast<SPPattern>(item->style->getFillPaintServer())) {
+        _watch_fill = pattern->connectModified([this] (SPObject *, unsigned) {
+            update_knots();
+        });
+    }
+    else {
+        _watch_fill.disconnect();
+    }
+
+    if (auto pattern = cast<SPPattern>(item->style->getStrokePaintServer())) {
+        _watch_stroke = pattern->connectModified([this] (SPObject *, unsigned) {
+            update_knots();
+        });
+    }
+    else {
+        _watch_stroke.disconnect();
+    }
 }
 
 /*

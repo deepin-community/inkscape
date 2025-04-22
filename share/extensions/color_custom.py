@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Custom color function per channel of selected objects"""
 
 import ast
@@ -29,8 +29,8 @@ def eval_expr(expr, namespace):
 
 
 def _eval(node, namespace):
-    if isinstance(node, ast.Num):  # <number>
-        return node.n
+    if isinstance(node, ast.Constant):  # <number>
+        return node.value
     if isinstance(node, ast.Name):  # <variable> (must be in namespace)
         return namespace[node.id]
     if isinstance(node, ast.BinOp):  # <left> <operator> <right>

@@ -2,36 +2,36 @@
 /**
  * A class to represent a control node.
  */
-
 /*
- * Author:
+ * Authors:
  *   Tavmjong Bah
+ *   Sanidhya Singh
  *
  * Copyright (C) 2020 Tavmjong Bah
- *
- * Rewrite of SPCtrl
  *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <2geom/transforms.h>
-
 #include "canvas-item-ctrl.h"
 
-#include "preferences.h"         // Default size. 
-#include "display/cairo-utils.h" // argb32_from_rgba()
+#include <2geom/transforms.h>
+#include <algorithm>
+#include <array>
+#include <cairomm/context.h>
+#include <cmath>
+#include <iostream>
 
+#include "ctrl-handle-rendering.h"
+#include "preferences.h" // Default size.
 #include "ui/widget/canvas.h"
+
+// Render handles at different sizes and save them to "handles.png".
+constexpr bool DUMP_HANDLES = false;
 
 namespace Inkscape {
 
-CanvasItemCtrl::~CanvasItemCtrl()
-{
-    delete[] _cache;
-}
-
 /**
- * Create an null control node.
+ * Create a null control node.
  */
 CanvasItemCtrl::CanvasItemCtrl(CanvasItemGroup *group)
     : CanvasItem(group)
@@ -41,48 +41,100 @@ CanvasItemCtrl::CanvasItemCtrl(CanvasItemGroup *group)
 }
 
 /**
- * Create a control ctrl. Shape auto-set by type.
+ * Create a control with type.
  */
-CanvasItemCtrl::CanvasItemCtrl(CanvasItemGroup *group, Inkscape::CanvasItemCtrlType type)
+CanvasItemCtrl::CanvasItemCtrl(CanvasItemGroup *group, CanvasItemCtrlType type)
     : CanvasItem(group)
-    , _type(type)
+    , _handle{.type = type}
 {
-    _name = "CanvasItemCtrl:Type_" + std::to_string(_type);
+    _name = "CanvasItemCtrl:Type_" + std::to_string(_handle.type);
     _pickable = true; // Everybody gets events from this class!
-
-    // Use _type to set default values:
-    set_shape_default();
     set_size_default();
+
+    // for debugging
+    _dump();
+}
+
+void CanvasItemCtrl::_dump()
+{
+    // Ensure dead code is not emitted if flag is off.
+    if (!DUMP_HANDLES) {
+        return;
+    }
+
+    // Note: Atomicity not required.
+    static bool first_run = true;
+    if (!first_run) return;
+    first_run = false;
+
+    constexpr int step = 40;
+    constexpr int h = 15;
+    constexpr auto types = std::to_array({
+        CANVAS_ITEM_CTRL_TYPE_ADJ_HANDLE, CANVAS_ITEM_CTRL_TYPE_ADJ_SKEW, CANVAS_ITEM_CTRL_TYPE_ADJ_ROTATE,
+        CANVAS_ITEM_CTRL_TYPE_ADJ_CENTER, CANVAS_ITEM_CTRL_TYPE_ADJ_SALIGN, CANVAS_ITEM_CTRL_TYPE_ADJ_CALIGN,
+        CANVAS_ITEM_CTRL_TYPE_ADJ_MALIGN,
+        CANVAS_ITEM_CTRL_TYPE_POINT, // dot-like handle, indicator
+        CANVAS_ITEM_CTRL_TYPE_CENTER,
+        CANVAS_ITEM_CTRL_TYPE_MARKER,
+        CANVAS_ITEM_CTRL_TYPE_NODE_AUTO, CANVAS_ITEM_CTRL_TYPE_NODE_CUSP,
+        CANVAS_ITEM_CTRL_TYPE_NODE_SMOOTH,
+        CANVAS_ITEM_CTRL_TYPE_GUIDE_HANDLE,
+        CANVAS_ITEM_CTRL_TYPE_POINTER, // pointy, triangular handle
+    });
+    // device scale to use; 1 - low res, 2 - high res
+    constexpr int scale = 1;
+
+    auto surface = Cairo::ImageSurface::create(Cairo::FORMAT_ARGB32, (types.size() + 1) * step * scale, (h + 1) * step * scale);
+    cairo_surface_set_device_scale(surface->cobj(), 1, 1);
+    auto buf = CanvasItemBuffer{
+        .rect = Geom::IntRect(0, 0, surface->get_width(), surface->get_height()),
+        .device_scale = scale,
+        .cr = Cairo::Context::create(surface),
+        .outline_pass = false
+    };
+
+    auto ctx = buf.cr;
+    ctx->set_source_rgb(1, 0.9, 0.9);
+    ctx->paint();
+    ctx->set_source_rgba(0, 0, 1, 0.2);
+    ctx->set_line_width(scale);
+    constexpr double pix = scale & 1 ? 0.5 : 0;
+    for (int size = 1; size <= h; ++size) {
+        double y = size * step * scale + pix;
+        ctx->move_to(0, y);
+        ctx->line_to(surface->get_width(), y);
+        ctx->stroke();
+    }
+    for (int i = 1; i <= types.size(); i++) {
+        double x = i * step * scale + pix;
+        ctx->move_to(x, 0);
+        ctx->line_to(x, surface->get_height());
+        ctx->stroke();
+    }
+
+    cairo_surface_set_device_scale(surface->cobj(), scale, scale);
+
+    set_hover();
+    for (int size = 1; size <= h; ++size) {
+        int i = 1;
+        for (auto type : types) {
+            set_type(type);
+            set_size_via_index(size);
+            _position = Geom::IntPoint{i++, size} * step;
+            _update(false);
+            _render(buf);
+        }
+    }
+
+    cairo_surface_set_device_scale(surface->cobj(), scale, scale);
+    surface->write_to_png("handles.png");
 }
 
 /**
  * Create a control ctrl. Point is in document coordinates.
  */
-CanvasItemCtrl::CanvasItemCtrl(CanvasItemGroup *group, Inkscape::CanvasItemCtrlType type, Geom::Point const &p)
+CanvasItemCtrl::CanvasItemCtrl(CanvasItemGroup *group, CanvasItemCtrlType type, Geom::Point const &p)
     : CanvasItemCtrl(group, type)
-{
-    _position = p;
-}
-
-
-/**
- * Create a control ctrl.
- */
-CanvasItemCtrl::CanvasItemCtrl(CanvasItemGroup *group, Inkscape::CanvasItemCtrlShape shape)
-    : CanvasItem(group)
-    , _shape(shape)
-    , _type(CANVAS_ITEM_CTRL_TYPE_DEFAULT)
-{
-    _name = "CanvasItemCtrl:Shape_" + std::to_string(_shape);
-    _pickable = true; // Everybody gets events from this class!
-}
-
-
-/**
- * Create a control ctrl. Point is in document coordinates.
- */
-CanvasItemCtrl::CanvasItemCtrl(CanvasItemGroup *group, Inkscape::CanvasItemCtrlShape shape, Geom::Point const &p)
-    : CanvasItemCtrl(group, shape)
 {
     _position = p;
     request_update();
@@ -93,21 +145,20 @@ CanvasItemCtrl::CanvasItemCtrl(CanvasItemGroup *group, Inkscape::CanvasItemCtrlS
  */
 void CanvasItemCtrl::set_position(Geom::Point const &position)
 {
-    // std::cout << "CanvasItemCtrl::set_ctrl: " << _name << ": " << position << std::endl;
-    if (_position != position) {
+    defer([=, this] {
+        if (_position == position) return;
         _position = position;
         request_update();
-    }
+    });
 }
 
 /**
  * Returns distance between point in canvas units and position of ctrl.
  */
-double CanvasItemCtrl::closest_distance_to(Geom::Point const &p)
+double CanvasItemCtrl::closest_distance_to(Geom::Point const &p) const
 {
     // TODO: Different criteria for different shapes.
-    Geom::Point position = _position * _affine;
-    return Geom::distance(p, position);
+    return Geom::distance(p, _position * affine());
 }
 
 /**
@@ -118,1093 +169,384 @@ double CanvasItemCtrl::closest_distance_to(Geom::Point const &p)
 bool CanvasItemCtrl::contains(Geom::Point const &p, double tolerance)
 {
     // TODO: Different criteria for different shapes.
+    if (!_bounds) {
+        return false;
+    }
     if (tolerance == 0) {
-        return _bounds.interiorContains(p);
+        return _bounds->interiorContains(p);
     } else {
         return closest_distance_to(p) <= tolerance;
     }
 }
 
-/**
- * Update and redraw control ctrl.
- */
-void CanvasItemCtrl::update(Geom::Affine const &affine)
+void CanvasItemCtrl::set_fill(uint32_t fill)
 {
-    if (_affine == affine && !_need_update) {
-        // Nothing to do.
-        return;
-    }
-
-    // Queue redraw of old area (erase previous content).
-    request_redraw();
-
-    // Get new bounds
-    _affine = affine;
-
-    // We must be pixel aligned, width and height are always odd.
-    _bounds = Geom::Rect::from_xywh(-(_width/2.0 - 0.5), -(_height/2.0 - 0.5), _width, _height);
-
-    // Adjust for anchor
-    int w_half = _width/2;
-    int h_half = _height/2;
-    int dx = 0;
-    int dy = 0;
-
-    switch (_shape) {
-        case CANVAS_ITEM_CTRL_SHAPE_DARROW:
-        case CANVAS_ITEM_CTRL_SHAPE_SARROW:
-        case CANVAS_ITEM_CTRL_SHAPE_CARROW:
-        case CANVAS_ITEM_CTRL_SHAPE_SALIGN:
-        case CANVAS_ITEM_CTRL_SHAPE_CALIGN:
-        {
-
-            _angle = _anchor * M_PI/4.0 + std::atan2(_affine[1], _affine[0]);
-
-            double half = _width/2.0;
-
-            dx = - (half + 2) * cos(_angle); // Add a bit to prevent tip from overlapping due to rounding errors.
-            dy = - (half + 2) * sin(_angle);
-
-            switch (_shape) {
-
-                case CANVAS_ITEM_CTRL_SHAPE_CARROW:
-                    _angle += 5 * M_PI/4.0;
-                    break;
-
-                case CANVAS_ITEM_CTRL_SHAPE_SARROW:
-                    _angle += M_PI/2.0;
-                    break;
-
-                case CANVAS_ITEM_CTRL_SHAPE_SALIGN:
-                    dx = - (half/2 + 2) * cos(_angle);
-                    dy = - (half/2 + 2) * sin(_angle);
-                    _angle -= M_PI/2.0;
-                    break;
-
-                case CANVAS_ITEM_CTRL_SHAPE_CALIGN:
-                    _angle -= M_PI/4.0;
-                    dx = (half/2 + 2) * ( sin(_angle) - cos(_angle));
-                    dy = (half/2 + 2) * (-sin(_angle) - cos(_angle));
-                    break;
-
-                default:
-                    break;
-            }
-
-            _built = false; // Angle may have change, must rebuild!
-
-            break;
-        }
-
-        case CANVAS_ITEM_CTRL_SHAPE_PIVOT:
-        case CANVAS_ITEM_CTRL_SHAPE_MALIGN:
-
-            _angle = std::atan2(_affine[1], _affine[0]);
-
-            _built = false; // Angle may have change, must rebuild!
-
-            break;
-
-        default:
-
-            switch (_anchor) {
-                case SP_ANCHOR_N:
-                case SP_ANCHOR_CENTER:
-                case SP_ANCHOR_S:
-                    break;
-
-                case SP_ANCHOR_NW:
-                case SP_ANCHOR_W:
-                case SP_ANCHOR_SW:
-                    dx = w_half;
-                    break;
-
-                case SP_ANCHOR_NE:
-                case SP_ANCHOR_E:
-                case SP_ANCHOR_SE:
-                    dx = -w_half;
-                    break;
-            }
-
-            switch (_anchor) {
-                case SP_ANCHOR_W:
-                case SP_ANCHOR_CENTER:
-                case SP_ANCHOR_E:
-                    break;
-
-                case SP_ANCHOR_NW:
-                case SP_ANCHOR_N:
-                case SP_ANCHOR_NE:
-                    dy = h_half;
-                    break;
-
-                case SP_ANCHOR_SW:
-                case SP_ANCHOR_S:
-                case SP_ANCHOR_SE:
-                    dy = -h_half;
-                    break;
-            }
-            break;
-    }
-
-    _bounds *= Geom::Translate(Geom::IntPoint(dx, dy));
-
-    // Position must also be integer.
-    Geom::Point position = _position * _affine;
-    Geom::IntPoint iposition = position.floor();
-
-    _bounds *= Geom::Translate(iposition);
-
-    // Queue redraw of new area
-    request_redraw();
-
-    _need_update = false;
-}
-
-
-static inline guint32 compose_xor(guint32 bg, guint32 fg, guint32 a)
-{
-    guint32 c = bg * (255-a) + (((bg ^ ~fg) + (bg >> 2) - (bg > 127 ? 63 : 0)) & 255) * a;
-    return (c + 127) / 255;
-}
-
-/**
- * Render ctrl to screen via Cairo.
- */
-void CanvasItemCtrl::render(Inkscape::CanvasItemBuffer *buf)
-{
-    if (!buf) {
-        std::cerr << "CanvasItemCtrl::Render: No buffer!" << std::endl;
-         return;
-    }
-
-    if (!_bounds.intersects(buf->rect)) {
-        return; // Control not inside buffer rectangle.
-    }
-
-    if (!_visible) {
-        return; // Hidden.
-    }
-
-    if (!_built) {
-        build_cache(buf->device_scale);
-    }
-
-    Geom::Point c = _bounds.min() - buf->rect.min();
-    int x = c.x(); // Must be pixel aligned.
-    int y = c.y();
-
-    buf->cr->save();
-
-    // This code works regardless of source type.
-
-    // 1. Copy the affected part of output to a temporary surface
-
-    // Size in device pixels. Does not set device scale.
-    int width  = _width  * buf->device_scale;
-    int height = _height * buf->device_scale;
-    auto work = Cairo::ImageSurface::create(Cairo::FORMAT_ARGB32, width, height);
-    cairo_surface_set_device_scale(work->cobj(), buf->device_scale, buf->device_scale); // No C++ API!
-
-    auto cr = Cairo::Context::create(work);
-    cr->translate(-_bounds.left(), -_bounds.top());
-    cr->set_source(buf->cr->get_target(), buf->rect.left(), buf->rect.top());
-    cr->paint();
-    // static int a = 0;
-    // std::string name0 = "ctrl0_" + _name + "_" + std::to_string(a++) + ".png";
-    // work->write_to_png(name0);
-
-    // 2. Composite the control on a temporary surface
-    work->flush();
-    int strideb = work->get_stride();
-    unsigned char *pxb = work->get_data();
-
-    // this code allow background become isolated from rendering so we can do things like outline overlay
-    cairo_pattern_t *pattern = _canvas->get_background_pattern()->cobj();
-    guint32 backcolor = ink_cairo_pattern_get_argb32(pattern);
-    guint32 *p = _cache;
-    for (int i = 0; i < height; ++i) {
-        guint32 *pb = reinterpret_cast<guint32*>(pxb + i*strideb);
-        for (int j = 0; j < width; ++j) {
-            guint32 base = *pb;
-            guint32 cc = *p++;
-            guint32 ac = cc & 0xff;
-            if (*pb == 0 && cc != 0) {
-                base = backcolor;
-            }
-            if (ac == 0 && cc != 0) {
-                *pb++ = argb32_from_rgba(cc | 0x000000ff);
-            } else if (ac == 0) {
-                *pb++ = base;
-            } else if (
-                _mode == CANVAS_ITEM_CTRL_MODE_XOR || 
-                _mode == CANVAS_ITEM_CTRL_MODE_GRAYSCALED_XOR ||
-                _mode == CANVAS_ITEM_CTRL_MODE_DESATURATED_XOR) 
-            {
-                EXTRACT_ARGB32(base, ab,rb,gb,bb)
-                // here we get canvas color and if color to draw
-                // has opacity, we override base colors
-                // flattenig canvas color
-                EXTRACT_ARGB32(backcolor, abb,rbb,gbb,bbb)
-                if (abb != ab) {
-                    rb = (ab/255.0) * rb + (1-(ab/255.0)) * rbb;
-                    gb = (ab/255.0) * gb + (1-(ab/255.0)) * gbb;
-                    bb = (ab/255.0) * bb + (1-(ab/255.0)) * bbb;
-                    ab = 255;
-                }
-                guint32 ro = compose_xor(rb, (cc & 0xff000000) >> 24, ac);
-                guint32 go = compose_xor(gb, (cc & 0x00ff0000) >> 16, ac);
-                guint32 bo = compose_xor(bb, (cc & 0x0000ff00) >>  8, ac);
-                if (_mode == CANVAS_ITEM_CTRL_MODE_GRAYSCALED_XOR ||
-                    _mode == CANVAS_ITEM_CTRL_MODE_DESATURATED_XOR) {
-                    guint32 gray = ro * 0.299 + go * 0.587 + bo * 0.114;
-                    if (_mode == CANVAS_ITEM_CTRL_MODE_DESATURATED_XOR) {
-                        double f = 0.85; // desaturate by 15%
-                        double  p = sqrt(ro * ro * 0.299 + go * go *  0.587 + bo * bo * 0.114);
-                        ro = p + (ro - p) * f;
-                        go = p + (go - p) * f;
-                        bo = p + (bo - p) * f;
-                    } else {
-                        ro = gray;
-                        go = gray;
-                        bo = gray;
-                    }
-                }
-                ASSEMBLE_ARGB32(px, ab,ro,go,bo)
-                *pb++ = px;
-            } else {
-                *pb++ = argb32_from_rgba(cc | 0x000000ff);
-            }
-        }
-    }
-    work->mark_dirty();
-    // std::string name1 = "ctrl1_" + _name + "_" + std::to_string(a) + ".png";
-    // work->write_to_png(name1);
-
-    // 3. Replace the affected part of output with contents of temporary surface
-    buf->cr->set_source(work, x, y);
-
-    
-
-    buf->cr->rectangle(x, y, _width, _height);
-    buf->cr->clip();
-    buf->cr->set_operator(Cairo::OPERATOR_SOURCE);
-    buf->cr->paint();   
-    buf->cr->restore();
-}
-
-void CanvasItemCtrl::set_fill(guint32 rgba)
-{
-    if (_fill != rgba) {
-        _fill = rgba;
-        _built = false;
+    defer([=, this] {
+        _fill_set = true;
+        if (_fill == fill) return;
+        _fill = fill;
+        _built.reset();
         request_redraw();
-    }
+    });
 }
 
-void CanvasItemCtrl::set_stroke(guint32 rgba)
+void CanvasItemCtrl::set_stroke(uint32_t stroke)
 {
-    if (_stroke != rgba) {
-        _stroke = rgba;
-        _built = false;
+    defer([=, this] {
+        _stroke_set = true;
+        if (_stroke == stroke) return;
+        _stroke = stroke;
+        _built.reset();
         request_redraw();
-    }
+    });
 }
 
-void CanvasItemCtrl::set_shape(int shape)
+void CanvasItemCtrl::set_shape(CanvasItemCtrlShape shape)
 {
-    if (_shape != shape) {
-        _shape = Inkscape::CanvasItemCtrlShape(shape); // Fixme
-        _built = false;
+    defer([=, this] {
+        _shape_set = true;
+        if (_shape == shape) return;
+        _shape = shape;
+        _built.reset();
         request_update(); // Geometry could change
-    }
+    });
 }
 
-void CanvasItemCtrl::set_shape_default()
+void CanvasItemCtrl::_set_size(int size)
 {
-    switch (_type) {
-        case CANVAS_ITEM_CTRL_TYPE_ADJ_HANDLE:
-            _shape = CANVAS_ITEM_CTRL_SHAPE_DARROW;
-            break;
-
-        case CANVAS_ITEM_CTRL_TYPE_ADJ_SKEW:
-            _shape = CANVAS_ITEM_CTRL_SHAPE_SARROW;
-            break;
-
-        case CANVAS_ITEM_CTRL_TYPE_ADJ_ROTATE:
-            _shape = CANVAS_ITEM_CTRL_SHAPE_CARROW;
-            break;
-
-        case CANVAS_ITEM_CTRL_TYPE_ADJ_CENTER:
-            _shape = CANVAS_ITEM_CTRL_SHAPE_PIVOT;
-            break;
-
-        case CANVAS_ITEM_CTRL_TYPE_ADJ_SALIGN:
-            _shape = CANVAS_ITEM_CTRL_SHAPE_SALIGN;
-            break;
-
-        case CANVAS_ITEM_CTRL_TYPE_ADJ_CALIGN:
-            _shape = CANVAS_ITEM_CTRL_SHAPE_CALIGN;
-            break;
-
-        case CANVAS_ITEM_CTRL_TYPE_ADJ_MALIGN:
-            _shape = CANVAS_ITEM_CTRL_SHAPE_MALIGN;
-            break;
-
-        case CANVAS_ITEM_CTRL_TYPE_NODE_AUTO:
-        case CANVAS_ITEM_CTRL_TYPE_ROTATE:
-            _shape = CANVAS_ITEM_CTRL_SHAPE_CIRCLE;
-            break;
-
-        case CANVAS_ITEM_CTRL_TYPE_CENTER:
-            _shape = CANVAS_ITEM_CTRL_SHAPE_PLUS;
-            break;
-
-        case CANVAS_ITEM_CTRL_TYPE_SHAPER:
-        case CANVAS_ITEM_CTRL_TYPE_LPE:
-        case CANVAS_ITEM_CTRL_TYPE_NODE_CUSP:
-            _shape = CANVAS_ITEM_CTRL_SHAPE_DIAMOND;
-            break;
-
-        case CANVAS_ITEM_CTRL_TYPE_POINT:
-            _shape = CANVAS_ITEM_CTRL_SHAPE_CROSS;
-            break;
-
-        default:
-            _shape = CANVAS_ITEM_CTRL_SHAPE_SQUARE;
-    }
-}
-
-void CanvasItemCtrl::set_mode(int mode)
-{
-    if (_mode != mode) {
-        _mode = Inkscape::CanvasItemCtrlMode(mode); // Fixme
-        _built = false;
-        request_update();
-    }
-}
-
-void CanvasItemCtrl::set_pixbuf(GdkPixbuf *pixbuf)
-{
-    if (_pixbuf != pixbuf) {
-        _pixbuf = pixbuf;
-        _width = gdk_pixbuf_get_width(pixbuf);
-        _height = gdk_pixbuf_get_height(pixbuf);
-        _built = false;
-        request_update();
-    }
-}
-
-// Nominally width == height == size except possibly for pixmaps.
-void CanvasItemCtrl::set_size(int size)
-{
-    if (_pixbuf) {
-        // std::cerr << "CanvasItemCtrl::set_size: Attempting to set size on pixbuf control!" << std::endl;
-        return;
-    }
-    if (_width != size + _extra || _height != size + _extra) {
-        _width  = size + _extra;
-        _height = size + _extra;
-        _built = false;
+    defer([=, this] {
+        if (_width == size) return;
+        _width  = size;
+        _built.reset();
         request_update(); // Geometry change
-    }
+    });
+}
+
+constexpr int MIN_INDEX = 1;
+constexpr int MAX_INDEX = 15;
+
+static int get_size_default() {
+    return Preferences::get()->getIntLimited("/options/grabsize/value", 3, MIN_INDEX, MAX_INDEX);
+}
+
+void CanvasItemCtrl::set_size(HandleSize rel_size) {
+    _rel_size = rel_size;
+    set_size_via_index(get_size_default());
 }
 
 void CanvasItemCtrl::set_size_via_index(int size_index)
 {
     // Size must always be an odd number to center on pixel.
-
-    if (size_index < 1 || size_index > 15) {
+    if (size_index < MIN_INDEX || size_index > MAX_INDEX) {
         std::cerr << "CanvasItemCtrl::set_size_via_index: size_index out of range!" << std::endl;
         size_index = 3;
     }
 
-    int size = 0;
-    switch (_type) {
-        case CANVAS_ITEM_CTRL_TYPE_ADJ_HANDLE:
-        case CANVAS_ITEM_CTRL_TYPE_ADJ_SKEW:
-            size = size_index * 2 + 7;
-            break;
+    auto size = std::clamp(size_index + static_cast<int>(_rel_size), MIN_INDEX, MAX_INDEX);
+    _set_size(size);
+}
 
-        case CANVAS_ITEM_CTRL_TYPE_ADJ_ROTATE:
-        case CANVAS_ITEM_CTRL_TYPE_ADJ_CENTER:
-            size = size_index * 2 + 9; // 2 larger than HANDLE/SKEW
-            break;
+float CanvasItemCtrl::get_width() const {
+    auto const &style = _context->handlesCss()->style_map.at(_handle);
+    auto size = _width * style.scale() + style.size_extra();
+    return size;
+}
 
-        case CANVAS_ITEM_CTRL_TYPE_ADJ_SALIGN:
-        case CANVAS_ITEM_CTRL_TYPE_ADJ_CALIGN:
-        case CANVAS_ITEM_CTRL_TYPE_ADJ_MALIGN:
-            size = size_index * 4 + 5; // Needs to be larger to allow for rotating.
-            break;
+float CanvasItemCtrl::get_total_width() const {
+    const auto& style = _context->handlesCss()->style_map.at(_handle);
+    auto width = get_width() + get_stroke_width() + 2 * style.outline_width();
+    return width;
+}
 
-        case CANVAS_ITEM_CTRL_TYPE_POINT:
-        case CANVAS_ITEM_CTRL_TYPE_ROTATE:
-        case CANVAS_ITEM_CTRL_TYPE_CENTER:
-        case CANVAS_ITEM_CTRL_TYPE_SIZER:
-        case CANVAS_ITEM_CTRL_TYPE_SHAPER:
-        case CANVAS_ITEM_CTRL_TYPE_LPE:
-        case CANVAS_ITEM_CTRL_TYPE_NODE_AUTO:
-        case CANVAS_ITEM_CTRL_TYPE_NODE_CUSP:
-            size = size_index * 2 + 5;
-            break;
-
-        case CANVAS_ITEM_CTRL_TYPE_NODE_SMOOTH:
-        case CANVAS_ITEM_CTRL_TYPE_NODE_SYMETRICAL:
-            size = size_index * 2 + 3;
-            break;
-
-        case CANVAS_ITEM_CTRL_TYPE_INVISIPOINT:
-            size = 1;
-            break;
-
-        case CANVAS_ITEM_CTRL_TYPE_ANCHOR: // vanishing point for 3D box and anchor for pencil
-            size = size_index * 2 + 1;
-            break;
-
-        case CANVAS_ITEM_CTRL_TYPE_DEFAULT:
-            size = size_index * 2 + 1;
-            break;
-
-        default:
-            g_warning("set_size_via_index: missing case for handle type: %d", static_cast<int>(_type));
-            size = size_index * 2 + 1;
-            break;
-    }
-
-    set_size(size);
+int CanvasItemCtrl::get_pixmap_width(int device_scale) const {
+    return static_cast<int>(get_total_width() * device_scale + 0.5f);
 }
 
 void CanvasItemCtrl::set_size_default()
 {
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    int size = prefs->getIntLimited("/options/grabsize/value", 3, 1, 15);
+    int size = get_size_default();
     set_size_via_index(size);
 }
 
-void CanvasItemCtrl::set_size_extra(int extra)
+void CanvasItemCtrl::set_type(CanvasItemCtrlType type)
 {
-    if (_extra != extra && _pixbuf == nullptr) { // Don't enlarge pixbuf!
-        _width  += (extra - _extra);
-        _height += (extra - _extra);
-        _extra = extra;
-        _built = false;
-        request_update(); // Geometry change
-    }
+    defer([=, this] {
+        if (_handle.type == type) return;
+        _handle.type = type;
+        set_size_default();
+        _built.reset();
+        request_update(); // Possible geometry change
+    });
 }
 
-void CanvasItemCtrl::set_type(Inkscape::CanvasItemCtrlType type)
+void CanvasItemCtrl::set_selected(bool selected)
 {
-    if (_type != type) {
-        _type = type;
+    defer([=, this] {
+        _handle.selected = selected;
+        _built.reset();
+        request_update();
+    });
+}
 
-        // Use _type to set default values:
-        set_shape_default();
-        set_size_default();
-        _built = false;
-        request_update(); // Possible Geometry change
-    }
+void CanvasItemCtrl::set_click(bool click)
+{
+    defer([=, this] {
+        _handle.click = click;
+        _built.reset();
+        request_update();
+    });
+}
+
+void CanvasItemCtrl::set_hover(bool hover)
+{
+    defer([=, this] {
+        _handle.hover = hover;
+        _built.reset();
+        request_update();
+    });
+}
+
+/**
+ * Reset the state to normal or normal selected
+ */
+void CanvasItemCtrl::set_normal(bool selected)
+{
+    defer([=, this] {
+        _handle.selected = selected;
+        _handle.hover = false;
+        _handle.click = false;
+        _built.reset();
+        request_update();
+    });
 }
 
 void CanvasItemCtrl::set_angle(double angle)
 {
-    if (_angle != angle) {
+    defer([=, this] {
+        if (_angle == angle) return;
         _angle = angle;
+        _built.reset();
         request_update(); // Geometry change
-    }
+    });
 }
 
 void CanvasItemCtrl::set_anchor(SPAnchorType anchor)
 {
-    if (_anchor != anchor) {
+    defer([=, this] {
+        if (_anchor == anchor) return;
         _anchor = anchor;
         request_update(); // Geometry change
-    }
+    });
 }
 
-// ---------- Protected ----------
-
-// Helper function for build_cache():
-bool point_inside_triangle(Geom::Point p1,Geom::Point p2,Geom::Point p3, Geom::Point point){
-    using Geom::X;
-    using Geom::Y;
-    double denominator = (p1[X]*(p2[Y] - p3[Y]) + p1[Y]*(p3[X] - p2[X]) + p2[X]*p3[Y] - p2[Y]*p3[X]);
-    double t1 = (point[X]*(p3[Y] - p1[Y]) + point[Y]*(p1[X] - p3[X]) - p1[X]*p3[Y] + p1[Y]*p3[X]) / denominator;
-    double t2 = (point[X]*(p2[Y] - p1[Y]) + point[Y]*(p1[X] - p2[X]) - p1[X]*p2[Y] + p1[Y]*p2[X]) / -denominator;
-    double see = t1 + t2;
-    return 0 <= t1 && t1 <= 1 && 0 <= t2 && t2 <= 1 && see <= 1;
-}
-
-
-void draw_darrow(Cairo::RefPtr<Cairo::Context>cr, double size) {
-
-    // Find points, starting from tip of one arrowhead, working clockwise.
-    /*   1        4
-        ╱│        │╲
-       ╱ └────────┘ ╲
-     0╱  2        3  ╲5
-      ╲  8        7  ╱
-       ╲ ┌────────┐ ╱
-        ╲│9      6│╱
-    */
-
-    // Length of arrowhead (not including stroke).
-    double delta = (size-1)/4.0; // Use unscaled width.
-
-    // Tip of arrow (0)
-    double tip_x = 0.5;          // At edge, allow room for stroke.
-    double tip_y = size/2.0;     // Center, assuming width == height.
-
-    // Outer corner (1)
-    double out_x = tip_x + delta;
-    double out_y = tip_y - delta;
-
-    // Inner corner (2)
-    double in_x = out_x;
-    double in_y = out_y + (delta/2.0);
-
-    double x0 = tip_x;                double y0 = tip_y;
-    double x1 = out_x;                double y1 = out_y;
-    double x2 = in_x;                 double y2 = in_y;
-    double x3 = size - in_x;          double y3 = in_y;
-    double x4 = size - out_x;         double y4 = out_y;
-    double x5 = size - tip_x;         double y5 = tip_y;
-    double x6 = size - out_x;         double y6 = size - out_y;
-    double x7 = size - in_x;          double y7 = size - in_y;
-    double x8 = in_x;                 double y8 = size - in_y;
-    double x9 = out_x;                double y9 = size - out_y;
-
-    // Draw arrow
-    cr->move_to(x0, y0);
-    cr->line_to(x1, y1);
-    cr->line_to(x2, y2);
-    cr->line_to(x3, y3);
-    cr->line_to(x4, y4);
-    cr->line_to(x5, y5);
-    cr->line_to(x6, y6);
-    cr->line_to(x7, y7);
-    cr->line_to(x8, y8);
-    cr->line_to(x9, y9);
-    cr->close_path();
-}
-
-void draw_carrow(Cairo::RefPtr<Cairo::Context>cr, double size) {
-
-    // Length of arrowhead (not including stroke).
-    double delta = (size-3)/4.0; // Use unscaled width.
-
-    // Tip of arrow
-    double tip_x =         1.5;  // Edge, allow room for stroke when rotated.
-    double tip_y = delta + 1.5;
-
-    // Outer corner (1)
-    double out_x = tip_x + delta;
-    double out_y = tip_y - delta;
-
-    // Inner corner (2)
-    double in_x = out_x;
-    double in_y = out_y + (delta/2.0);
-
-    double x0 = tip_x;                double y0 = tip_y;
-    double x1 = out_x;                double y1 = out_y;
-    double x2 = in_x;                 double y2 = in_y;
-    double x3 = size - in_y;        //double y3 = size - in_x;
-    double x4 = size - out_y;         double y4 = size - out_x;
-    double x5 = size - tip_y;         double y5 = size - tip_x;
-    double x6 = x5 - delta;           double y6 = y4;
-    double x7 = x5 - delta/2.0;       double y7 = y4;
-    double x8 = x1;                 //double y8 = y0 + delta/2.0;
-    double x9 = x1;                   double y9 = y0 + delta;
-
-    // Draw arrow
-    cr->move_to(x0, y0);
-    cr->line_to(x1, y1);
-    cr->line_to(x2, y2);
-    cr->arc(x1, y4, x3-x2, 3.0*M_PI/2.0, 0);
-    cr->line_to(x4, y4);
-    cr->line_to(x5, y5);
-    cr->line_to(x6, y6);
-    cr->line_to(x7, y7);
-    cr->arc_negative(x1, y4, x7-x8, 0, 3.0*M_PI/2.0);
-    cr->line_to(x9, y9);
-    cr->close_path();
-}
-
-void draw_pivot(Cairo::RefPtr<Cairo::Context>cr, double size) {
-
-    double delta4 = (size-5)/4.0; // Keep away from edge or will clip when rotating.
-    double delta8 = delta4/2;
-
-    // Line start
-    double center = size/2.0;
-
-    cr->move_to (center - delta8, center - 2*delta4 - delta8);
-    cr->rel_line_to ( delta4,  0     );
-    cr->rel_line_to ( 0,       delta4);
-
-    cr->rel_line_to ( delta4,  delta4);
-
-    cr->rel_line_to ( delta4,  0     );
-    cr->rel_line_to ( 0,       delta4);
-    cr->rel_line_to (-delta4,  0     );
-
-    cr->rel_line_to (-delta4,  delta4);
-
-    cr->rel_line_to ( 0,       delta4);
-    cr->rel_line_to (-delta4,  0     );
-    cr->rel_line_to ( 0,      -delta4);
-
-    cr->rel_line_to (-delta4, -delta4);
-
-    cr->rel_line_to (-delta4,  0     );
-    cr->rel_line_to ( 0,      -delta4);
-    cr->rel_line_to ( delta4,  0     );
-
-    cr->rel_line_to ( delta4, -delta4);
-    cr->close_path();
-
-    cr->begin_new_sub_path();
-    cr->arc_negative(center, center, delta4, 0, -2 * M_PI);
-}
-
-void draw_salign(Cairo::RefPtr<Cairo::Context>cr, double size) {
-
-    // Triangle pointing at line.
-
-    // Basic units.
-    double delta4 = (size-1)/4.0; // Use unscaled width.
-    double delta8 = delta4/2;
-    if (delta8 < 2) {
-        // Keep a minimum gap of at least one pixel (after stroking).
-        delta8 = 2;
-    }
-
-    // Tip of triangle
-    double tip_x = size/2.0; // Center (also rotation point).
-    double tip_y = size/2.0;
-
-    // Corner triangle position.
-    double outer = size/2.0 - delta4;
-
-    // Outer line position
-    double oline = size/2.0 + (int)delta4;
-
-    // Inner line position
-    double iline = size/2.0 + (int)delta8;
-
-    // Draw triangle
-    cr->move_to(tip_x,           tip_y);
-    cr->line_to(outer,           outer);
-    cr->line_to(size - outer,    outer);
-    cr->close_path();
-
-    // Draw line
-    cr->move_to(outer,           iline);
-    cr->line_to(size - outer,    iline);
-    cr->line_to(size - outer,    oline);
-    cr->line_to(outer,           oline);
-    cr->close_path();
-}
-
-void draw_calign(Cairo::RefPtr<Cairo::Context>cr, double size) {
-
-    // Basic units.
-    double delta4 = (size-1)/4.0; // Use unscaled width.
-    double delta8 = delta4/2;
-    if (delta8 < 2) {
-        // Keep a minimum gap of at least one pixel (after stroking).
-        delta8 = 2;
-    }
-
-    // Tip of triangle
-    double tip_x = size/2.0; // Center (also rotation point).
-    double tip_y = size/2.0;
-
-    // Corner triangle position.
-    double outer = size/2.0 - delta8 - delta4;
-
-    // End of line positin
-    double eline = size/2.0 - delta8;
-
-    // Outer line position
-    double oline = size/2.0 + (int)delta4;
-
-    // Inner line position
-    double iline = size/2.0 + (int)delta8;
-
-    // Draw triangle
-    cr->move_to(tip_x,           tip_y);
-    cr->line_to(outer,           tip_y);
-    cr->line_to(tip_x,           outer);
-    cr->close_path();
-
-    // Draw line
-    cr->move_to(iline,           iline);
-    cr->line_to(iline,           eline);
-    cr->line_to(oline,           eline);
-    cr->line_to(oline,           oline);
-    cr->line_to(eline,           oline);
-    cr->line_to(eline,           iline);
-    cr->close_path();
-}
-
-void draw_malign(Cairo::RefPtr<Cairo::Context>cr, double size) {
-
-    // Basic units.
-    double delta4 = (size-1)/4.0; // Use unscaled width.
-    double delta8 = delta4/2;
-    if (delta8 < 2) {
-        // Keep a minimum gap of at least one pixel (after stroking).
-        delta8 = 2;
-    }
-
-    // Tip of triangle
-    double tip_0 = size/2.0;
-    double tip_1 = size/2.0 - delta8;
-
-    // Draw triangles
-    cr->move_to(tip_0,           tip_1);
-    cr->line_to(tip_0 - delta4,  tip_1 - delta4);
-    cr->line_to(tip_0 + delta4,  tip_1 - delta4);
-    cr->close_path();
-
-    cr->move_to(size - tip_1,           tip_0);
-    cr->line_to(size - tip_1 + delta4,  tip_0 - delta4);
-    cr->line_to(size - tip_1 + delta4,  tip_0 + delta4);
-    cr->close_path();
-
-    cr->move_to(size - tip_0,           size - tip_1);
-    cr->line_to(size - tip_0 + delta4,  size - tip_1 + delta4);
-    cr->line_to(size - tip_0 - delta4,  size - tip_1 + delta4);
-    cr->close_path();
-
-    cr->move_to(tip_1,           tip_0);
-    cr->line_to(tip_1 - delta4,  tip_0 + delta4);
-    cr->line_to(tip_1 - delta4,  tip_0 - delta4);
-    cr->close_path();
-
-}
-
-void CanvasItemCtrl::build_cache(int device_scale)
+static double angle_of(Geom::Affine const &affine)
 {
-    if (_width < 2 || _height < 2) {
-        return; // Nothing to render
+    return std::atan2(affine[1], affine[0]);
+}
+
+/**
+ * Update and redraw control ctrl.
+ */
+void CanvasItemCtrl::_update(bool)
+{
+    // Queue redraw of old area (erase previous content).
+    request_redraw();
+
+    // Setting the position to (inf, inf) to hide it is a pervasive hack we need to support.
+    if (!_position.isFinite()) {
+        _bounds = {};
+        return;
     }
 
-    // Get colors
-    guint32 fill = 0x0;
-    guint32 stroke = 0x0;
-    fill   = _fill;
-    stroke = _stroke;
+    const auto width = static_cast<double>(get_total_width());
 
-    if (_shape != CANVAS_ITEM_CTRL_SHAPE_BITMAP) {
-        if (_width % 2 == 0 || _height % 2 == 0) {
-            std::cerr << "CanvasItemCtrl::build_cache: Width and/or height not odd integer! "
-                      << _name << ":  width: " << _width << "  height: " << _height << std::endl;
-        }
+    // Get half width, rounded down.
+    double const w_half = width / 2;
+
+    // Set _angle, and compute adjustment for anchor.
+    double dx = 0;
+    double dy = 0;
+
+    CanvasItemCtrlShape shape = _shape;
+    if (!_shape_set) {
+        auto const &style = _context->handlesCss()->style_map.at(_handle);
+        shape = style.shape();
     }
 
-    // Get memory for cache.
-    int width = _width  * device_scale;  // Not unsigned or math errors occur!
-    int height = _height * device_scale;
-    int size = width * height;
+    switch (shape) {
+    case CANVAS_ITEM_CTRL_SHAPE_DARROW:
+    case CANVAS_ITEM_CTRL_SHAPE_SARROW:
+    case CANVAS_ITEM_CTRL_SHAPE_CARROW:
+    case CANVAS_ITEM_CTRL_SHAPE_SALIGN:
+    case CANVAS_ITEM_CTRL_SHAPE_CALIGN: {
+        double angle = int{_anchor} * M_PI_4 + angle_of(affine());
+        double const half = width / 2.0;
 
-    if (_cache) delete[] _cache;
-    _cache = new guint32[size];
-    guint32 *p = _cache;
+        dx = -(half + 2) * cos(angle); // Add a bit to prevent tip from overlapping due to rounding errors.
+        dy = -(half + 2) * sin(angle);
 
-    switch (_shape) {
-
-        case CANVAS_ITEM_CTRL_SHAPE_SQUARE:
-            // Actually any rectanglular shape.
-            for (int i = 0; i < width; ++i) {
-                for (int j = 0; j < width; ++j) {
-                    if (i + 1 > device_scale && device_scale < width  - i  &&
-                        j + 1 > device_scale && device_scale < height - j) {
-                        *p++ = fill;
-                    } else {
-                        *p++ = stroke;
-                    }
-                }
-            }
-            _built = true;
+        switch (shape) {
+        case CANVAS_ITEM_CTRL_SHAPE_CARROW:
+            angle += 5 * M_PI_4;
             break;
 
-        case CANVAS_ITEM_CTRL_SHAPE_DIAMOND:
-        {   // Assume width == height.
-            int m = (width+1)/2;
-
-            for (int i = 0; i < width; ++i) {
-                for (int j = 0; j < height; ++j) {
-                    if (          i  +           j  > m-1+device_scale &&
-                         (width-1-i) +           j  > m-1+device_scale &&
-                         (width-1-i) + (height-1-j) > m-1+device_scale &&
-                                i    + (height-1-j) > m-1+device_scale ) {
-                        *p++ = fill;
-                    } else
-                    if (          i  +           j  > m-2 &&
-                         (width-1-i) +           j  > m-2 &&
-                         (width-1-i) + (height-1-j) > m-2 &&
-                                i    + (height-1-j) > m-2 ) {
-                        *p++ = stroke;
-                    } else {
-                        *p++ = 0;
-                    }
-                }
-            }
-            _built = true;
-            break;
-        }
-
-        case CANVAS_ITEM_CTRL_SHAPE_CIRCLE:
-        {   // Assume width == height.
-            double rs  = width/2.0;
-            double rs2 = rs*rs;
-            double rf  = rs-device_scale;
-            double rf2 = rf*rf;
-
-            for (int i = 0; i < width; ++i) {
-                for (int j = 0; j < height; ++j) {
-
-                    double rx = i - (width /2.0) + 0.5;
-                    double ry = j - (height/2.0) + 0.5;
-                    double r2 = rx*rx + ry*ry;
-
-                    if (r2 < rf2) {
-                        *p++ = fill;
-                    } else if (r2 < rs2) {
-                        *p++ = stroke;
-                    } else {
-                        *p++ = 0;
-                    }
-                }
-            }
-            _built = true;
-            break;
-        }
-
-        case CANVAS_ITEM_CTRL_SHAPE_TRIANGLE:
-        {
-            Geom::Affine m = Geom::Translate(Geom::Point(-width/2.0,-height/2.0));
-            m *= Geom::Rotate(-_angle);
-            m *= Geom::Translate(Geom::Point(width/2.0, height/2.0));
-
-            // Construct an arrowhead (triangle) of maximum size that won't leak out of rectangle
-            // defined by width and height, assuming width == height.
-            double w2 = width/2.0;
-            double h2 = height/2.0;
-            double w2cos = w2 * cos( M_PI/6 );
-            double h2sin = h2 * sin( M_PI/6 );
-            Geom::Point p1s(0, h2);
-            Geom::Point p2s(w2 + w2cos, h2 + h2sin);
-            Geom::Point p3s(w2 + w2cos, h2 - h2sin);
-
-            // Needed for constructing smaller arrowhead below.
-            double theta = atan2( Geom::Point( p2s - p1s ) );
-
-            p1s *= m;
-            p2s *= m;
-            p3s *= m;
-
-            // Construct a smaller arrow head for fill.
-            Geom::Point p1f(device_scale/sin(theta), h2);
-            Geom::Point p2f(w2 + w2cos, h2 - h2sin + device_scale/cos(theta));
-            Geom::Point p3f(w2 + w2cos, h2 + h2sin - device_scale/cos(theta));
-            p1f *= m;
-            p2f *= m;
-            p3f *= m;
-
-            for(int y = 0; y < height; y++) {
-                for(int x = 0; x < width; x++) {
-                    Geom::Point point = Geom::Point(x+0.5, y+0.5);
-
-                    if (point_inside_triangle(p1f, p2f, p3f, point)) {
-                        p[(y*width)+x] = fill;
-
-                    } else if (point_inside_triangle(p1s, p2s, p3s, point)) {
-                        p[(y*width)+x] = stroke;
-
-                    } else {
-                        p[(y*width)+x] = 0;
-                    }
-                }
-            }
-            break;
-        }
-
-        case CANVAS_ITEM_CTRL_SHAPE_CROSS:
-            // Actually an 'X'.
-            for(int y = 0; y < height; y++) {
-                for(int x = 0; x < width; x++) {
-                    if ( abs(x - y)             < device_scale ||
-                         abs(width - 1 - x - y) < device_scale  ) {
-                        *p++ = stroke;
-                    } else {
-                        *p++ = 0;
-                    }
-                }
-            }
-            _built = true;
+        case CANVAS_ITEM_CTRL_SHAPE_SARROW:
+            angle += M_PI_2;
             break;
 
-        case CANVAS_ITEM_CTRL_SHAPE_PLUS:
-            // Actually an '+'.
-            for(int y = 0; y < height; y++) {
-                for(int x = 0; x < width; x++) {
-                    if ( std::abs(x-width/2)   < device_scale ||
-                         std::abs(y-height/2)  < device_scale  ) {
-                        *p++ = stroke;
-                    } else {
-                        *p++ = 0;
-                    }
-                }
-            }
-            _built = true;
+        case CANVAS_ITEM_CTRL_SHAPE_SALIGN:
+            dx = -(half / 2 + 2) * cos(angle);
+            dy = -(half / 2 + 2) * sin(angle);
+            angle -= M_PI_2;
             break;
 
-        case CANVAS_ITEM_CTRL_SHAPE_DARROW: // Double arrow
-        case CANVAS_ITEM_CTRL_SHAPE_SARROW: // Same shape as darrow but rendered rotated 90 degrees.
-        case CANVAS_ITEM_CTRL_SHAPE_CARROW: // Double corner arrow
-        case CANVAS_ITEM_CTRL_SHAPE_PIVOT:  // Fancy "plus"
-        case CANVAS_ITEM_CTRL_SHAPE_SALIGN: // Side align (triangle pointing toward line)
-        case CANVAS_ITEM_CTRL_SHAPE_CALIGN: // Corner align (triangle pointing into "L")
-        case CANVAS_ITEM_CTRL_SHAPE_MALIGN: // Middle align (four triangles poining inward)
-        {
-            double size = _width; // Use unscaled width.
-
-            auto work = Cairo::ImageSurface::create(Cairo::FORMAT_ARGB32, device_scale * size, device_scale * size);
-            cairo_surface_set_device_scale(work->cobj(), device_scale, device_scale); // No C++ API!
-            auto cr = Cairo::Context::create(work);
-
-            // Rotate around center
-            cr->translate( size/2.0,  size/2.0);
-            cr->rotate(_angle);
-            cr->translate(-size/2.0, -size/2.0);
-
-            // Construct path
-            switch (_shape) {
-                case CANVAS_ITEM_CTRL_SHAPE_DARROW:
-                case CANVAS_ITEM_CTRL_SHAPE_SARROW:
-                    draw_darrow(cr, size);
-                    break;
-
-                case CANVAS_ITEM_CTRL_SHAPE_CARROW:
-                    draw_carrow(cr, size);
-                    break;
-
-                case CANVAS_ITEM_CTRL_SHAPE_PIVOT:
-                    draw_pivot(cr, size);
-                    break;
-
-                case CANVAS_ITEM_CTRL_SHAPE_SALIGN:
-                    draw_salign(cr, size);
-                    break;
-
-                case CANVAS_ITEM_CTRL_SHAPE_CALIGN:
-                    draw_calign(cr, size);
-                    break;
-
-                case CANVAS_ITEM_CTRL_SHAPE_MALIGN:
-                    draw_malign(cr, size);
-                    break;
-
-                default:
-                    // Shouldn't happen
-                    break;
-            }
-
-            // Fill and stroke.
-            cr->set_source_rgba(SP_RGBA32_R_F(_fill),
-                                SP_RGBA32_G_F(_fill),
-                                SP_RGBA32_B_F(_fill),
-                                SP_RGBA32_A_F(_fill));
-            cr->fill_preserve();
-            cr->set_source_rgba(SP_RGBA32_R_F(_stroke),
-                                SP_RGBA32_G_F(_stroke),
-                                SP_RGBA32_B_F(_stroke),
-                                SP_RGBA32_A_F(_stroke));
-            cr->set_line_width(1);
-            cr->stroke();
-
-            // Copy to buffer.
-            work->flush();
-            int strideb = work->get_stride();
-            unsigned char* pxb = work->get_data();
-            guint32 *p = _cache;
-            for (int i = 0; i < device_scale * size; ++i) {
-                guint32 *pb = reinterpret_cast<guint32*>(pxb + i*strideb);
-                for (int j = 0; j < width; ++j) {
-
-                    guint32 color = 0x0;
-
-                    // Need to un-premultiply alpha and change order argb -> rgba.
-                    guint32 alpha = (*pb & 0xff000000) >> 24;
-                    if (alpha == 0x0) {
-                        color = 0x0;
-                    } else {
-                        guint32 rgb = unpremul_alpha(*pb & 0xffffff, alpha);
-                        color = (rgb << 8) + alpha;
-                    }
-
-                    *p++ = color;
-                    pb++;
-                }
-            }
-            _built = true;
-            break;
-        }
-
-        case CANVAS_ITEM_CTRL_SHAPE_BITMAP:
-        {
-            if (_pixbuf) {
-                unsigned char* px = gdk_pixbuf_get_pixels (_pixbuf);
-                unsigned int   rs = gdk_pixbuf_get_rowstride (_pixbuf);
-                for (int y = 0; y < height/device_scale; y++){
-                    for (int x = 0; x < width/device_scale; x++) {
-                        unsigned char *s = px + rs*y + 4*x;
-                        guint32 color;
-                        if (s[3] < 0x80) {
-                            color = 0;
-                        } else if (s[0] < 0x80) {
-                            color = _stroke;
-                        } else {
-                            color = _fill;
-                        }
-
-                        // Fill in device_scale x device_scale block
-                        for (int i = 0; i < device_scale; ++i) {
-                            for (int j = 0; j < device_scale; ++j) {
-                                guint* p = _cache +
-                                    (x * device_scale + i) +            // Column
-                                    (y * device_scale + j) * width;     // Row
-                                *p = color;
-                            }
-                        }
-                    }
-                }
-            } else {
-                std::cerr << "CanvasItemCtrl::build_cache: No bitmap!" << std::endl;
-                guint *p = _cache;
-                for (int y = 0; y < height/device_scale; y++){
-                    for (int x = 0; x < width/device_scale; x++) {
-                        if (x == y) {
-                            *p++ = 0xffff0000;
-                        } else {
-                            *p++ = 0;
-                        }
-                    }
-                }
-            }
-            _built = true;
-            break;
-        }
-
-        case CANVAS_ITEM_CTRL_SHAPE_IMAGE:
-            std::cerr << "CanvasItemCtrl::build_cache: image: UNIMPLEMENTED" << std::endl;
+        case CANVAS_ITEM_CTRL_SHAPE_CALIGN:
+            angle -= M_PI_4;
+            dx = (half / 2 + 2) * (sin(angle) - cos(angle));
+            dy = (half / 2 + 2) * (-sin(angle) - cos(angle));
             break;
 
         default:
-            std::cerr << "CanvasItemCtrl::build_cache: unhandled shape!" << std::endl;
+            break;
+        }
+
+        if (_angle != angle) {
+            _angle = angle;
+            _built.reset();
+        }
+
+        break;
     }
+
+    case CANVAS_ITEM_CTRL_SHAPE_PIVOT:
+    case CANVAS_ITEM_CTRL_SHAPE_MALIGN: {
+        double const angle = angle_of(affine());
+        if (_angle != angle) {
+            _angle = angle;
+            _built.reset();
+        }
+        break;
+    }
+
+    default:
+        switch (_anchor) {
+        case SP_ANCHOR_N:
+        case SP_ANCHOR_CENTER:
+        case SP_ANCHOR_S:
+            break;
+
+        case SP_ANCHOR_NW:
+        case SP_ANCHOR_W:
+        case SP_ANCHOR_SW:
+            dx = w_half;
+            break;
+
+        case SP_ANCHOR_NE:
+        case SP_ANCHOR_E:
+        case SP_ANCHOR_SE:
+            dx = -w_half;
+            break;
+        }
+
+        switch (_anchor) {
+        case SP_ANCHOR_W:
+        case SP_ANCHOR_CENTER:
+        case SP_ANCHOR_E:
+            break;
+
+        case SP_ANCHOR_NW:
+        case SP_ANCHOR_N:
+        case SP_ANCHOR_NE:
+            dy = w_half;
+            break;
+
+        case SP_ANCHOR_SW:
+        case SP_ANCHOR_S:
+        case SP_ANCHOR_SE:
+            dy = -w_half;
+            break;
+        }
+        break;
+    }
+
+    // The location we want to place our anchor/ctrl point
+    _pos = Geom::Point(-w_half, -w_half) + Geom::Point(dx, dy) + (_position * affine());
+
+    // The bounding box we want to invalidate in cairo, rounded out to catch any stray pixels
+    _bounds = Geom::Rect::from_xywh(_pos, {width, width}).roundOutwards();
+
+    // Queue redraw of new area
+    request_redraw();
+}
+
+/**
+ * Render ctrl to screen via Cairo.
+ */
+void CanvasItemCtrl::_render(CanvasItemBuffer &buf) const
+{
+    _built.init([&, this] {
+        build_cache(buf.device_scale);
+    });
+
+    if (!_cache) {
+        return;
+    }
+
+    buf.cr->save();
+    // Round to the device pixel at the very last minute so we get less bluring
+    auto const [x, y] = Geom::Point{(_pos * buf.device_scale).round()} / buf.device_scale - buf.rect.min();
+    cairo_set_source_surface(buf.cr->cobj(), const_cast<cairo_surface_t *>(_cache->cobj()), x, y); // C API is const-incorrect.
+    buf.cr->paint();
+    buf.cr->restore();
+}
+
+void CanvasItemCtrl::_invalidate_ctrl_handles()
+{
+    assert(!_context->snapshotted()); // precondition
+    _built.reset();
+    request_update();
+}
+
+float CanvasItemCtrl::get_stroke_width() const {
+    const auto& style = _context->handlesCss()->style_map.at(_handle);
+    // growing stroke width with handle size, if style enables it
+    auto stroke_width = style.stroke_width() * (1.0f + _width * style.stroke_scale());
+    return stroke_width;
+}
+
+/**
+ * Build object-specific cache.
+ */
+void CanvasItemCtrl::build_cache(int device_scale) const
+{
+    auto width = get_width();
+    if (width < 1) {
+        return; // Nothing to render
+    }
+
+    // take size in logical pixels and make it fit physical pixel grid
+    auto pixel_fit = [=](float v) { return std::round(v * device_scale) / device_scale; };
+
+    auto const &style = _context->handlesCss()->style_map.at(_handle);
+    // effective stroke width
+    auto stroke_width = pixel_fit(get_stroke_width());
+    // fixed-size outline
+    auto outline_width = pixel_fit(style.outline_width());
+    // handle size
+    auto size = std::floor(width * device_scale) / device_scale;
+
+    _cache = Handles::draw({
+        .shape = _shape_set ? _shape : style.shape(),
+        .fill = _fill_set ? _fill : style.getFill(),
+        .stroke = _stroke_set ? _stroke : style.getStroke(),
+        .outline = style.getOutline(),
+        .stroke_width = stroke_width,
+        .outline_width = outline_width,
+        .width = get_pixmap_width(device_scale),
+        .size = size,
+        .angle = _angle,
+        .device_scale = device_scale
+    });
 }
 
 } // namespace Inkscape

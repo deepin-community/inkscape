@@ -35,8 +35,6 @@
 #include <cmath>
 #include <cstring>
 
-using Inkscape::Util::unit_table;
-
 namespace Inkscape {
 namespace Util {
 
@@ -53,7 +51,7 @@ EvaluatorToken::EvaluatorToken()
 }
 
 ExpressionEvaluator::ExpressionEvaluator(const char *string, Unit const *unit) :
-    string(g_locale_to_utf8(string,-1,nullptr,nullptr,nullptr)),
+    string(string),
     unit(unit)
 {
     current_token.type  = TOKEN_END;
@@ -152,7 +150,9 @@ EvaluatorQuantity ExpressionEvaluator::evaluateTerm()
     EvaluatorQuantity evaluated_exp_terms = evaluateExpTerm();
     
     for ( division = false;
-        acceptToken('*', nullptr) || (division = acceptToken('/', nullptr));
+        acceptToken('*', nullptr) ||
+        (division = acceptToken('/', nullptr)) ||
+        (division = acceptToken(':', nullptr)); // accept ':' too (for ratio)
         division = false )
     {
         EvaluatorQuantity new_exp_term = evaluateExpTerm();
@@ -369,6 +369,7 @@ bool ExpressionEvaluator::resolveUnit (const char* identifier,
                                        EvaluatorQuantity *result,
                                        Unit const* unit)
 {
+    auto const &unit_table = UnitTable::get();
     if (!unit) {
         result->value = 1;
         result->dimension = 1;

@@ -18,6 +18,9 @@
 #include "message-context.h"
 
 namespace Inkscape {
+
+struct KeyEvent;
+
 namespace Modifiers {
 
 using KeyMask = int;
@@ -39,6 +42,7 @@ enum Key : KeyMask {
 // Triggers used for collision warnings, two tools are using the same trigger
 enum Triggers : Trigger {
     NO_CATEGORY, CANVAS, SELECT, MOVE, TRANSFORM,
+    NODE_TOOL, BOOLEANS_TOOL,
     // Action taken to trigger this modifier, starts at
     // bit 6 so categories and triggers can be combined.
     CLICK = 32,
@@ -75,16 +79,21 @@ enum class Type {
     TRANS_INCREMENT,      // Scale/Rotate/skew by fixed ratio angles {HANDLE+ALT}
     TRANS_OFF_CENTER,     // Scale/Rotate/skew from opposite corner {HANDLE+SHIFT}
     TRANS_SNAPPING,       // Disable snapping while transforming {HANDLE+SHIFT}
+
+    BOOL_SHIFT,           // Shift the shape builder into its alternative mode.
+    NODE_GROW_LINEAR,     // Scroll wheel selection of nodes
+    NODE_GROW_SPATIAL,    // Scroll wheel selection of nodes
     // TODO: Alignment omitted because it's UX is not completed
 };
-
 
 // Generate a label such as Shift+Ctrl from any KeyMask
 std::string   generate_label(KeyMask mask, std::string sep = "+");
 unsigned long calculate_weight(KeyMask mask);
 
 // Generate a responsivle tooltip set
-void responsive_tooltip(Inkscape::MessageContext *message_context, GdkEvent *event, int num_args, ...);
+void responsive_tooltip(MessageContext *message_context, KeyEvent const &event, int num_args, ...);
+
+int add_keyval(int state, int keyval, bool release = false);
 
 /**
  * A class to represent ways functionality is driven by shift modifiers
@@ -92,14 +101,12 @@ void responsive_tooltip(Inkscape::MessageContext *message_context, GdkEvent *eve
 class Modifier {
 private:
     /** An easy to use definition of the table of modifiers by Type and ID. */
-    typedef std::map<Type, Modifier *> Container;
-    typedef std::map<std::string, Modifier *> Lookup;
-    typedef std::map<Trigger, std::string> CategoryNames;
+    using Container = std::map<Type, Modifier>;
+    using CategoryNames = std::map<Trigger, std::string>;
 
     /** A table of all the created modifiers and their ID lookups. */
-    static Container _modifiers;
-    static Lookup _modifier_lookup;
-    static CategoryNames _category_names;
+    static Container &_modifiers();
+    static CategoryNames const &_category_names();
 
     char const * _id;    // A unique id used by keys.xml to identify it
     char const * _name;  // A descriptive name used in preferences UI
@@ -120,10 +127,7 @@ private:
     KeyMask _not_mask_user = NOT_SET;
     unsigned long _weight_user = 0;
 
-protected:
-
 public:
-
     char const * get_id() const { return _id; }
     char const * get_name() const { return _name; }
     char const * get_description() const { return _desc; }
@@ -145,32 +149,32 @@ public:
     bool is_set_user() const { return _and_mask_user != NOT_SET; }
 
     // Get value, either user defined value or default
-    KeyMask get_and_mask() {
+    KeyMask get_and_mask() const {
         if(_and_mask_user != NOT_SET) return _and_mask_user;
         if(_and_mask_keys != NOT_SET) return _and_mask_keys;
         return _and_mask_default;
     }
-    KeyMask get_not_mask() {
+    KeyMask get_not_mask() const {
         // The not mask is enabled by the AND mask being set first.
         if(_and_mask_user != NOT_SET) return _not_mask_user;
         if(_and_mask_keys != NOT_SET) return _not_mask_keys;
         return NOT_SET;
     }
     // Return number of bits set for the keys
-    unsigned long get_weight() {
+    unsigned long get_weight() const {
         if(_and_mask_user != NOT_SET) return _weight_user;
         if(_and_mask_keys != NOT_SET) return _weight_keys;
         return _weight_default;
     }
 
     // Generate labels such as "Shift+Ctrl" for the active modifier
-    std::string get_label() { return generate_label(get_and_mask()); }
-    std::string get_category() { return _category_names[_category]; }
+    std::string get_label() const { return generate_label(get_and_mask()); }
+    std::string get_category() const { return _category_names().at(_category); }
 
     // Configurations for saving the xml file
-    bool get_config_user_disabled() { return (_and_mask_user == NEVER); }
-    std::string get_config_user_and() { return generate_label(_and_mask_user, ","); }
-    std::string get_config_user_not() { return generate_label(_not_mask_keys, ","); }
+    bool get_config_user_disabled() const { return (_and_mask_user == NEVER); }
+    std::string get_config_user_and() const { return generate_label(_and_mask_user, ","); }
+    std::string get_config_user_not() const { return generate_label(_not_mask_keys, ","); }
 
     /**
      * Inititalizes the Modifier with the parameters.
@@ -178,7 +182,6 @@ public:
      * @param id       Goes to \c _id.
      * @param name     Goes to \c _name.
      * @param desc     Goes to \c _desc.
-     * @param default_ Goes to \c _default.
      */
     Modifier(char const * id,
              char const * name,
@@ -193,24 +196,27 @@ public:
         _category(category),
         _trigger(trigger)
     {
-        _modifier_lookup.emplace(_id, this);
         _weight_default = calculate_weight(and_mask);
     }
-    // Delete the destructor, because we are eternal
-    ~Modifier() = delete;
 
     static Type which(Trigger trigger, int button_state);
-    static std::vector<Modifier *>getList ();
-    bool active(int button_state);
+    static std::vector<Modifier const *> getList();
+    bool active(int button_state) const;
+    bool active(int button_state, int keyval, bool release = false) const;
 
     /**
      * A function to turn an enum index into a modifier object.
      *
      * @param  index  The enum index to be translated
-     * @return A pointer to a modifier object or a NULL if not found.
+     * @return A pointer to a modifier object or a null pointer if not found.
      */
-    static Modifier * get(Type index) {
-        return _modifiers[index];
+    static Modifier *get(Type index)
+    {
+        try {
+            return &_modifiers().at(index);
+        } catch (std::out_of_range const &) {
+            return nullptr;
+        }
     }
     /**
      * A function to turn a string id into a modifier object.
@@ -218,18 +224,8 @@ public:
      * @param  id  The id string to be translated
      * @return A pointer to a modifier object or a NULL if not found.
      */
-    static Modifier * get(char const * id) {
-        Modifier *modifier = nullptr;
-        Lookup::iterator mod_found = _modifier_lookup.find(id);
-
-        if (mod_found != _modifier_lookup.end()) {
-            modifier = mod_found->second;
-        }
-    
-        return modifier;
-    }
-
-}; // Modifier class
+    static Modifier *get(char const *id);
+};
 
 } // namespace Modifiers
 } // namespace Inkscape

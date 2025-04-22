@@ -33,29 +33,36 @@
 #define SEEN_HSLUV_H
 
 #include <array>
+#include <2geom/line.h>
 
 namespace Hsluv {
 
 // Types
 using Triplet = std::array<double, 3>;
-class Line {
-public:
-    Line ();
-    Line (double slope, double intercept);
-    Line (const Line& other);
-    void operator=(const Line& other);
-    double slope;
-    double intercept;
+
+/**
+ * Used to represent the in RGB gamut colors polygon of the HSLuv color wheel.
+ */
+struct PickerGeometry {
+    std::vector<Geom::Point> vertices; ///< Vertices, in counter-clockwise order.
+    double outer_circle_radius; ///< Smallest circle with center at origin such that polygon fits inside.
+    double inner_circle_radius; ///< Largest circle with center at origin such that it fits inside polygon.
 };
 
 // Functions
+/** Apply sRGB gamma compression to a linear RGB color component. */
+double from_linear(double c);
+
+/** Convert an sRGB color component to linear RGB (de-gamma). */
+double to_linear(double c);
+
 /**
  * Return the bounds of the Luv colors in RGB gamut.
  *
  * @param l Lightness. Between 0.0 and 100.0.
  * @return Bounds of Luv colors in RGB gamut.
  */
-std::array<Line, 6> getBounds(double l);
+std::array<Geom::Line, 6> get_bounds(double l);
 
 /**
  * Convert Luv to RGB.
@@ -63,23 +70,42 @@ std::array<Line, 6> getBounds(double l);
  * @param l Luminance. Between 0.0 and 100.0.
  * @param u U coordinate.
  * @param v V coordinate.
- * @param[out] pr Red. Between 0.0 and 1.0.
- * @param[out] pg Green. Between 0.0 and 1.0.
- * @param[out] pb Blue. Between 0.0 and 1.0.
+ * @return An RGB triplet, with all components between 0.0 and 1.0.
  */
-void luv_to_rgb(double l, double u, double v, double *pr, double *pg, double *pb);
+Triplet luv_to_rgb(double l, double u, double v);
+
+/**
+ * Convert Lab to sRGB.
+ *
+ * @param L Luminance. Between 0.0 and 100.0.
+ * @param a A coordinate.
+ * @param b B coordinate.
+ * @param ref_white_xyz White reference in normalized XYZ color space.
+ * @return An sRGB triplet, with all components between 0.0 and 1.0.
+ */
+Triplet lab_to_rgb(double L, double a, double b, const Triplet& ref_white_xyz);
+/**
+ * Convert Lab to sRGB using D65 illuminant reference point.
+ *
+ * @param L Luminance. Between 0.0 and 100.0.
+ * @param a A coordinate.
+ * @param b B coordinate.
+ * @return An sRGB triplet, with all components between 0.0 and 1.0.
+ */
+Triplet lab_to_rgb(double L, double a, double b);
+
+Triplet cielab_to_xyz(double L, double a, double b, const Triplet& ref_white_xyz);
 
 /**
  * Convert HSLuv to Luv.
  *
- * @param h Hue. Between 0.0 and 360.0.
- * @param s Saturation. Between 0.0 and 100.0.
- * @param l Lightness. Between 0.0 and 100.0.
- * @param[out] pl Luminance. Between 0.0 and 100.0.
- * @param[out] pu U coordinate.
- * @param[out] pv V coordinate.
+ * @param hsl A pointer to a buffer of length 3 containing an HSLuv color:
+ * [0]: Hue between 0.0 and 360.0.
+ * [1]: Saturation between 0.0 and 100.0.
+ * [2]: Lightness between 0.0 and 100.0.
+ * @return An LUV triplet, with luminance between 0.0 and 100.0.
  */
-void hsluv_to_luv(double h, double s, double l, double *pl, double *pu, double *pv);
+Triplet hsluv_to_luv(double *hsl);
 
 /**
  * Convert Luv to HSLuv.
@@ -87,11 +113,12 @@ void hsluv_to_luv(double h, double s, double l, double *pl, double *pu, double *
  * @param l Luminance. Between 0.0 and 100.0.
  * @param u U coordinate.
  * @param v V coordinate.
- * @param[out] ph Hue. Between 0.0 and 360.0.
- * @param[out] ps Saturation. Between 0.0 and 100.0.
- * @param[out] pl Lightness. Between 0.0 and 100.0.
+ * @return An HSLuv triplet containing:
+ * [0]: Hue between 0.0 and 360.0;
+ * [1]: Saturation between 0.0 and 100.0;
+ * [2]: Lightness between 0.0 and 100.0.
  */
-void luv_to_hsluv(double l, double u, double v, double *ph, double *ps, double *pl);
+Triplet luv_to_hsluv(double l, double u, double v);
 
 /**
  * Convert RGB to HSLuv.
@@ -99,11 +126,12 @@ void luv_to_hsluv(double l, double u, double v, double *ph, double *ps, double *
  * @param r Red. Between 0.0 and 1.0.
  * @param g Green. Between 0.0 and 1.0.
  * @param b Blue. Between 0.0 and 1.0.
- * @param[out] ph Hue. Between 0.0 and 360.0.
- * @param[out] ps Saturation. Between 0.0 and 100.0.
- * @param[out] pl Lightness. Between 0.0 and 100.0.
+ * @return An HSLuv triplet containing:
+ * [0]: Hue between 0.0 and 360.0;
+ * [1]: Saturation between 0.0 and 100.0;
+ * [2]: Lightness between 0.0 and 100.0.
  */
-void rgb_to_hsluv(double r, double g, double b, double *ph, double *ps, double *pl);
+Triplet rgb_to_hsluv(double r, double g, double b);
 
 /**
  * Convert HSLuv to RGB.
@@ -111,11 +139,35 @@ void rgb_to_hsluv(double r, double g, double b, double *ph, double *ps, double *
  * @param h Hue. Between 0.0 and 360.0.
  * @param s Saturation. Between 0.0 and 100.0.
  * @param l Lightness. Between 0.0 and 100.0.
- * @param[out] pr Red. Between 0.0 and 1.0.
- * @param[out] pg Green. Between 0.0 and 1.0.
- * @param[out] pb Blue. Between 0.0 and 1.0.
+ * @return An RGB triplet, with all components between 0.0 and 1.0.
  */
-void hsluv_to_rgb(double h, double s, double l, double *pr, double *pg, double *pb);
+Triplet hsluv_to_rgb(double h, double s, double l);
+
+/**
+ * Calculate the perceptual lightness of an HSLuv color.
+ *
+ * @param l The lightness component in HSLuv coordinates, between 0.0 and 100.0.
+ * @return The perceptual lightness between 0.0 (black) and 1.0 (white).
+ */
+double perceptual_lightness(double l);
+
+/**
+ * Calculate the perceptual lightness of an RGB color.
+ *
+ * @param rgb A triplet of RGB components between 0.0 and 1.0.
+ * @return The perceptual lightness between 0.0 (black) and 1.0 (white).
+ */
+double rgb_to_perceptual_lightness(Triplet const &rgb);
+
+/**
+ * Get a contrasting grayscale color suitable for UI elements shown against
+ * a background color with the specified perceptual lightness.
+ *
+ * @param perceptual_lightness The perceptual lightness of the background, between 0.0 and 1.0.
+ * @return A pair consisting of grayscale and alpha components representing a color which will
+ *         be easy to spot against the background. Both components are between 0.0 and 1.0.
+ */
+std::pair<double, double> get_contrasting_color(double perceptual_lightness);
 
 } // namespace Hsluv
 

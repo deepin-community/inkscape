@@ -11,31 +11,24 @@
 
 #include "patheffect.h"
 
-#include "db.h"
+#include <glib.h>                 // for gchar, g_strfreev, g_strsplit
 
-#include "object/sp-defs.h"
+#include "db.h"                   // for DB, db
+#include "document.h"             // for SPDocument
+#include "extension/extension.h"  // for Extension
+#include "extension/implementation/implementation.h"
+#include "object/sp-defs.h"       // for SPDefs
+#include "xml/node.h"             // for Node
+#include "xml/repr.h"             // for sp_repr_lookup_child
 
-#include "xml/repr.h"
+namespace Inkscape::Extension {
 
+PathEffect::PathEffect (Inkscape::XML::Node *in_repr, ImplementationHolder implementation, std::string *base_directory)
+    : Extension(in_repr, std::move(implementation), base_directory) {}
 
-namespace Inkscape {
-namespace Extension {
+PathEffect::~PathEffect() = default;
 
-PathEffect::PathEffect (Inkscape::XML::Node *in_repr, Implementation::Implementation *in_imp, std::string *base_directory)
-    : Extension(in_repr, in_imp, base_directory)
-{
-
-}
-
-PathEffect::~PathEffect (void)
-= default;
-
-void
-PathEffect::processPath (SPDocument * /*doc*/, Inkscape::XML::Node * /*path*/, Inkscape::XML::Node * /*def*/)
-{
-
-
-}
+void PathEffect::processPath(SPDocument * /*doc*/, Inkscape::XML::Node * /*path*/, Inkscape::XML::Node * /*def*/) {}
 
 void
 PathEffect::processPathEffects (SPDocument * doc, Inkscape::XML::Node * path)
@@ -76,8 +69,7 @@ PathEffect::processPathEffects (SPDocument * doc, Inkscape::XML::Node * path)
     return;
 }
 
-
-} }  /* namespace Inkscape, Extension */
+} // namespace Inkscape::Extension
 
 /*
   Local Variables:

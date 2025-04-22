@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 #
 # Copyright (C) 2018 Martin Owens
@@ -20,8 +20,9 @@
 """
 Test the svg interface for inkscape extensions.
 """
+
 from inkex.transforms import Vector2d
-from inkex import Guide
+from inkex import Guide, Rectangle
 from inkex.tester import TestCase
 from inkex.tester.svg import svg, svg_file, svg_unit_scaled
 from inkex import addNS
@@ -45,6 +46,68 @@ class BasicSvgTest(TestCase):
             "{http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd}i",
         )
         self.assertEqual(addNS("{p}j"), "{p}j")
+
+    def test_register_ns(self):
+        """Test adding a namespace prefix to a root tag"""
+        root = svg()
+
+        # Namespace is not currently in use
+        self.assertNotIn("hotel", root.nsmap)
+        self.assertEqual(root.attrib.keys(), [])
+
+        # We can add a namespace to the document
+        root.add_namespace("hotel", "http://www.inkscape.org/namespaces/hotel")
+        self.assertEqual(root.attrib.keys(), [])
+        self.assertEqual(
+            root.nsmap["hotel"], "http://www.inkscape.org/namespaces/hotel"
+        )
+
+        # We can use the new namespace
+        root.set("hotel:name", "value")
+        self.assertEqual(
+            root.attrib.keys(), ["{http://www.inkscape.org/namespaces/hotel}name"]
+        )
+
+        # We will fail to set the namespace if it's already used
+        root.add_namespace("hotel", "http://www.inkscape.org/namespaces/hotel")
+        self.assertRaises(KeyError, root.add_namespace, "hotel", "http://other.url/")
+        self.assertRaises(
+            ValueError,
+            root.add_namespace,
+            "other",
+            "http://www.inkscape.org/namespaces/hotel",
+        )
+
+        # Releasing the use, will allow us to replace the namespace
+        root.set("hotel:name", None)
+        self.assertEqual(root.attrib.keys(), [])
+        root.add_namespace("hotel", "http://other.url/")
+        self.assertEqual(root.nsmap["hotel"], "http://other.url/")
+
+    def test_register_ns_children(self):
+        """Test namespace registration when children are added before / after
+        modification of the namespaces"""
+        root = svg()
+
+        rect = root.add(Rectangle.new(10, 10, 10, 10))
+        self.assertNotIn("hotel", rect.nsmap)
+        root.add_namespace("hotel", "http://www.inkscape.org/namespaces/hotel")
+
+        # The namespace should also be available on children that were added before
+        # the add_namespace method was called.
+        self.assertIn("hotel", rect.nsmap)
+        rect.set("hotel:name", "value")
+        self.assertIn(
+            "{http://www.inkscape.org/namespaces/hotel}name", rect.attrib.keys()
+        )
+
+        # and also on children created afterwards
+        rect2 = root.add(Rectangle.new(10, 10, 10, 10))
+        self.assertIn("hotel", rect2.nsmap)
+        rect2.set("hotel:name2", "value2")
+        self.assertIn(
+            "{http://www.inkscape.org/namespaces/hotel}name2", rect2.attrib.keys()
+        )
 
     def test_svg_ids(self):
         """Test a list of ids from an svg document"""
@@ -167,11 +230,11 @@ class NamedViewTest(TestCase):
         namedview = doc.namedview
         self.assertEqual(len(namedview.get_guides()), 0)
 
-        namedview.add(Guide().move_to(50, 50, 45))
+        namedview.add_guide((50, doc.viewbox_height - 50), 45)
         self.assertEqual(len(namedview.get_guides()), 1)
         (guide,) = namedview.get_guides()
         self.assertEqual(guide.get("position"), "50,50")
-        self.assertEqual(guide.get("orientation"), "0.707107,-0.707107")
+        self.assertEqual(guide.get("orientation"), "0.707107,0.707107")
 
 
 class GetDocumentWidthTest(TestCase):
@@ -355,33 +418,25 @@ class GetDocumentUnitTest(TestCase):
 class UserUnitTest(TestCase):
     """Tests for methods that are based on the value of unit."""
 
-    def assertToUserUnit(
-        self, user_unit, test_value, expected
-    ):  # pylint: disable=invalid-name
+    def assertToUserUnit(self, user_unit, test_value, expected):  # pylint: disable=invalid-name
         """Checks a user unit and a test_value against the expected result"""
         doc = svg_unit_scaled(user_unit)
         self.assertEqual(doc.unit, user_unit, msg=svg)
         self.assertAlmostEqual(doc.to_dimensionless(test_value), expected)
 
-    def assertToDocumentUnit(
-        self, user_unit, test_value, expected
-    ):  # pylint: disable=invalid-name
+    def assertToDocumentUnit(self, user_unit, test_value, expected):  # pylint: disable=invalid-name
         """Checks a user unit and a test_value against the expected result"""
         doc = svg_unit_scaled(user_unit)
         self.assertEqual(doc.unit, user_unit, msg=svg)
         self.assertAlmostEqual(doc.unittouu(test_value), expected)
 
-    def assertFromUserUnit(
-        self, user_unit, value, unit, expected
-    ):  # pylint: disable=invalid-name
+    def assertFromUserUnit(self, user_unit, value, unit, expected):  # pylint: disable=invalid-name
         """Check converting from a user unity for the test_value"""
         self.assertAlmostEqual(
             svg_unit_scaled(user_unit).to_dimensional(value, unit), expected
         )
 
-    def assertFromDocumentUnit(
-        self, user_unit, value, unit, expected
-    ):  # pylint: disable=invalid-name
+    def assertFromDocumentUnit(self, user_unit, value, unit, expected):  # pylint: disable=invalid-name
         """Check converting from a user unity for the test_value"""
         self.assertAlmostEqual(
             svg_unit_scaled(user_unit).uutounit(value, unit), expected
@@ -567,17 +622,13 @@ class UserUnitTest(TestCase):
 
 
 class ViewportUnitTestCase(TestCase):
-    def assertFromVPUnit(
-        self, width_unit, test_value, unit, expected
-    ):  # pylint: disable=invalid-name
+    def assertFromVPUnit(self, width_unit, test_value, unit, expected):  # pylint: disable=invalid-name
         """Checks a viewport unit and a test_value against the expected result"""
         doc = svg_unit_scaled(width_unit)
         self.assertEqual(doc.unit, width_unit, msg=svg)
         self.assertAlmostEqual(doc.viewport_to_unit(test_value, unit), expected)
 
-    def assertToVPUnit(
-        self, user_unit, value, unit, expected
-    ):  # pylint: disable=invalid-name
+    def assertToVPUnit(self, user_unit, value, unit, expected):  # pylint: disable=invalid-name
         """Check converting from a user unity for the test_value"""
         self.assertAlmostEqual(
             svg_unit_scaled(user_unit).unit_to_viewport(value, unit), expected

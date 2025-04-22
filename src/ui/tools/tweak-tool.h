@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef __SP_TWEAK_CONTEXT_H__
-#define __SP_TWEAK_CONTEXT_H__
+#ifndef INKSCAPE_UI_TOOLS_TWEAK_TOOl_H
+#define INKSCAPE_UI_TOOLS_TWEAK_TOOl_H
 
 /*
  * tweaking paths without node editing
@@ -13,21 +13,18 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "ui/tools/tool-base.h"
 #include <2geom/point.h>
-
-#define SAMPLING_SIZE 8        /* fixme: ?? */
+#include "ui/tools/tool-base.h"
+#include "display/control/canvas-item-ptr.h"
+#include "helper/auto-connection.h"
 
 #define TC_MIN_PRESSURE      0.0
 #define TC_MAX_PRESSURE      1.0
 #define TC_DEFAULT_PRESSURE  0.35
 
-namespace Inkscape {
+namespace Inkscape { class CanvasItemBpath; }
 
-class CanvasItemBpath;
-
-namespace UI {
-namespace Tools {
+namespace Inkscape::UI::Tools {
 
 enum {
     TWEAK_MODE_MOVE,
@@ -45,16 +42,16 @@ enum {
     TWEAK_MODE_BLUR
 };
 
-class TweakTool : public ToolBase {
+class TweakTool : public ToolBase
+{
 public:
     TweakTool(SPDesktop *desktop);
     ~TweakTool() override;
 
     /* extended input data */
-    gdouble pressure;
+    double pressure;
 
     /* attributes */
-    bool dragging;           /* mouse state: mouse is dragging */
     bool usepressure;
     bool usetilt;
 
@@ -62,35 +59,33 @@ public:
     double force;
     double fidelity;
 
-    gint mode;
+    int mode;
 
     bool is_drawing;
 
     bool is_dilating;
     bool has_dilated;
     Geom::Point last_push;
-    Inkscape::CanvasItemBpath *dilate_area;
+    CanvasItemPtr<CanvasItemBpath> dilate_area;
 
     bool do_h;
     bool do_s;
     bool do_l;
     bool do_o;
 
-    sigc::connection style_set_connection;
+    auto_connection style_set_connection;
 
-    void set(const Inkscape::Preferences::Entry &val) override;
-    bool root_handler(GdkEvent *event) override;
+    void set(Preferences::Entry const &val) override;
+    bool root_handler(CanvasEvent const &event) override;
     void update_cursor(bool with_shift);
 
 private:
-    bool set_style(const SPCSSAttr *css);
+    bool set_style(SPCSSAttr const *css);
 };
 
-}
-}
-}
+} // namespace Inkscape::UI::Tool
 
-#endif
+#endif // INKSCAPE_UI_TOOLS_TWEAK_TOOl_H
 
 /*
   Local Variables:

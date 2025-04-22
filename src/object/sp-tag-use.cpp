@@ -13,45 +13,38 @@
 
 #include "sp-tag-use.h"
 
-#include <cstring>
-#include <string>
-
 #include <glibmm/i18n.h>
+#include <sigc++/functors/mem_fun.h>
 
-#include "bad-uri-exception.h"
-#include "display/drawing-group.h"
-#include "attributes.h"
-#include "document.h"
-#include "uri.h"
-#include "xml/repr.h"
-#include "preferences.h"
-#include "style.h"
-#include "sp-factory.h"
-#include "sp-symbol.h"
-#include "sp-tag-use-reference.h"
+#include "attributes.h"                 // for SPAttr
+#include "bad-uri-exception.h"          // for BadURIException
+#include "sp-item.h"                    // for SPItem
+#include "sp-object.h"                  // for SPObject, sp_object_unref
+#include "sp-factory.h"                 // for NodeTraits, SPFactory
+#include "sp-tag-use-reference.h"       // for SPTagUseReference
+#include "uri.h"                        // for URI
+
+#include "xml/document.h"               // for Document
+#include "xml/href-attribute-helper.h"  // for getHrefAttribute
+#include "xml/node.h"                   // for Node
+
+class SPDocument;
 
 SPTagUse::SPTagUse()
+    : ref{std::make_unique<SPTagUseReference>(this)}
 {
-    href = nullptr;
-    //new (_changed_connection) sigc::connection;
-    ref = new SPTagUseReference(this);
-    
     _changed_connection = ref->changedSignal().connect(sigc::mem_fun(*this, &SPTagUse::href_changed));
 }
 
 SPTagUse::~SPTagUse()
 {
-
     if (child) {
         detach(child);
         child = nullptr;
     }
 
     ref->detach();
-    delete ref;
-    ref = nullptr;
-
-    _changed_connection.~connection(); //FIXME why?
+    ref.reset();
 }
 
 void
@@ -68,7 +61,6 @@ SPTagUse::build(SPDocument *document, Inkscape::XML::Node *repr)
 void
 SPTagUse::release()
 {
-
     if (child) {
         detach(child);
         child = nullptr;
@@ -76,8 +68,7 @@ SPTagUse::release()
 
     _changed_connection.disconnect();
 
-    g_free(href);
-    href = nullptr;
+    href.reset();
 
     ref->detach();
 
@@ -85,24 +76,24 @@ SPTagUse::release()
 }
 
 void
-SPTagUse::set(SPAttr key, gchar const *value)
+SPTagUse::set(SPAttr key, char const *value)
 {
 
     switch (key) {
         case SPAttr::XLINK_HREF: {
-            if ( value && href && ( strcmp(value, href) == 0 ) ) {
+            if (value && href && *href == value) {
                 /* No change, do nothing. */
             } else {
-                g_free(href);
-                href = nullptr;
+                href.reset();
+
                 if (value) {
                     // First, set the href field, because sp_tag_use_href_changed will need it.
-                    href = g_strdup(value);
+                    href = value;
 
                     // Now do the attaching, which emits the changed signal.
                     try {
                         ref->attach(Inkscape::URI(value));
-                    } catch (Inkscape::BadURIException &e) {
+                    } catch (Inkscape::BadURIException const &e) {
                         g_warning("%s", e.what());
                         ref->detach();
                     }
@@ -120,7 +111,7 @@ SPTagUse::set(SPAttr key, gchar const *value)
 }
 
 Inkscape::XML::Node *
-SPTagUse::write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, guint flags)
+SPTagUse::write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned flags)
 {
     if ((flags & SP_OBJECT_WRITE_BUILD) && !repr) {
         repr = xml_doc->createElement("inkscape:tagref");
@@ -130,7 +121,8 @@ SPTagUse::write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, gui
     
     if (ref->getURI()) {
         auto uri_string = ref->getURI()->str();
-        repr->setAttributeOrRemoveIfEmpty("xlink:href", uri_string);
+        auto href_key = Inkscape::getHrefAttribute(*repr).first;
+        repr->setAttributeOrRemoveIfEmpty(href_key, uri_string);
     }
 
     return repr;
@@ -148,23 +140,22 @@ SPTagUse::write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, gui
 SPItem * SPTagUse::root()
 {
     SPObject *orig = child;
-    while (orig && SP_IS_TAG_USE(orig)) {
-        orig = SP_TAG_USE(orig)->child;
+    while (orig && is<SPTagUse>(orig)) {
+        orig = cast<SPTagUse>(orig)->child;
     }
-    if (!orig || !SP_IS_ITEM(orig))
+    if (!orig || !is<SPItem>(orig))
         return nullptr;
-    return SP_ITEM(orig);
+    return cast<SPItem>(orig);
 }
 
 void
-SPTagUse::href_changed(SPObject */*old_ref*/, SPObject */*ref*/)
+SPTagUse::href_changed(SPObject * /*old_ref*/, SPObject * /*ref*/)
 {
     if (href) {
         SPItem *refobj = ref->getObject();
         if (refobj) {
             Inkscape::XML::Node *childrepr = refobj->getRepr();
             const std::string typeString = NodeTraits::get_type_string(*childrepr);
-            
             SPObject* child_ = SPFactory::createObject(typeString);
             if (child_) {
                 child = child_;
@@ -179,11 +170,10 @@ SPTagUse::href_changed(SPObject */*old_ref*/, SPObject */*ref*/)
 
 SPItem * SPTagUse::get_original()
 {
-    SPItem *ref_ = nullptr;
     if (ref) {
-        ref_ = ref->getObject();
+        return ref->getObject();
     }
-    return ref_;
+    return nullptr;
 }
 
 /*

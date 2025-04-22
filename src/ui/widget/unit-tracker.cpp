@@ -14,21 +14,17 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "unit-tracker.h"
+
 #include <algorithm>
 #include <iostream>
-
-#include "unit-tracker.h"
+#include <gtkmm/liststore.h>
 
 #include "combo-tool-item.h"
 
 #define COLUMN_STRING 0
 
-using Inkscape::Util::UnitTable;
-using Inkscape::Util::unit_table;
-
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 UnitTracker::UnitTracker(UnitType unit_type) :
     _active(0),
@@ -38,7 +34,7 @@ UnitTracker::UnitTracker(UnitType unit_type) :
     _store(nullptr),
     _priorValues()
 {
-    UnitTable::UnitMap m = unit_table.units(unit_type);
+    auto const &m = Util::UnitTable::get().units(unit_type);
     
     ComboToolItemColumns columns;
     _store = Gtk::ListStore::create(columns);
@@ -134,7 +130,7 @@ void UnitTracker::setActiveUnitByLabel(Glib::ustring label)
 
 void UnitTracker::setActiveUnitByAbbr(gchar const *abbr)
 {
-    Inkscape::Util::Unit const *u = unit_table.getUnit(abbr);
+    auto u = Util::UnitTable::get().getUnit(abbr);
     setActiveUnit(u);
 }
 
@@ -178,7 +174,7 @@ void UnitTracker::prependUnit(Inkscape::Util::Unit const *u)
 
 }
 
-void UnitTracker::setFullVal(GtkAdjustment *adj, gdouble val)
+void UnitTracker::setFullVal(GtkAdjustment * const adj, double const val)
 {
     _priorValues[adj] = val;
 }
@@ -222,6 +218,8 @@ void UnitTracker::_adjustmentFinalized(GObject *where_the_object_was)
 
 void UnitTracker::_setActive(gint active)
 {
+    auto const &unit_table = Util::UnitTable::get();
+
     if ( active != _active || !_activeUnitInitialized ) {
         gint oldActive = _active;
 
@@ -276,8 +274,8 @@ void UnitTracker::_fixupAdjustments(Inkscape::Util::Unit const *oldUnit, Inkscap
 {
     _isUpdating = true;
     for ( auto adj : _adjList ) {
-        gdouble oldVal = gtk_adjustment_get_value(adj);
-        gdouble val = oldVal;
+        auto const oldVal = gtk_adjustment_get_value(adj);
+        auto val = oldVal;
 
         if ( (oldUnit->type != Inkscape::Util::UNIT_TYPE_DIMENSIONLESS)
             && (newUnit->type == Inkscape::Util::UNIT_TYPE_DIMENSIONLESS) )
@@ -299,9 +297,7 @@ void UnitTracker::_fixupAdjustments(Inkscape::Util::Unit const *oldUnit, Inkscap
     _isUpdating = false;
 }
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 /*
   Local Variables:

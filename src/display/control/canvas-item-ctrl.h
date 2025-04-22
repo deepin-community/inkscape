@@ -7,8 +7,9 @@
  */
 
 /*
- * Author:
+ * Authors:
  *   Tavmjong Bah
+ *   Sanidhya Singh
  *
  * Copyright (C) 2020 Tavmjong Bah
  *
@@ -18,78 +19,91 @@
  */
 
 #include <memory>
-#include <gdk-pixbuf/gdk-pixbuf.h>
 #include <2geom/point.h>
 
 #include "canvas-item.h"
 #include "canvas-item-enums.h"
+#include "ctrl-handle-styling.h"
 
 #include "enums.h" // SP_ANCHOR_X
+#include "display/initlock.h"
 
 namespace Inkscape {
 
-class CanvasItemGroup; // A canvas control that contains other canvas controls.
+// Handle sizes relative to the preferred size
+enum class HandleSize { XTINY = -4, TINY = -2, SMALL = -1, NORMAL = 0, LARGE = 1 };
 
-class CanvasItemCtrl : public CanvasItem {
-
+class CanvasItemCtrl : public CanvasItem
+{
 public:
-    ~CanvasItemCtrl() override;
     CanvasItemCtrl(CanvasItemGroup *group);
     CanvasItemCtrl(CanvasItemGroup *group, CanvasItemCtrlType type);
     CanvasItemCtrl(CanvasItemGroup *group, CanvasItemCtrlType type, Geom::Point const &p);
-    CanvasItemCtrl(CanvasItemGroup *group, CanvasItemCtrlShape shape);
-    CanvasItemCtrl(CanvasItemGroup *group, CanvasItemCtrlShape shape, Geom::Point const &p);
 
     // Geometry
     void set_position(Geom::Point const &position);
 
-    void update(Geom::Affine const &affine) override;
-    double closest_distance_to(Geom::Point const &p);
+    double closest_distance_to(Geom::Point const &p) const;
 
     // Selection
     bool contains(Geom::Point const &p, double tolerance = 0) override;
 
-    // Display
-    void render(Inkscape::CanvasItemBuffer *buf) override;
-
     // Properties
-    void set_fill(guint32 rgba) override;
-    void set_stroke(guint32 rgba) override;
-    void set_shape(int shape);
-    void set_shape_default(); // Use type to determine shape.
-    void set_mode(int mode);
-    void set_mode_default();
-    void set_size(int size);
-    virtual void set_size_via_index(int size_index);
+    void set_size(HandleSize rel_size);
+    void set_fill(uint32_t rgba) override;
+    void set_stroke(uint32_t rgba) override;
+    void set_shape(CanvasItemCtrlShape shape);
+    void set_size_via_index(int size_index);
     void set_size_default(); // Use preference and type to set size.
-    void set_size_extra(int extra); // Used to temporary increase size of ctrl.
     void set_anchor(SPAnchorType anchor);
     void set_angle(double angle);
     void set_type(CanvasItemCtrlType type);
-    void set_pixbuf(GdkPixbuf *pixbuf);
- 
-protected:
-    void build_cache(int device_scale);
+    void set_selected(bool selected = true);
+    void set_click(bool click = true);
+    void set_hover(bool hover = true);
+    void set_normal(bool selected = false);
 
+    // do not call directly; only used for invisible handle
+    void _set_size(int size);
+protected:
+    ~CanvasItemCtrl() override = default;
+
+    void _update(bool propagate) override;
+    void _render(CanvasItemBuffer &buf) const override;
+    void _invalidate_ctrl_handles() override;
+
+    void build_cache(int device_scale) const;
+    float get_width() const;
+    float get_total_width() const;
+
+private:
     // Geometry
     Geom::Point _position;
-
     // Display
-    guint32 *_cache = nullptr;
-    bool _built = false;
-
+    InitLock _built;
+    mutable std::shared_ptr<Cairo::ImageSurface const> _cache;
     // Properties
-    CanvasItemCtrlType _type   = CANVAS_ITEM_CTRL_TYPE_DEFAULT;
+    Handles::TypeState _handle;
     CanvasItemCtrlShape _shape = CANVAS_ITEM_CTRL_SHAPE_SQUARE;
-    CanvasItemCtrlMode _mode   = CANVAS_ITEM_CTRL_MODE_XOR;
-    unsigned int _width  = 5;   // Nominally width == height == size... unless we use a pixmap.
-    unsigned int _height = 5;
-    unsigned int _extra  = 0;   // Used to temporarily increase size.
-    double       _angle  = 0.0; // Used for triangles, could be used for arrows.
+    uint32_t _fill = 0x000000ff;
+    uint32_t _stroke = 0xffffffff;
+    bool _shape_set = false;
+    bool _fill_set = false;
+    bool _stroke_set = false;
+    bool _size_set = false;
+    double _angle = 0; // Used for triangles, could be used for arrows.
     SPAnchorType _anchor = SP_ANCHOR_CENTER;
-    GdkPixbuf *_pixbuf = nullptr;
-};
+    int _width  = 5;
+    HandleSize _rel_size = HandleSize::NORMAL;
+    Geom::Point _pos;
 
+    // get effective stroke width
+    float get_stroke_width() const;
+    // get size of the pixmap needed to render this control item
+    int get_pixmap_width(int device_scale) const;
+    // for debugging only - save handles to "handle.png"
+    void _dump();
+};
 
 } // namespace Inkscape
 

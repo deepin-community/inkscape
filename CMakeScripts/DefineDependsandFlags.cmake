@@ -44,6 +44,7 @@ list(APPEND INKSCAPE_CXX_FLAGS "-Werror=format-security")       # e.g.: printf(v
 list(APPEND INKSCAPE_CXX_FLAGS "-Werror=ignored-qualifiers")    # e.g.: const int foo();
 list(APPEND INKSCAPE_CXX_FLAGS "-Werror=return-type")           # non-void functions that don't return a value
 list(APPEND INKSCAPE_CXX_FLAGS "-Wno-switch")                   # See !849 for discussion
+list(APPEND INKSCAPE_CXX_FLAGS "-Wmisleading-indentation")
 list(APPEND INKSCAPE_CXX_FLAGS_DEBUG "-Og")                     # -Og for _FORTIFY_SOURCE. One could add -Weffc++ here to see approx. 6000 warnings
 list(APPEND INKSCAPE_CXX_FLAGS_DEBUG "-Wcomment")
 list(APPEND INKSCAPE_CXX_FLAGS_DEBUG "-Wunused-function")
@@ -125,7 +126,6 @@ pkg_check_modules(INKSCAPE_DEP REQUIRED
                   fontconfig
                   gsl
                   gmodule-2.0
-                  libsoup-2.4>=2.42
                   #double-conversion
                   bdw-gc #boehm-demers-weiser gc
                   lcms2)
@@ -159,7 +159,7 @@ add_definitions(${Intl_DEFINITIONS})
 
 # Check for system-wide version of 2geom and fallback to internal copy if not found
 if(NOT WITH_INTERNAL_2GEOM)
-    pkg_check_modules(2Geom QUIET IMPORTED_TARGET GLOBAL 2geom>=1.2.2)
+    pkg_check_modules(2Geom QUIET IMPORTED_TARGET GLOBAL 2geom>=1.4.0)
     if(2Geom_FOUND)
         add_library(2Geom::2geom ALIAS PkgConfig::2Geom)
     else()
@@ -259,6 +259,7 @@ endif()
 pkg_check_modules(
     GTK3
     REQUIRED
+    glibmm-2.4>=2.58
     gtkmm-3.0>=3.24
     gdkmm-3.0>=3.24
     gtk+-3.0>=3.24
@@ -281,7 +282,43 @@ if(WITH_GSPELL)
     endif()
 endif()
 
-find_package(Boost 1.19.0 REQUIRED COMPONENTS filesystem)
+if(WITH_GSOURCEVIEW)
+    pkg_check_modules(GSOURCEVIEW gtksourceview-4)
+    if("${GSOURCEVIEW_FOUND}")
+        message(STATUS "Using gtksourceview-4")
+        list(APPEND INKSCAPE_INCS_SYS ${GSOURCEVIEW_INCLUDE_DIRS})
+        sanitize_ldflags_for_libs(GSOURCEVIEW_LDFLAGS)
+        list(APPEND INKSCAPE_LIBS ${GSOURCEVIEW_LDFLAGS})
+    else()
+        set(WITH_GSOURCEVIEW OFF)
+    endif()
+endif()
+
+# stacktrace print on crash
+if(WIN32)
+    find_package(Boost 1.19.0 REQUIRED COMPONENTS filesystem stacktrace_windbg)
+    list(APPEND INKSCAPE_LIBS "-lole32")
+    list(APPEND INKSCAPE_LIBS "-ldbgeng")
+    add_definitions("-DBOOST_STACKTRACE_USE_WINDBG")
+elseif(APPLE)
+    find_package(Boost 1.19.0 REQUIRED COMPONENTS filesystem stacktrace_basic)
+    list(APPEND INKSCAPE_CXX_FLAGS "-D_GNU_SOURCE")
+else()
+    find_package(Boost 1.19.0 REQUIRED COMPONENTS filesystem)
+    # The package stacktrace_backtrace may not be available on all distros.
+    find_package(Boost 1.19.0 COMPONENTS stacktrace_backtrace)
+    if (BOOST_FOUND)
+        list(APPEND INKSCAPE_LIBS "-lbacktrace")
+        add_definitions("-DBOOST_STACKTRACE_USE_BACKTRACE")
+    else() # fall back to stacktrace_basic
+        find_package(Boost 1.19.0 REQUIRED COMPONENTS stacktrace_basic)
+        list(APPEND INKSCAPE_CXX_FLAGS "-D_GNU_SOURCE")
+    endif()
+endif()
+# enable explicit debug symbols
+set(CMAKE_ENABLE_EXPORTS ON)
+
+
 
 if (CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
     list(APPEND INKSCAPE_LIBS "-lstdc++fs")
@@ -385,7 +422,12 @@ endif(WITH_NLS)
 pkg_check_modules(SIGC++ REQUIRED sigc++-2.0 )
 sanitize_ldflags_for_libs(SIGC++_LDFLAGS)
 list(APPEND INKSCAPE_LIBS ${SIGC++_LDFLAGS})
-list(APPEND INKSCAPE_CXX_FLAGS ${SIGC++_CFLAGS_OTHER})
+list(APPEND INKSCAPE_CXX_FLAGS ${SIGC++_CFLAGS_OTHER} "-DSIGCXX_DISABLE_DEPRECATED")
+
+pkg_check_modules(EPOXY REQUIRED epoxy )
+sanitize_ldflags_for_libs(EPOXY_LDFLAGS)
+list(APPEND INKSCAPE_LIBS ${EPOXY_LDFLAGS})
+list(APPEND INKSCAPE_CXX_FLAGS ${EPOXY_CFLAGS_OTHER})
 
 if(WITH_X11)
     find_package(X11 REQUIRED)
@@ -398,10 +440,6 @@ if(WITH_X11)
         message(FATAL_ERROR "GTK+3 doesn't targets X11, this is required for WITH_X11")
     endif()
 endif(WITH_X11)
-
-if(WITH_INTERNAL_CAIRO)
-    add_definitions(-DWITH_PATCHED_CAIRO)
-endif()
 
 # end Dependencies
 

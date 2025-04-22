@@ -1,62 +1,66 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef SEEN_SP_MARKER_SELECTOR_NEW_H
-#define SEEN_SP_MARKER_SELECTOR_NEW_H
-
-/* Authors:
+/**
+ * @file
+ * Combobox for selecting dash patterns - implementation.
+ */
+/* Author:
  *   Lauris Kaplinski <lauris@kaplinski.com>
- *   Maximilian Albert <maximilian.albert> (gtkmm-ification)
+ *   bulia byak <buliabyak@users.sf.net>
+ *   Maximilian Albert <maximilian.albert@gmail.com>
  *
  * Copyright (C) 2002 Lauris Kaplinski
  *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
+
+#ifndef SEEN_SP_MARKER_COMBO_BOX_H
+#define SEEN_SP_MARKER_COMBO_BOX_H
+
+#include <map>
+#include <memory>
+#include <string>
 #include <vector>
-
-#include <gtkmm/bin.h>
+#include <glibmm/refptr.h>
+#include <glibmm/ustring.h>
+#include <giomm/liststore.h>
 #include <gtkmm/box.h>
-#include <gtkmm/builder.h>
-#include <gtkmm/checkbutton.h>
-#include <gtkmm/flowbox.h>
-#include <gtkmm/image.h>
-#include <gtkmm/liststore.h>
-#include <gtkmm/menubutton.h>
-#include <gtkmm/spinbutton.h>
-#include <gio/gliststore.h>
-
+#include <gtkmm/cellrendererpixbuf.h>
+#include <gtkmm/treemodel.h>
 #include <sigc++/signal.h>
 
-#include "document.h"
-#include "inkscape.h"
-#include "scrollprotected.h"
 #include "display/drawing.h"
+#include "document.h"
+#include "helper/auto-connection.h"
 #include "ui/operation-blocker.h"
 
-class SPMarker;
-
 namespace Gtk {
+class Builder;
+class Button;
+class CheckButton;
+class FlowBox;
+class Image;
+class Label;
+class MenuButton;
+class RadioButton;
+class SpinButton;
+} // namespace Gtk
 
-class Container;
-class Adjustment;
-}
+class SPDocument;
+class SPMarker;
+class SPObject;
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 /**
  * ComboBox-like class for selecting stroke markers.
  */
-class MarkerComboBox : public Gtk::Bin {
-    using parent_type = Gtk::Bin;
+class MarkerComboBox final : public Gtk::Box {
+    using parent_type = Gtk::Box;
 
 public:
     MarkerComboBox(Glib::ustring id, int loc);
-    ~MarkerComboBox() override;
 
     void setDocument(SPDocument *);
-
-    sigc::signal<void> changed_signal;
-    sigc::signal<void> edit_signal;
 
     void set_current(SPObject *marker);
     std::string get_active_marker_uri();
@@ -64,7 +68,8 @@ public:
     const char* get_id() { return _combo_id.c_str(); };
     int get_loc() { return _loc; };
 
-    sigc::signal<void()> signal_changed() { return _signal_changed; }
+    sigc::connection connect_changed(sigc::slot<void ()> slot);
+    sigc::connection connect_edit   (sigc::slot<void ()> slot);
 
 private:
     struct MarkerItem : Glib::Object {
@@ -83,8 +88,10 @@ private:
 
     SPMarker* get_current() const;
     Glib::ustring _current_marker_id;
-    // SPMarker* _current_marker = nullptr;
-    sigc::signal<void()> _signal_changed;
+
+    sigc::signal<void ()> _signal_changed;
+    sigc::signal<void ()> _signal_edit   ;
+
     Glib::RefPtr<Gtk::Builder> _builder;
     Gtk::FlowBox& _marker_list;
     Gtk::Label& _marker_name;
@@ -151,17 +158,16 @@ private:
     std::vector<SPMarker*> get_marker_list(SPDocument* source);
     void add_markers (std::vector<SPMarker *> const& marker_list, SPDocument *source,  gboolean history);
     void remove_markers (gboolean history);
-    std::unique_ptr<SPDocument> ink_markers_preview_doc(const Glib::ustring& group_id);
     Cairo::RefPtr<Cairo::Surface> create_marker_image(Geom::IntPoint pixel_size, gchar const *mname,
         SPDocument *source, Inkscape::Drawing &drawing, unsigned /*visionkey*/, bool checkerboard, bool no_clip, double scale);
     void refresh_after_markers_modified();
-    sigc::connection modified_connection;
+    auto_connection modified_connection;
+    auto_connection _idle;
 };
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
-#endif // SEEN_SP_MARKER_SELECTOR_NEW_H
+} // namespace Inkscape::UI::Widget
+
+#endif // SEEN_SP_MARKER_COMBO_BOX_H
 
 /*
   Local Variables:

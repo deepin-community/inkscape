@@ -11,8 +11,11 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <vector>
+#include <functional>
 #include <2geom/path.h>
 #include <2geom/pathvector.h>
+#include "path/path-boolop.h"
 
 namespace Inkscape {
 
@@ -92,6 +95,47 @@ Geom::Path half_outline(
  * @param[in]    join
  */
 void outline_join(Geom::Path &res, Geom::Path const& outgoing, Geom::Point in_tang, Geom::Point out_tang, double width, double miter, LineJoinType join);
+
+/**
+ * Return the list of connected components of a graph described by an adjacency-test function.
+ * \param size The number of nodes in the graph. (Nodes are labelled from 0 to size - 1.)
+ * \param adj_test The adjacency-test function.
+ */
+std::vector<std::vector<int>> connected_components(int size, std::function<bool(int, int)> const &adj_test);
+
+/**
+ * Return true if the given path has close to zero area.
+ */
+bool is_path_empty(const Geom::Path &path);
+
+/**
+ * Split a collection of paths into connected components.
+ * Two paths are viewed as connected if they overlap.
+ */
+std::vector<Geom::PathVector> split_non_intersecting_paths(Geom::PathVector &&paths, bool remove_empty = false);
+
+/**
+ * Create a user spected offset from a pathvector
+ */
+Geom::PathVector 
+do_offset(Geom::PathVector const & path_in
+        , double to_offset
+        , double tolerance
+        , double miter_limit
+        , FillRule fillrule
+        , Inkscape::LineJoinType join
+        , Geom::Point point // knot on LPE
+        , Geom::PathVector &helper_path
+        , Geom::PathVector &mix_pathv_all);
+
+Geom::PathVector 
+do_offset(Geom::PathVector const & path_in
+        , double to_offset
+        , double tolerance
+        , double miter_limit
+        , FillRule fillrule
+        , Inkscape::LineJoinType join);
+
 
 } // namespace Inkscape
 

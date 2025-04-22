@@ -54,11 +54,11 @@ public:
         bool_op_ex_count
     };
 
-    inline friend bool_op to_bool_op(bool_op_ex val)
+    inline friend BooleanOp to_bool_op(bool_op_ex val)
     {
         //assert(val <= bool_op_ex_slice);
         assert(val <= bool_op_ex_cut);
-        return (bool_op) val;
+        return (BooleanOp) val;
     }
 
 private:
@@ -67,14 +67,13 @@ private:
 
     OriginalSatelliteParam operand_item;
     EnumParam<bool_op_ex> bool_operation;
-    EnumParam<fill_typ> fill_type_this;
-    EnumParam<fill_typ> fill_type_operand;
+    EnumParam<FillRule> fill_type_this;
+    EnumParam<FillRule> fill_type_operand;
     BoolParam swap_operands;
     BoolParam rmv_inner;
     bool legacytest_livarotonly = false;
     bool onremove = false;
     SPItem *operand = nullptr;
-    SPObject *parentlpe = nullptr;
     SPGroup *division = nullptr;
     SPGroup *division_both = nullptr;
     SPGroup *division_other = nullptr;

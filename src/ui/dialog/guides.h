@@ -12,11 +12,13 @@
 #ifndef INKSCAPE_DIALOG_GUIDELINE_H
 #define INKSCAPE_DIALOG_GUIDELINE_H
 
+#include <glibmm/refptr.h>
 #include <gtkmm/checkbutton.h>
 #include <gtkmm/colorbutton.h>
 #include <gtkmm/dialog.h>
 #include <gtkmm/grid.h>
 #include <gtkmm/label.h>
+#include <gtkmm/sizegroup.h>
 
 #include "ui/widget/unit-menu.h"
 #include "ui/widget/scalar-unit.h"
@@ -26,22 +28,21 @@
 class SPGuide;
 class SPDesktop;
 
-namespace Inkscape {
-namespace UI {
+namespace Inkscape::UI {
 
 namespace Widget {
-  class UnitMenu;
-};
+class UnitMenu;
+} // namespace Widget
 
-namespace Dialogs {
+namespace Dialog {
 
 /**
  * Dialog for modifying guidelines.
  */
-class GuidelinePropertiesDialog : public Gtk::Dialog {
+class GuidelinePropertiesDialog final : public Gtk::Dialog {
 public:
     GuidelinePropertiesDialog(SPGuide *guide, SPDesktop *desktop);
-    ~GuidelinePropertiesDialog() override;
+    ~GuidelinePropertiesDialog() final;
 
     Glib::ustring     getName() const { return "GuidelinePropertiesDialog"; }
 
@@ -83,14 +84,14 @@ private:
     bool _mode;
     Geom::Point _oldpos;
     gdouble _oldangle;
+    Glib::RefPtr<Gtk::SizeGroup> _row_labels;
 
     void on_sb_activate();
 };
 
-} // namespace
-} // namespace
-} // namespace
+} // namespace Dialog
 
+} // namespace Inkscape::UI
 
 #endif // INKSCAPE_DIALOG_GUIDELINE_H
 

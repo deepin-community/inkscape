@@ -16,6 +16,7 @@
 
 #include "preferences.h"
 #include "svg/svg.h"
+#include "helper/geom.h"
 
 class SvgPathGeomTest : public ::testing::Test
 {
@@ -474,6 +475,18 @@ TEST_F(SvgPathGeomTest, testRoundTrip)
     path_str = sp_svg_write_path(pv);
     new_pv = sp_svg_read_pathv(path_str.c_str());
     ASSERT_TRUE(bpathEqual(pv, new_pv, 1e-17)) << org_path_str.c_str();
+    // Normalize path data
+    org_path_str = "m 2,3 l 20,0.0003 h 10 v 10 q 50,10 40,25 t 70,25 l 0,10 c 5,6 10,5 10,10 s 10,20 5,6 z";
+    pv = sp_svg_read_pathv(org_path_str.c_str());
+    path_str = sp_svg_write_path(pv, true);
+    ASSERT_TRUE(path_str == "M 2,3 L 22,3 L 32,3 L 32,13 C 65.33,19.67 78.67,28 72,38 C 65.33,48 88.67,56.33 142,63 L 142,73 C 147,79 152,78 152,83 C 152,88 162,103 157,89 Z");
+}
+
+TEST(PathVectorToBeziersTest, random)
+{
+    // Evil test will crash if not protected
+    Geom::PathVector pathv = sp_svg_read_pathv("M349 683 A170 170 0 1 0 349.00000000000006 683");
+    pathv_to_linear_and_cubic_beziers(pathv);
 }
 
 /*

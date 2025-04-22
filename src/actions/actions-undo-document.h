@@ -15,9 +15,9 @@
 #define INK_ACTIONS_DOCUMENT_UNDO_H
 
 class SPDocument;
-class InkscapeApplication;
 
 void add_actions_undo_document(SPDocument* document);
-void add_actions_undo_app(InkscapeApplication* app);
+
+void enable_undo_actions(SPDocument* document, bool undo, bool redo);
 
 #endif // INK_ACTIONS_DOCUMENT_UNDO_H

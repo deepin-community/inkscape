@@ -6,6 +6,7 @@
     <param name="startdepth" type="int" min="0" max="65535" gui-text="Starting Depth">0</param>
     <param name="maxdepth" type="int" min="0" max="65535" gui-text="Stopping Depth (from top)">65535</param>
     <param name="keepdepth" type="int" min="0" max="65535" gui-text="Depth to Keep (from bottom)">0</param>
+    <param name="preserve_layers" type="bool" gui-text="Preserve Layers" gui-description="Do not ungroup layers">false</param>
     <effect needs-live-preview="false">
         <object-type>all</object-type>
         <effects-menu >

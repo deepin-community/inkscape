@@ -19,6 +19,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -30,51 +31,71 @@
 
 #include "toolbar.h"
 
-#include <gtkmm/adjustment.h>
+namespace Gtk {
+class Button;
+class ToggleButton;
+class RadioButton;
+class Builder;
+} // namespace Gtk
 
 class SPDesktop;
-
-namespace Gtk {
-class RadioToolButton;
-}
 
 namespace Inkscape {
 namespace UI {
 class SimplePrefPusher;
 
 namespace Widget {
-class SpinButtonToolItem;
+class SpinButton;
+class ToolbarMenuButton;
 }
 
 namespace Toolbar {
-class SprayToolbar : public Toolbar {
+
+class SprayToolbar final : public Toolbar
+{
+public:
+    SprayToolbar(SPDesktop *desktop);
+    ~SprayToolbar() override;
+
+    void set_mode(int mode);
+
 private:
-    Glib::RefPtr<Gtk::Adjustment> _width_adj;
-    Glib::RefPtr<Gtk::Adjustment> _mean_adj;
-    Glib::RefPtr<Gtk::Adjustment> _sd_adj;
-    Glib::RefPtr<Gtk::Adjustment> _population_adj;
-    Glib::RefPtr<Gtk::Adjustment> _rotation_adj;
-    Glib::RefPtr<Gtk::Adjustment> _offset_adj;
-    Glib::RefPtr<Gtk::Adjustment> _scale_adj;
+    using ValueChangedMemFun = void (SprayToolbar::*)();
 
-    std::unique_ptr<SimplePrefPusher> _usepressurewidth_pusher;
-    std::unique_ptr<SimplePrefPusher> _usepressurepopulation_pusher;
+    Glib::RefPtr<Gtk::Builder> _builder;
 
-    std::vector<Gtk::RadioToolButton *> _mode_buttons;
-    UI::Widget::SpinButtonToolItem *_spray_population;
-    UI::Widget::SpinButtonToolItem *_spray_rotation;
-    UI::Widget::SpinButtonToolItem *_spray_scale;
-    Gtk::ToggleToolButton *_usepressurescale;
-    Gtk::ToggleToolButton *_picker;
-    Gtk::ToggleToolButton *_pick_center;
-    Gtk::ToggleToolButton *_pick_inverse_value;
-    Gtk::ToggleToolButton *_pick_fill;
-    Gtk::ToggleToolButton *_pick_stroke;
-    Gtk::ToggleToolButton *_pick_no_overlap;
-    Gtk::ToggleToolButton *_over_transparent;
-    Gtk::ToggleToolButton *_over_no_transparent;
-    Gtk::ToggleToolButton *_no_overlap;
-    UI::Widget::SpinButtonToolItem *_offset;
+    std::vector<Gtk::RadioButton *> _mode_buttons;
+
+    UI::Widget::SpinButton &_width_item;
+    UI::Widget::SpinButton &_population_item;
+
+    Gtk::Box &_rotation_box;
+    UI::Widget::SpinButton &_rotation_item;
+    UI::Widget::SpinButton &_scale_item;
+    Gtk::ToggleButton &_use_pressure_scale_btn;
+
+    UI::Widget::SpinButton &_sd_item;
+    UI::Widget::SpinButton &_mean_item;
+
+    Gtk::ToggleButton &_over_no_transparent_btn;
+    Gtk::ToggleButton &_over_transparent_btn;
+    Gtk::ToggleButton &_pick_no_overlap_btn;
+    Gtk::ToggleButton &_no_overlap_btn;
+    Gtk::Box &_offset_box;
+    UI::Widget::SpinButton &_offset_item;
+
+    Gtk::ToggleButton &_picker_btn;
+    Gtk::ToggleButton &_pick_fill_btn;
+    Gtk::ToggleButton &_pick_stroke_btn;
+    Gtk::ToggleButton &_pick_inverse_value_btn;
+    Gtk::ToggleButton &_pick_center_btn;
+
+    UI::Widget::ToolbarMenuButton *menu_btn3 = nullptr;
+    UI::Widget::ToolbarMenuButton *menu_btn4 = nullptr;
+
+    // TODO: Check if these can be moved to the constructor.
+    std::unique_ptr<SimplePrefPusher> _use_pressure_width_pusher;
+    std::unique_ptr<SimplePrefPusher> _use_pressure_population_pusher;
 
     void width_value_changed();
     void mean_value_changed();
@@ -86,19 +107,12 @@ private:
     void update_widgets();
     void scale_value_changed();
     void offset_value_changed();
-    void on_pref_toggled(Gtk::ToggleToolButton *btn,
-                         const Glib::ustring&   path);
+    void on_pref_toggled(bool active, const Glib::ustring &path);
     void toggle_no_overlap();
     void toggle_pressure_scale();
     void toggle_picker();
-
-protected:
-    SprayToolbar(SPDesktop *desktop);
-
-public:
-    static GtkWidget * create(SPDesktop *desktop);
-
-    void set_mode(int mode);
+    void setup_derived_spin_button(UI::Widget::SpinButton &btn, Glib::ustring const &name, double default_value,
+                                   ValueChangedMemFun const value_changed_mem_fun);
 };
 }
 }

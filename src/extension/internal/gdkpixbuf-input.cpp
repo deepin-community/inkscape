@@ -41,7 +41,7 @@ namespace Extension {
 namespace Internal {
 
 SPDocument *
-GdkpixbufInput::open(Inkscape::Extension::Input *mod, char const *uri)
+GdkpixbufInput::open(Inkscape::Extension::Input *mod, char const *uri, bool /*is_importing*/)
 {
     // Determine whether the image should be embedded
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
@@ -73,8 +73,7 @@ GdkpixbufInput::open(Inkscape::Extension::Input *mod, char const *uri)
 
     if (pb) {
         doc = SPDocument::createNewDoc(nullptr, TRUE, TRUE);
-        bool saved = DocumentUndo::getUndoSensitive(doc);
-        DocumentUndo::setUndoSensitive(doc, false); // no need to undo in this temporary document
+        DocumentUndo::ScopedInsensitive _no_undo(doc);
 
         double width = pb->width();
         double height = pb->height();
@@ -103,7 +102,6 @@ GdkpixbufInput::open(Inkscape::Extension::Input *mod, char const *uri)
 
         width *= xscale;
         height *= yscale;
-        doc->setWidthAndHeight(Util::Quantity(width, "px"), Util::Quantity(height, "px"));
 
         delete ir; // deleting NULL is safe
 
@@ -152,9 +150,6 @@ GdkpixbufInput::open(Inkscape::Extension::Input *mod, char const *uri)
             // std::cerr << "Viewbox not set, setting" << std::endl;
             doc->setViewBox(Geom::Rect::from_xywh(0, 0, doc->getWidth().value(doc->getDisplayUnit()), doc->getHeight().value(doc->getDisplayUnit())));
         }
-        
-        // restore undo, as now this document may be shown to the user if a bitmap was opened
-        DocumentUndo::setUndoSensitive(doc, saved);
     } else {
         printf("GdkPixbuf loader failed\n");
     }
@@ -199,6 +194,7 @@ GdkpixbufInput::init()
 
                     "<param name='link' type='optiongroup' gui-text='" N_("Image Import Type:") "' gui-description='" N_("Embed results in stand-alone, larger SVG files. Link references a file outside this SVG document and all files must be moved together.") "' >\n"
                         "<option value='embed' >" N_("Embed") "</option>\n"
+                        // TRANSLATORS: Image is displayed, and stored as a link or embedded
                         "<option value='link' >" N_("Link") "</option>\n"
                     "</param>\n"
 
@@ -231,7 +227,7 @@ GdkpixbufInput::init()
                 );
             // clang-format off
 
-            Inkscape::Extension::build_from_mem(xmlString, new GdkpixbufInput());
+            Inkscape::Extension::build_from_mem(xmlString, std::make_unique<GdkpixbufInput>());
             g_free(xmlString);
             g_free(caption);
         }}

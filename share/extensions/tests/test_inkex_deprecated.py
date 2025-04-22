@@ -1,5 +1,6 @@
 # coding=utf-8
 """Test base inkex module functionality"""
+
 from __future__ import absolute_import, print_function, unicode_literals
 from pathlib import Path
 import warnings
@@ -13,9 +14,7 @@ class DeprecatedTests(TestCase):
 
     maxDiff = 10000
 
-    def assertDeprecated(
-        self, call, msg, *args, **kwargs
-    ):  # pylint: disable=invalid-name
+    def assertDeprecated(self, call, msg, *args, **kwargs):  # pylint: disable=invalid-name
         """Catch deprecation warnings and test their output"""
         with warnings.catch_warnings(record=True) as warns:
             warnings.simplefilter("always")

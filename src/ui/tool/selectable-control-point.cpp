@@ -9,41 +9,19 @@
 
 #include "ui/tool/selectable-control-point.h"
 #include "ui/tool/control-point-selection.h"
-#include "ui/tool/event-utils.h"
+#include "ui/widget/events/canvas-event.h"
 
 namespace Inkscape {
 namespace UI {
 
-ControlPoint::ColorSet SelectableControlPoint::_default_scp_color_set = {
-    {0xffffff00, 0x01000000}, // normal fill, stroke
-    {0xff0000ff, 0x01000000}, // mouseover fill, stroke
-    {0x0000ffff, 0x01000000}, // clicked fill, stroke
-    //
-    {0x0000ffff, 0x000000ff}, // normal fill, stroke when selected
-    {0xff000000, 0x000000ff}, // mouseover fill, stroke when selected
-    {0xff000000, 0x000000ff}  // clicked fill, stroke when selected
-};
-
 SelectableControlPoint::SelectableControlPoint(SPDesktop *d, Geom::Point const &initial_pos, SPAnchorType anchor,
                                                Inkscape::CanvasItemCtrlType type,
                                                ControlPointSelection &sel,
-                                               ColorSet const &cset,
                                                Inkscape::CanvasItemGroup *group)
-    : ControlPoint(d, initial_pos, anchor, type, cset, group)
+    : ControlPoint(d, initial_pos, anchor, type, group)
     , _selection(sel)
 {
     _canvas_item_ctrl->set_name("CanvasItemCtrl:SelectableControlPoint");
-    _selection.allPoints().insert(this);
-}
-
-SelectableControlPoint::SelectableControlPoint(SPDesktop *d, Geom::Point const &initial_pos, SPAnchorType anchor,
-                                               Glib::RefPtr<Gdk::Pixbuf> pixbuf,
-                                               ControlPointSelection &sel,
-                                               ColorSet const &cset,
-                                               Inkscape::CanvasItemGroup *group)
-    : ControlPoint(d, initial_pos, anchor, pixbuf, cset, group)
-    , _selection (sel)
-{
     _selection.allPoints().insert(this);
 }
 
@@ -53,7 +31,7 @@ SelectableControlPoint::~SelectableControlPoint()
     _selection.allPoints().erase(this);
 }
 
-bool SelectableControlPoint::grabbed(GdkEventMotion *)
+bool SelectableControlPoint::grabbed(MotionEvent const &)
 {
     // if a point is dragged while not selected, it should select itself
     if (!selected()) {
@@ -63,23 +41,24 @@ bool SelectableControlPoint::grabbed(GdkEventMotion *)
     return false;
 }
 
-void SelectableControlPoint::dragged(Geom::Point &new_pos, GdkEventMotion *event)
+void SelectableControlPoint::dragged(Geom::Point &new_pos, MotionEvent const &event)
 {
     _selection._pointDragged(new_pos, event);
 }
 
-void SelectableControlPoint::ungrabbed(GdkEventButton *)
+void SelectableControlPoint::ungrabbed(ButtonReleaseEvent const *)
 {
     _selection._pointUngrabbed();
 }
 
-bool SelectableControlPoint::clicked(GdkEventButton *event)
+bool SelectableControlPoint::clicked(ButtonReleaseEvent const &event)
 {
-    if (_selection._pointClicked(this, event))
+    if (_selection._pointClicked(this, event)) {
         return true;
+    }
 
-    if (event->button != 1) return false;
-    if (held_shift(*event)) {
+    if (event.button != 1) return false;
+    if (held_shift(event)) {
         if (selected()) {
             _selection.erase(this);
         } else {
@@ -117,20 +96,17 @@ void SelectableControlPoint::_setState(State state)
     if (!selected()) {
         ControlPoint::_setState(state);
     } else {
-        ColorEntry current = {0, 0};
-        ColorSet const &activeCset = (_isLurking()) ? invisible_cset : _cset;
+        _canvas_item_ctrl->set_normal(true);
         switch (state) {
             case STATE_NORMAL:
-                current = activeCset.selected_normal;
                 break;
             case STATE_MOUSEOVER:
-                current = activeCset.selected_mouseover;
+                _canvas_item_ctrl->set_hover();
                 break;
             case STATE_CLICKED:
-                current = activeCset.selected_clicked;
+                _canvas_item_ctrl->set_click();
                 break;
         }
-        _setColors(current);
         _state = state;
     }
 }

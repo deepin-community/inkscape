@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 #
 # Copyright (C) 2014-2019 Martin Owens
@@ -57,7 +57,6 @@ class MergeStyles(inkex.EffectExtension):
             return inkex.errormsg(
                 _("There are no common styles between these elements.")
             )
-
         self.svg.stylesheet.add("." + newclass, inkex.Style(sorted(common)))
 
         for elem in elements:

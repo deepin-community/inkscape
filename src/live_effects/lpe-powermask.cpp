@@ -2,30 +2,28 @@
 /*
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
-#include "live_effects/lpe-powermask.h"
-#include "live_effects/lpeobject.h"
-#include "live_effects/lpeobject-reference.h"   
-#include <2geom/path-intersection.h>
-#include <2geom/intersection-graph.h>
-#include "display/curve.h"
-#include "helper/geom.h"
-#include "svg/svg.h"
-#include "svg/svg-color.h"
-#include "svg/stringstream.h"
-#include "path-chemistry.h"
-#include "extract-uri.h"
+#include "lpe-powermask.h"
+
+#include <glibmm/i18n.h>
+
 #include <bad-uri-exception.h>
 
-#include "object/sp-mask.h"
-#include "object/sp-path.h"
-#include "object/sp-shape.h"
+#include <2geom/path-intersection.h>
+#include <2geom/intersection-graph.h>
+
+#include "extract-uri.h"
+#include "selection.h"
+
+#include "inkscape.h"
+
+#include "live_effects/lpeobject-reference.h"
+#include "live_effects/lpeobject.h"
 #include "object/sp-defs.h"
 #include "object/sp-item-group.h"
-#include "object/uri.h"
-
-
-// TODO due to internal breakage in glibmm headers, this must be last:
-#include <glibmm/i18n.h>
+#include "object/sp-mask.h"
+#include "svg/stringstream.h"
+#include "svg/svg.h"
+#include "util/safe-printf.h"
 
 namespace Inkscape {
 namespace LivePathEffect {
@@ -121,7 +119,7 @@ LPEPowerMask::doBeforeEffect (SPLPEItem const* lpeitem){
             previous_color = background_color.get_value();
             setMask();
         } else {
-            uri.param_setValue(Glib::ustring(extract_uri(sp_lpe_item->getRepr()->attribute("mask"))), true);
+            uri.param_setValue(Glib::ustring(extract_uri(sp_lpe_item->getAttribute("mask"))), true);
             sp_lpe_item->getMaskRef().detach();
             Geom::OptRect bbox = lpeitem->visualBounds();
             if(!bbox) {
@@ -196,7 +194,7 @@ LPEPowerMask::setMask(){
     }
     Glib::ustring g_data_id = mask_id + (Glib::ustring)"_container";
     if((elemref = document->getObjectById(g_data_id))){
-        std::vector<SPItem*> item_list = sp_item_group_item_list(SP_GROUP(elemref));
+        std::vector<SPItem*> item_list = cast<SPGroup>(elemref)->item_list();
         for (auto iter : item_list) {
             Inkscape::XML::Node *mask_node = iter->getRepr();
             elemref->getRepr()->removeChild(mask_node);
@@ -207,7 +205,7 @@ LPEPowerMask::setMask(){
     }
     std::vector<SPObject*> mask_list = mask->childList(true);
     for (auto iter : mask_list) {
-        SPItem * mask_data = SP_ITEM(iter);
+        auto mask_data = cast<SPItem>(iter);
         Inkscape::XML::Node *mask_node = mask_data->getRepr();
         if (! strcmp(mask_data->getId(), box_id.c_str())){
             continue;
@@ -242,7 +240,7 @@ LPEPowerMask::setMask(){
         Glib::ustring style;
         gchar c[32];
         unsigned const rgb24 = background_color.get_value() >> 8;
-        sprintf(c, "#%06x", rgb24);
+        safeprintf(c, "#%06x", rgb24);
         style = Glib::ustring("fill:") + Glib::ustring(c);
         Inkscape::SVGOStringStream os;
         os << SP_RGBA32_A_F(background_color.get_value());
@@ -289,7 +287,8 @@ LPEPowerMask::doOnRemove (SPLPEItem const* lpeitem)
 {
     SPMask *mask = lpeitem->getMaskObject();
     if (mask) {
-        if (keep_paths || lpeitem->document->onungroup) {
+        Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+        if (keep_paths || prefs->getBool("/options/onungroup", false)) {
             return;
         }
         invert.param_setValue(false);
@@ -314,7 +313,7 @@ void sp_inverse_powermask(Inkscape::Selection *sel) {
         }
         auto selList = sel->items();
         for(auto i = boost::rbegin(selList); i != boost::rend(selList); ++i) {
-            SPLPEItem* lpeitem = dynamic_cast<SPLPEItem*>(*i);
+            auto lpeitem = cast<SPLPEItem>(*i);
             if (lpeitem) {
                 SPMask *mask = lpeitem->getMaskObject();
                 if (mask) {
@@ -337,7 +336,7 @@ void sp_remove_powermask(Inkscape::Selection *sel) {
     if (!sel->isEmpty()) {
         auto selList = sel->items();
         for (auto i = boost::rbegin(selList); i != boost::rend(selList); ++i) {
-            SPLPEItem *lpeitem = dynamic_cast<SPLPEItem *>(*i);
+            auto lpeitem = cast<SPLPEItem>(*i);
             if (lpeitem) {
                 if (lpeitem->hasPathEffect() && lpeitem->pathEffectsEnabled()) {
                     PathEffectList path_effect_list(*lpeitem->path_effect_list);

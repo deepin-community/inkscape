@@ -27,8 +27,8 @@ class Output : public Extension {
     gchar *filetypetooltip;      /**< A more detailed description of the filetype */
     bool   dataloss;             /**< The extension causes data loss on save */
     bool   savecopyonly;         /**< Limit output option to Save a Copy */
-    bool   raster;               /**< Is the extension expecting a png file */
-    bool   exported;             /**< Is the extension available in the export dialog */
+    bool   raster = false;       /**< Is the extension expecting a png file */
+    bool   exported = false;     /**< Is the extension available in the export dialog */
 
 public:
     class save_failed {};        /**< Generic failure for an undescribed reason */
@@ -41,7 +41,7 @@ public:
             export_id_not_found(const gchar * const id = nullptr) : id{id} {};
     };
 
-    Output(Inkscape::XML::Node *in_repr, Implementation::Implementation *in_imp, std::string *base_directory);
+    Output(Inkscape::XML::Node *in_repr, ImplementationHolder implementation, std::string *base_directory);
     ~Output () override;
 
     bool check() override;
@@ -53,16 +53,16 @@ public:
                                 std::string png_filename,
                                 gchar const *filename,
                                 bool detachbase);
-    bool         prefs ();
-    gchar *      get_mimetype();
-    gchar *      get_extension();
-    const char * get_filetypename(bool translated=false);
-    const char * get_filetypetooltip(bool translated=false);
-    bool         causes_dataloss() { return dataloss; };
-    bool         savecopy_only() { return savecopyonly; };
-    bool         is_raster() { return raster; };
-    bool         is_exported() { return exported; };
-    void         add_extension(Glib::ustring &filename);
+    gchar const *get_mimetype() const;
+    gchar const *get_extension() const;
+    const char * get_filetypename(bool translated=false) const;
+    const char * get_filetypetooltip(bool translated=false) const;
+    bool         causes_dataloss() const { return dataloss; };
+    bool         savecopy_only() const { return savecopyonly; };
+    bool         is_raster() const { return raster; };
+    bool         is_exported() const { return exported; };
+    void         add_extension(std::string &filename);
+    bool         can_save_filename(gchar const *filename) const;
 };
 
 } }  /* namespace Inkscape, Extension */

@@ -5,6 +5,11 @@
 /*
  * System abstraction utility routines
  *
+ * WARNING:
+ *   Most of these routines should not be used. Filenames should always
+ *   be std::string, not utf8 encoded. Filenames should be converted
+ *   to/from Glib::ustring when used in the GUI.
+ *
  * Authors:
  *   Jon A. Cruz <jon@joncruz.org>
  *
@@ -14,57 +19,32 @@
  */
 
 #include <cstdio>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <glib.h>
-#include <glibmm/spawn.h>
 #include <string>
-#include <vector>
+
+#include <glib.h>
+#include <glibmm/ustring.h>
 
 /*#####################
 ## U T I L I T Y
 #####################*/
 
-namespace Inkscape {
-namespace IO {
+namespace Inkscape::IO {
 
 void dump_fopen_call( char const *utf8name, char const *id );
 
 FILE *fopen_utf8name( char const *utf8name, char const *mode );
 
-int mkdir_utf8name( char const *utf8name );
-
 bool file_test( char const *utf8name, GFileTest test );
-
-bool file_directory_exists( char const *utf8name );
 
 bool file_is_writable( char const *utf8name);
 
-GDir *dir_open(gchar const *utf8name, guint flags, GError **error);
+Glib::ustring sanitizeString(char const *str);
 
-gchar *dir_read_utf8name(GDir *dir);
+Glib::ustring get_file_extension(Glib::ustring const &path);
 
-gchar* locale_to_utf8_fallback( const gchar *opsysstring,
-				gssize len,
-				gsize *bytes_read,
-				gsize *bytes_written,
-				GError **error );
+std::string get_file_extension(std::string const &path);
+void remove_file_extension(std::string &path);
 
-gchar* sanitizeString( gchar const * str );
-
-void spawn_async_with_pipes (const std::string& working_directory,
-                             const std::vector<std::string>& argv,
-                             Glib::SpawnFlags flags,
-                             const sigc::slot<void>& child_setup,
-                             Glib::Pid* child_pid,
-                             int* standard_input,
-                             int* standard_output,
-                             int* standard_error);
-
-Glib::ustring get_file_extension(Glib::ustring path);
-
-}
-}
-
+} // namespace Inkscape::IO
 
 #endif // SEEN_SYS_H

@@ -10,8 +10,8 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef SEEN_UI_TOOL_TRANSFORM_HANDLE_SET_H
-#define SEEN_UI_TOOL_TRANSFORM_HANDLE_SET_H
+#ifndef INKSCAPE_UI_TOOL_TRANSFORM_HANDLE_SET_H
+#define INKSCAPE_UI_TOOL_TRANSFORM_HANDLE_SET_H
 
 #include <memory>
 #include <gdk/gdk.h>
@@ -37,17 +37,18 @@ class ScaleCornerHandle;
 class ScaleSideHandle;
 class RotationCenter;
 
-class TransformHandleSet : public Manipulator {
+class TransformHandleSet : public Manipulator
+{
 public:
-
-    enum Mode {
+    enum Mode
+    {
         MODE_SCALE,
         MODE_ROTATE_SKEW
     };
 
     TransformHandleSet(SPDesktop *d, Inkscape::CanvasItemGroup *th_group);
     ~TransformHandleSet() override;
-    bool event(Inkscape::UI::Tools::ToolBase *, GdkEvent *) override;
+    bool event(Inkscape::UI::Tools::ToolBase *tool, CanvasEvent const &event) override;
 
     bool visible() const { return _visible; }
     Mode mode() const { return _mode; }
@@ -64,11 +65,10 @@ public:
     ControlPoint const &rotationCenter() const;
     ControlPoint &rotationCenter();
 
-    sigc::signal<void, Geom::Affine const &> signal_transform;
-    sigc::signal<void, CommitEvent> signal_commit;
+    sigc::signal<void (Geom::Affine const &)> signal_transform;
+    sigc::signal<void (CommitEvent)> signal_commit;
 
 private:
-
     void _emitTransform(Geom::Affine const &);
     void _setActiveHandle(ControlPoint *h);
     void _clearActiveHandle();
@@ -111,8 +111,8 @@ public:
 protected:
     virtual void startTransform() {}
     virtual void endTransform() {}
-    virtual Geom::Affine computeTransform(Geom::Point const &pos, GdkEventMotion *event) = 0;
-    virtual CommitEvent getCommitEvent() = 0;
+    virtual Geom::Affine computeTransform(Geom::Point const &pos, MotionEvent const &event) = 0;
+    virtual CommitEvent getCommitEvent() const = 0;
 
     Geom::Affine _last_transform;
     Geom::Point _origin;
@@ -123,17 +123,15 @@ protected:
     std::vector<Inkscape::SnapCandidatePoint>::iterator _all_snap_sources_iter;
 
 private:
-    bool grabbed(GdkEventMotion *) override;
-    void dragged(Geom::Point &new_pos, GdkEventMotion *event) override;
-    void ungrabbed(GdkEventButton *) override;
-
-    static ColorSet thandle_cset;
+    bool grabbed(MotionEvent const &event) override;
+    void dragged(Geom::Point &new_pos, MotionEvent const &event) override;
+    void ungrabbed(ButtonReleaseEvent const *event) override;
 };
 
 } // namespace UI
 } // namespace Inkscape
 
-#endif
+#endif // INKSCAPE_UI_TOOL_TRANSFORM_HANDLE_SET_H
 
 /*
   Local Variables:

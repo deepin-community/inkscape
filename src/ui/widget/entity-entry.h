@@ -8,9 +8,11 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef INKSCAPE_UI_WIDGET_ENTITY_ENTRY__H
-#define INKSCAPE_UI_WIDGET_ENTITY_ENTRY__H
+#ifndef SEEN_INKSCAPE_UI_WIDGET_ENTITY_ENTRY_H
+#define SEEN_INKSCAPE_UI_WIDGET_ENTITY_ENTRY_H
 
+#include <glibmm/ustring.h>
+#include <gtkmm/label.h>
 #include <gtkmm/textview.h>
 
 struct rdf_work_entity_t;
@@ -20,9 +22,7 @@ namespace Gtk {
 class TextBuffer;
 }
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 class Registry;
 
@@ -30,9 +30,10 @@ class EntityEntry {
 public:
     static EntityEntry* create (rdf_work_entity_t* ent, Registry& wr);
     virtual ~EntityEntry() = 0;
-    virtual void update (SPDocument *doc) = 0;
+    virtual void update(SPDocument* doc, bool read_only) = 0;
     virtual void on_changed() = 0;
     virtual void load_from_preferences() = 0;
+    virtual Glib::ustring content() const = 0;
     void save_to_preferences(SPDocument *doc);
     Gtk::Label _label;
     Gtk::Widget *_packable;
@@ -48,8 +49,9 @@ class EntityLineEntry : public EntityEntry {
 public:
     EntityLineEntry (rdf_work_entity_t* ent, Registry& wr);
     ~EntityLineEntry() override;
-    void update (SPDocument *doc) override;
+    void update(SPDocument* doc, bool read_only) override;
     void load_from_preferences() override;
+    Glib::ustring content() const override;
 
 protected:
     void on_changed() override;
@@ -59,19 +61,18 @@ class EntityMultiLineEntry : public EntityEntry {
 public:
     EntityMultiLineEntry (rdf_work_entity_t* ent, Registry& wr);
     ~EntityMultiLineEntry() override;
-    void update (SPDocument *doc) override;
+    void update(SPDocument* doc, bool read_only) override;
     void load_from_preferences() override;
+    Glib::ustring content() const override;
 
 protected: 
     void on_changed() override;
     Gtk::TextView _v;
 };
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // Inkscape::UI::Widget
 
-#endif // INKSCAPE_UI_WIDGET_ENTITY_ENTRY__H
+#endif // SEEN_INKSCAPE_UI_WIDGET_ENTITY_ENTRY_H
 
 /*
   Local Variables:

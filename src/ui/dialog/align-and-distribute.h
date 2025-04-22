@@ -19,8 +19,21 @@
 #ifndef INKSCAPE_UI_WIDGET_ALIGN_AND_DISTRIBUTE_H
 #define INKSCAPE_UI_WIDGET_ALIGN_AND_DISTRIBUTE_H
 
+#include <gtkmm/box.h>
+#include <set>
 #include <sigc++/connection.h>
-#include <gtkmm.h>
+
+#include "helper/auto-connection.h"
+#include "preferences.h"
+
+namespace Gtk {
+class Builder;
+class Button;
+class ComboBox;
+class Frame;
+class SpinButton;
+class ToggleButton;
+} // namespace Gtk
 
 class SPDesktop;
 
@@ -42,26 +55,33 @@ public:
 
     void desktop_changed(SPDesktop* desktop);
     void tool_changed(SPDesktop* desktop); // Need to show different widgets for node vs. other tools.
-    void tool_changed_callback(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec);
+    void tool_changed_callback(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* tool);
 
 private:
 
     // ********* Widgets ********** //
+    Glib::RefPtr<Gtk::Builder> builder;
 
-    Gtk::Box* align_and_distribute_box    = nullptr;
-    Gtk::Box* align_and_distribute_object = nullptr; // Hidden when node tool active.
-    Gtk::Box* align_and_distribute_node   = nullptr; // Visible when node tool active.
+    Gtk::Box &align_and_distribute_box;
+    Gtk::Box &align_and_distribute_object;  // Hidden when node tool active.
+    Gtk::Frame &remove_overlap_frame;       // Hidden when node tool active.
+    Gtk::Box &align_and_distribute_node;    // Visible when node tool active.
 
     // Align
-    Gtk::ToggleButton* align_move_as_group      = nullptr;
-    Gtk::ComboBox*     align_relative_object    = nullptr;
-    Gtk::ComboBox*     align_relative_node      = nullptr;
+    Gtk::ToggleButton &align_move_as_group;
+    Gtk::ComboBox     &align_relative_object;
+    Gtk::ComboBox     &align_relative_node;
 
     // Remove overlap
-    Gtk::Button*       remove_overlap_button  = nullptr;
-    Gtk::SpinButton*   remove_overlap_hgap    = nullptr;
-    Gtk::SpinButton*   remove_overlap_vgap    = nullptr;
+    Gtk::Button       &remove_overlap_button;
+    Gtk::SpinButton   &remove_overlap_hgap;
+    Gtk::SpinButton   &remove_overlap_vgap;
 
+    // Valid relative alignment entries for single selection.
+    std::set<Glib::ustring> single_selection_relative_categories = {"drawing", "page"};
+    Glib::ustring single_selection_align_to = "page";
+    Glib::ustring multi_selection_align_to;
+    bool single_item = false;
 
     // ********* Signal handlers ********** //
 
@@ -69,12 +89,13 @@ private:
     void on_align_relative_object_changed();
     void on_align_relative_node_changed();
 
-    bool on_align_button_press_event(GdkEventButton* button_event, const std::string& align_to);
-    bool on_remove_overlap_button_press_event(GdkEventButton* button_event);
-    bool on_align_node_button_press_event(GdkEventButton* button_event, const std::string& align_to);
+    void on_align_clicked         (std::string const &align_to);
+    void on_remove_overlap_clicked();
+    void on_align_node_clicked    (std::string const &align_to);
 
     sigc::connection tool_connection;
-
+    auto_connection sel_changed;
+    Inkscape::PrefObserver _icon_sizes_changed;
 };
 
 } // namespace Dialog

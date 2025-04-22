@@ -3,6 +3,7 @@
 set(extension_SRC
 	db.cpp
 	dependency.cpp
+        processing-action.cpp
 	effect.cpp
 	execution-env.cpp
 	extension.cpp
@@ -12,6 +13,7 @@ set(extension_SRC
 	patheffect.cpp
 	print.cpp
 	system.cpp
+	template.cpp
 	timer.cpp
     loader.cpp
 
@@ -40,6 +42,13 @@ set(extension_SRC
 	internal/pov-out.cpp
 	internal/svg.cpp
 	internal/svgz.cpp
+	internal/template-base.cpp
+	internal/template-from-file.cpp
+	internal/template-other.cpp
+	internal/template-paper.cpp
+	internal/template-screen.cpp
+	internal/template-social.cpp
+	internal/template-video.cpp
 	internal/text_reassemble.c
 	internal/wmf-inout.cpp
 	internal/wmf-print.cpp
@@ -47,10 +56,6 @@ set(extension_SRC
 	internal/filter/filter-all.cpp
 	internal/filter/filter-file.cpp
 	internal/filter/filter.cpp
-
-	internal/pdfinput/pdf-input.cpp
-	internal/pdfinput/pdf-parser.cpp
-	internal/pdfinput/svg-builder.cpp
 
 	prefdialog/prefdialog.cpp
 	prefdialog/parameter.cpp
@@ -73,6 +78,7 @@ set(extension_SRC
 	# Header
 	db.h
 	dependency.h
+        processing-action.h
 	effect.h
 	execution-env.h
 	extension.h
@@ -82,6 +88,7 @@ set(extension_SRC
 	patheffect.h
 	print.h
 	system.h
+	template.h
 	timer.h
     loader.h
 
@@ -121,13 +128,18 @@ set(extension_SRC
 	internal/metafile-inout.h
 	internal/metafile-print.h
 	internal/odf.h
-	internal/pdfinput/pdf-input.h
-	internal/pdfinput/pdf-parser.h
-	internal/pdfinput/svg-builder.h
+	internal/pdfinput/enums.h
 	internal/png-output.h
 	internal/pov-out.h
 	internal/svg.h
 	internal/svgz.h
+	internal/template-base.h
+	internal/template-from-file.h
+	internal/template-other.h
+	internal/template-paper.h
+	internal/template-screen.h
+	internal/template-social.h
+	internal/template-video.h
 	internal/text_reassemble.h
 	internal/wmf-inout.h
 	internal/wmf-print.h
@@ -153,6 +165,25 @@ set(extension_SRC
 if(WIN32)
 	list(APPEND extension_SRC
 	)
+endif()
+
+if(ENABLE_POPPLER)
+    list(APPEND extension_SRC
+        internal/pdfinput/pdf-utils.cpp
+        internal/pdfinput/pdf-input.cpp
+        internal/pdfinput/pdf-parser.cpp
+        internal/pdfinput/svg-builder.cpp
+        internal/pdfinput/poppler-utils.cpp
+        internal/pdfinput/poppler-cairo-font-engine.cpp
+
+        # Header
+        internal/pdfinput/pdf-utils.h
+        internal/pdfinput/pdf-input.h
+        internal/pdfinput/pdf-parser.h
+        internal/pdfinput/svg-builder.h
+        internal/pdfinput/poppler-utils.h
+        internal/pdfinput/poppler-cairo-font-engine.h
+    )
 endif()
 
 if(WITH_LIBCDR)

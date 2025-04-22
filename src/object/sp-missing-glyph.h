@@ -15,10 +15,11 @@
 
 #include "sp-object.h"
 
-class SPMissingGlyph : public SPObject {
+class SPMissingGlyph final : public SPObject {
 public:
 	SPMissingGlyph();
 	~SPMissingGlyph() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
 	char* d;
 
@@ -35,6 +36,4 @@ private:
     double vert_adv_y;
 };
 
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_MISSING_GLYPH, SPMissingGlyph)
-
-#endif //#ifndef __SP_MISSING_GLYPH_H__
+#endif // SEEN_SP_MISSING_GLYPH_H

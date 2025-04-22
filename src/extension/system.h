@@ -16,6 +16,7 @@
 #ifndef INKSCAPE_EXTENSION_SYSTEM_H__
 #define INKSCAPE_EXTENSION_SYSTEM_H__
 
+#include <memory>
 #include <glibmm/ustring.h>
 
 class SPDocument;
@@ -45,13 +46,13 @@ enum FileSaveMethod {
     FILE_SAVE_METHOD_TEMPORARY,
 };
 
-SPDocument *open(Extension *key, gchar const *filename);
+SPDocument *open(Extension *key, gchar const *filename, bool is_importing = false);
 void save(Extension *key, SPDocument *doc, gchar const *filename,
           bool check_overwrite, bool official,
           Inkscape::Extension::FileSaveMethod save_method);
 Print *get_print(gchar const *key);
 void build_from_file(gchar const *filename);
-void build_from_mem(gchar const *buffer, Implementation::Implementation *in_imp);
+void build_from_mem(gchar const *buffer, std::unique_ptr<Implementation::Implementation> in_imp);
 
 /**
  * Determine the desired default file extension depending on the given file save method.

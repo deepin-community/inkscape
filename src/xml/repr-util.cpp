@@ -259,7 +259,7 @@ int sp_repr_compare_position(Inkscape::XML::Node const *first, Inkscape::XML::No
            instance. */
 
         // Find the lowest common ancestor(LCA)
-        Inkscape::XML::Node const *ancestor = LCA(first, second);
+        Inkscape::XML::Node const *ancestor = lowest_common_ancestor(first, second);
         g_assert(ancestor != nullptr);
 
         if (ancestor == first) {
@@ -267,8 +267,8 @@ int sp_repr_compare_position(Inkscape::XML::Node const *first, Inkscape::XML::No
         } else if (ancestor == second) {
             return -1;
         } else {
-            Inkscape::XML::Node const *to_first = AncetreFils(first, ancestor);
-            Inkscape::XML::Node const *to_second = AncetreFils(second, ancestor);
+            Inkscape::XML::Node const *to_first = find_containing_child(first, ancestor);
+            Inkscape::XML::Node const *to_second = find_containing_child(second, ancestor);
             g_assert(to_second->parent() == to_first->parent());
             p1 = to_first->position();
             p2 = to_second->position();
@@ -379,6 +379,16 @@ Inkscape::XML::Node const *sp_repr_lookup_name( Inkscape::XML::Node const *repr,
         }
     }
     return found;
+}
+
+Glib::ustring sp_repr_lookup_content(Inkscape::XML::Node const *repr, gchar const *name, Glib::ustring otherwise)
+{
+    if (auto node = sp_repr_lookup_name(repr, name, 1)) {
+        if (auto ret = node->firstChild()->content()) {
+            return ret;
+        }
+    }
+    return otherwise;
 }
 
 Inkscape::XML::Node *sp_repr_lookup_name( Inkscape::XML::Node *repr, gchar const *name, gint maxdepth )

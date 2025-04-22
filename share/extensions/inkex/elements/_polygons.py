@@ -23,8 +23,13 @@
 Interface for all shapes/polygons such as lines, paths, rectangles, circles etc.
 """
 
+from __future__ import annotations
+
 from math import cos, pi, sin
-from typing import Optional, Tuple
+import math
+from typing import Optional, Tuple, Union
+
+from ..paths.interfaces import PathCommand
 from ..paths import Arc, Curve, Move, Path, ZoneClose
 from ..paths import Line as PathLine
 from ..transforms import Transform, ImmutableVector2d, Vector2d
@@ -37,7 +42,11 @@ from ._base import ShapeElement
 class PathElementBase(ShapeElement):
     """Base element for path based shapes"""
 
-    get_path = lambda self: Path(self.get("d"))
+    def get_path(self) -> Path:
+        """Gets the path of the element, which can also be used in a context manager"""
+        p = Path(self.get("d"))
+        p.callback = self.set_path
+        return p
 
     @classmethod
     def new(cls, path, **attrs):
@@ -71,6 +80,8 @@ class PathElement(PathElementBase):
 
     tag_name = "path"
 
+    MAX_ARC_SUBDIVISIONS = 4
+
     @staticmethod
     def _arcpath(
         cx: float,
@@ -91,14 +102,22 @@ class PathElement(PathElementBase):
         incr = end - start
         if incr < 0:
             incr += 2 * pi
-        numsegs = min(1 + int(incr * 2.0 / pi), 4)
+        numsegs = min(1 + int(incr * 2.0 / pi), PathElement.MAX_ARC_SUBDIVISIONS)
         incr = incr / numsegs
 
         computed = Path()
         computed.append(Move(cos(start), sin(start)))
         for seg in range(1, numsegs + 1):
             computed.append(
-                Arc(1, 1, 0, 0, 1, cos(start + seg * incr), sin(start + seg * incr))
+                Arc(
+                    1,
+                    1,
+                    0,
+                    incr > pi,
+                    1,
+                    cos(start + seg * incr),
+                    sin(start + seg * incr),
+                )
             )
         if abs(incr * numsegs - 2 * pi) > 1e-8 and (
             arctype in ("slice", "")
@@ -112,9 +131,7 @@ class PathElement(PathElementBase):
         return computed.to_relative()
 
     @classmethod
-    def arc(
-        cls, center, rx, ry=None, arctype="", pathonly=False, **kw
-    ):  # pylint: disable=invalid-name
+    def arc(cls, center, rx, ry=None, arctype="", pathonly=False, **kw):  # pylint: disable=invalid-name
         """Generates a sodipodi elliptical arc (special type). Also computes the path
         that Inkscape uses under the hood.
         All data may be given as parseable strings or using numeric data types.
@@ -170,6 +187,49 @@ class PathElement(PathElementBase):
         if path is not None:
             elem.path = path
         return elem
+
+    @classmethod
+    def arc_from_3_points(
+        cls,
+        x: complex,
+        y: complex,
+        z: complex,
+        arctype="slice",
+    ) -> PathElement:
+        """
+        Create an arc through the points x, y, z.
+        If those points are specified clockwise, the order is not preserved.
+        This is indicated with the second return value (=clockwise)
+
+        Returns a PathElement. May be a line if x,y,z are collinear.
+
+
+        Idea: http://www.math.okstate.edu/~wrightd/INDRA/MobiusonCircles/node4.html
+
+        .. versionadded:: 1.4
+        """
+        w = (z - x) / (y - x)
+        if abs(w.imag) > 1e-12:
+            c = -((x - y) * (w - abs(w) ** 2) / (2j * w.imag) - x)
+            r = abs(c - x)
+
+            # Now determine the arc flags by checking the angles
+            deltas = [x - c, y - c, z - c]
+            ang = [math.atan2(i.imag, i.real) for i in deltas]
+            # Check if the angles are "in order"
+            cw = int(any(ang[0 + i] < ang[-2 + i] < ang[-1 + i] for i in range(3)))
+            if not cw:
+                # Flip start and end angle
+                ang = ang[::-1]
+
+            return cls.arc(Vector2d(c), r, r, start=ang[0], end=ang[2], arctype=arctype)
+        else:
+            # Points lie on a line
+            # y between x and z -> draw a line, otherwise skip
+            if x.real <= y.real <= z.real or x.real >= y.real >= z.real:
+                return cls.new(Path([Move(x), PathLine(z)]))
+            else:
+                return cls.new(Path([Move(x), Move(z)]))
 
     @staticmethod
     def _starpath(
@@ -347,19 +407,33 @@ class Polyline(ShapeElement):
 
     tag_name = "polyline"
 
-    def get_path(self):
-        return Path("M" + self.get("points"))
+    def get_path(self) -> Path:
+        p = Path("M" + self.get("points"))
+        p.callback = self.set_path
+        return p
 
     def set_path(self, path):
-        points = [f"{x:g},{y:g}" for x, y in Path(path).end_points]
+        if type(path) != Path:
+            path = Path("M" + str(path))
+        points = [f"{x:g},{y:g}" for x, y in path.end_points]
         self.set("points", " ".join(points))
 
+    @classmethod
+    def new(cls, points=None, **attrs):
+        p = super().new(**attrs)
+        p.path = points
+        return p
 
-class Polygon(ShapeElement):
+
+class Polygon(Polyline):
     """A closed polyline"""
 
     tag_name = "polygon"
-    get_path = lambda self: Path("M" + self.get("points") + " Z")
+
+    def get_path(self) -> Path:
+        p = Path("M" + self.get("points") + " Z")
+        p.callback = self.set_path
+        return p
 
 
 class Line(ShapeElement):
@@ -395,24 +469,28 @@ class RectangleBase(ShapeElement):
         lambda self: self.to_dimensionless(self.get("ry", self.get("rx", 0.0)))
     )  # pylint: disable=invalid-name
 
-    def get_path(self):
+    def get_path(self) -> Path:
         """Calculate the path as the box around the rect"""
-        if self.rx:
-            rx, ry = self.rx, self.ry  # pylint: disable=invalid-name
+        if self.rx or self.ry:
+            # pylint: disable=invalid-name
+            rx = min(self.rx if self.rx > 0 else self.ry, self.width / 2)
+            ry = min(self.ry if self.ry > 0 else self.rx, self.height / 2)
             cpts = [self.left + rx, self.right - rx, self.top + ry, self.bottom - ry]
-            return (
+            return Path(
                 f"M {cpts[0]},{self.top}"
                 f"L {cpts[1]},{self.top}    "
-                f"A {self.rx},{self.ry} 0 0 1 {self.right},{cpts[2]}"
+                f"A {rx},{ry} 0 0 1 {self.right},{cpts[2]}"
                 f"L {self.right},{cpts[3]}  "
-                f"A {self.rx},{self.ry} 0 0 1 {cpts[1]},{self.bottom}"
+                f"A {rx},{ry} 0 0 1 {cpts[1]},{self.bottom}"
                 f"L {cpts[0]},{self.bottom} "
-                f"A {self.rx},{self.ry} 0 0 1 {self.left},{cpts[3]}"
+                f"A {rx},{ry} 0 0 1 {self.left},{cpts[3]}"
                 f"L {self.left},{cpts[2]}   "
-                f"A {self.rx},{self.ry} 0 0 1 {cpts[0]},{self.top} z"
+                f"A {rx},{ry} 0 0 1 {cpts[0]},{self.top} z"
             )
 
-        return f"M {self.left},{self.top} h{self.width}v{self.height}h{-self.width} z"
+        return Path(
+            f"M {self.left},{self.top} h{self.width}v{self.height}h{-self.width} z"
+        )
 
 
 class Rectangle(RectangleBase):
@@ -428,15 +506,17 @@ class Rectangle(RectangleBase):
 class EllipseBase(ShapeElement):
     """Absorbs common part of Circle and Ellipse classes"""
 
-    def get_path(self):
+    def get_path(self) -> Path:
         """Calculate the arc path of this circle"""
-        rx, ry = self._rxry()
+        rx, ry = self.rxry()
         cx, y = self.center.x, self.center.y - ry
-        return (
-            "M {cx},{y} "
-            "a {rx},{ry} 0 1 0 {rx}, {ry} "
-            "a {rx},{ry} 0 0 0 -{rx}, -{ry} z"
-        ).format(cx=cx, y=y, rx=rx, ry=ry)
+        return Path(
+            (
+                "M {cx},{y} "
+                "a {rx},{ry} 0 1 0 {rx}, {ry} "
+                "a {rx},{ry} 0 0 0 -{rx}, -{ry} z"
+            ).format(cx=cx, y=y, rx=rx, ry=ry)
+        )
 
     @property
     def center(self):
@@ -452,7 +532,7 @@ class EllipseBase(ShapeElement):
         self.set("cx", value.x)
         self.set("cy", value.y)
 
-    def _rxry(self):
+    def rxry(self):
         # type: () -> Vector2d
         """Helper function"""
         raise NotImplementedError()
@@ -479,7 +559,7 @@ class Circle(EllipseBase):
     def radius(self, value):
         self.set("r", self.to_dimensionless(value))
 
-    def _rxry(self):
+    def rxry(self):
         r = self.radius
         return Vector2d(r, r)
 
@@ -503,5 +583,5 @@ class Ellipse(EllipseBase):
         self.set("rx", str(value.x))
         self.set("ry", str(value.y))
 
-    def _rxry(self):
+    def rxry(self):
         return self.radius

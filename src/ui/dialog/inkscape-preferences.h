@@ -16,43 +16,36 @@
 #ifndef INKSCAPE_UI_DIALOG_INKSCAPE_PREFERENCES_H
 #define INKSCAPE_UI_DIALOG_INKSCAPE_PREFERENCES_H
 
-// checking if cairo supports dithering
-#ifdef  WITH_PATCHED_CAIRO
-#include "3rdparty/cairo/src/cairo.h"
-#else
-#include <cairo.h>
-#endif
-
-
-
-#include <gtkmm/treerowreference.h>
-#include <iostream>
-#include <iterator>
+#include <map>
 #include <vector>
-#include "ui/widget/preferences-widget.h"
-#include <cstddef>
+
+#include <glibmm/refptr.h>
+#include <gtk/gtk.h> // GtkEventControllerKey
 #include <gtkmm/colorbutton.h>
 #include <gtkmm/comboboxtext.h>
-#include <gtkmm/treestore.h>
-#include <gtkmm/treeview.h>
-#include <gtkmm/treemodelfilter.h>
-#include <gtkmm/treemodelsort.h>
 #include <gtkmm/frame.h>
 #include <gtkmm/notebook.h>
-#include <gtkmm/textview.h>
-#include <gtkmm/searchentry.h>
 #include <gtkmm/scrolledwindow.h>
-#include <gtkmm/liststore.h>
+#include <gtkmm/searchentry.h>
+#include <gtkmm/sizegroup.h>
+#include <gtkmm/textview.h>
 #include <gtkmm/treemodel.h>
 #include <gtkmm/treemodelfilter.h>
-#include <glibmm/regex.h>
+#include <gtkmm/treemodelsort.h>
+#include <gtkmm/treepath.h>
+#include <gtkmm/treerowreference.h>
+#include <gtkmm/treestore.h>
+#include <gtkmm/treeview.h>
 
+#include "preferences.h"
 #include "ui/dialog/dialog-base.h"
+#include "ui/widget/preferences-widget.h"
 
 // UPDATE THIS IF YOU'RE ADDING PREFS PAGES.
 // Otherwise the commands that open the dialog with the new page will fail.
 
-enum {
+enum
+{
     PREFS_PAGE_TOOLS,
     PREFS_PAGE_TOOLS_SELECTOR,
     PREFS_PAGE_TOOLS_NODE,
@@ -80,6 +73,7 @@ enum {
     PREFS_PAGE_UI_THEME,
     PREFS_PAGE_UI_TOOLBARS,
     PREFS_PAGE_UI_WINDOWS,
+    PREFS_PAGE_UI_COLOR_PICKERS,
     PREFS_PAGE_UI_GRIDS,
     PREFS_PAGE_COMMAND_PALETTE,
     PREFS_PAGE_UI_KEYBOARD_SHORTCUTS,
@@ -92,6 +86,7 @@ enum {
     PREFS_PAGE_BEHAVIOR_CLONES,
     PREFS_PAGE_BEHAVIOR_MASKS,
     PREFS_PAGE_BEHAVIOR_MARKERS,
+    PREFS_PAGE_BEHAVIOR_CLIPBOARD,
     PREFS_PAGE_BEHAVIOR_CLEANUP,
     PREFS_PAGE_BEHAVIOR_LPE,
     PREFS_PAGE_IO,
@@ -108,20 +103,22 @@ enum {
     PREFS_PAGE_NOTFOUND
 };
 
+namespace Glib {
+class Regex;
+} // namespace Glib
+
 namespace Gtk {
 class Scale;
-}
+} // namespace Gtk
 
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
+namespace Inkscape::UI::Dialog {
 
-class InkscapePreferences : public DialogBase
+class InkscapePreferences final : public DialogBase
 {
 public:
-    ~InkscapePreferences() override;
+    InkscapePreferences();
+    ~InkscapePreferences() final;
 
-    static InkscapePreferences &getInstance() { return *new InkscapePreferences(); }
     void showPage(); // Show page indicated by "/dialogs/preferences/page".
 
 protected:
@@ -182,6 +179,7 @@ protected:
     UI::Widget::DialogPage _page_windows;
     UI::Widget::DialogPage _page_grids;
     UI::Widget::DialogPage _page_command_palette;
+    UI::Widget::DialogPage _page_color_pickers;
 
     UI::Widget::DialogPage _page_behavior;
     UI::Widget::DialogPage _page_select;
@@ -192,6 +190,7 @@ protected:
     UI::Widget::DialogPage _page_clones;
     UI::Widget::DialogPage _page_mask;
     UI::Widget::DialogPage _page_markers;
+    UI::Widget::DialogPage _page_clipboard;
     UI::Widget::DialogPage _page_cleanup;
     UI::Widget::DialogPage _page_lpe;
 
@@ -208,7 +207,7 @@ protected:
     UI::Widget::DialogPage _page_spellcheck;
 
     UI::Widget::DialogPage _page_keyshortcuts;
-
+    Glib::RefPtr<Gtk::SizeGroup> _keyboard_sizegroup;
     UI::Widget::PrefSpinButton _mouse_sens;
     UI::Widget::PrefSpinButton _mouse_thres;
     UI::Widget::PrefSlider      _mouse_grabsize;
@@ -229,11 +228,17 @@ protected:
     UI::Widget::PrefCheckButton _snap_closest_only;
     UI::Widget::PrefCheckButton _snap_mouse_pointer;
     UI::Widget::PrefCheckButton _snap_indicator_distance;
+    UI::Widget::PrefCheckButton _snap_always_grid;
+    UI::Widget::PrefCheckButton _snap_always_guide;
+    UI::Widget::PrefCheckButton _snap_always_object;
+    UI::Widget::PrefCheckButton _snap_always_align;
+    UI::Widget::PrefCheckButton _snap_always_dist;
 
     UI::Widget::PrefCombo       _steps_rot_snap;
     UI::Widget::PrefCheckButton _steps_rot_relative;
     UI::Widget::PrefCheckButton _steps_compass;
     UI::Widget::PrefSpinUnit    _steps_arrow;
+    UI::Widget::PrefCheckButton _move_rotated;
     UI::Widget::PrefSpinUnit    _steps_scale;
     UI::Widget::PrefSpinUnit    _steps_inset;
     UI::Widget::PrefSpinButton  _steps_zoom;
@@ -285,6 +290,7 @@ protected:
     UI::Widget::PrefCombo _misc_small_secondary;
     UI::Widget::PrefCombo _misc_small_tools;
     UI::Widget::PrefCombo _menu_icons;
+    UI::Widget::PrefCheckButton _shift_icons;
 
     UI::Widget::PrefRadioButton _win_dockable;
     UI::Widget::PrefRadioButton _win_floating;
@@ -320,6 +326,7 @@ protected:
     UI::Widget::PrefRadioButton _clone_option_delete;
     UI::Widget::PrefCheckButton _clone_relink_on_duplicate;
     UI::Widget::PrefCheckButton _clone_to_curves;
+    UI::Widget::PrefCheckButton _clone_ignore_to_curves;
 
     UI::Widget::PrefCheckButton _mask_mask_on_top;
     UI::Widget::PrefCheckButton _mask_mask_remove;
@@ -331,10 +338,10 @@ protected:
 
     UI::Widget::PrefSpinButton  _filter_multi_threaded;
     UI::Widget::PrefSpinButton  _rendering_cache_size;
-    UI::Widget::PrefSpinButton  _rendering_tile_multiplier;
     UI::Widget::PrefSpinButton  _rendering_xray_radius;
     UI::Widget::PrefSpinButton  _rendering_outline_overlay_opacity;
     UI::Widget::PrefCombo       _canvas_update_strategy;
+    UI::Widget::PrefCheckButton _canvas_request_opengl;
     UI::Widget::PrefRadioButton _blur_quality_best;
     UI::Widget::PrefRadioButton _blur_quality_better;
     UI::Widget::PrefRadioButton _blur_quality_normal;
@@ -345,30 +352,32 @@ protected:
     UI::Widget::PrefRadioButton _filter_quality_normal;
     UI::Widget::PrefRadioButton _filter_quality_worse;
     UI::Widget::PrefRadioButton _filter_quality_worst;
-#ifdef CAIRO_HAS_DITHER
+#if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1, 18, 0)
     UI::Widget::PrefCheckButton _cairo_dithering;
 #endif
 
     UI::Widget::PrefCheckButton _canvas_developer_mode_enabled;
+    UI::Widget::PrefSpinButton  _canvas_tile_size;
     UI::Widget::PrefSpinButton  _canvas_render_time_limit;
-    UI::Widget::PrefCheckButton _canvas_use_new_bisector;
-    UI::Widget::PrefSpinButton  _canvas_new_bisector_size;
-    UI::Widget::PrefSpinButton  _rendering_tile_size;
-    UI::Widget::PrefSpinButton  _canvas_max_affine_diff;
-    UI::Widget::PrefSpinButton  _canvas_pad;
+    UI::Widget::PrefCheckButton _canvas_block_updates;
+    UI::Widget::PrefCombo       _canvas_pixelstreamer_method;
+    UI::Widget::PrefSpinButton  _canvas_padding;
+    UI::Widget::PrefSpinButton  _canvas_prerender;
+    UI::Widget::PrefSpinButton  _canvas_preempt;
     UI::Widget::PrefSpinButton  _canvas_coarsener_min_size;
     UI::Widget::PrefSpinButton  _canvas_coarsener_glue_size;
     UI::Widget::PrefSpinButton  _canvas_coarsener_min_fullness;
     UI::Widget::PrefCheckButton _canvas_debug_framecheck;
     UI::Widget::PrefCheckButton _canvas_debug_logging;
-    UI::Widget::PrefCheckButton _canvas_debug_slow_redraw;
-    UI::Widget::PrefSpinButton  _canvas_debug_slow_redraw_time;
+    UI::Widget::PrefCheckButton _canvas_debug_delay_redraw;
+    UI::Widget::PrefSpinButton  _canvas_debug_delay_redraw_time;
     UI::Widget::PrefCheckButton _canvas_debug_show_redraw;
     UI::Widget::PrefCheckButton _canvas_debug_show_unclean;
     UI::Widget::PrefCheckButton _canvas_debug_show_snapshot;
     UI::Widget::PrefCheckButton _canvas_debug_show_clean;
     UI::Widget::PrefCheckButton _canvas_debug_disable_redraw;
     UI::Widget::PrefCheckButton _canvas_debug_sticky_decoupled;
+    UI::Widget::PrefCheckButton _canvas_debug_animate;
 
     UI::Widget::PrefCheckButton _trans_scale_stroke;
     UI::Widget::PrefCheckButton _trans_scale_corner;
@@ -387,14 +396,19 @@ protected:
     UI::Widget::PrefCheckButton _sel_touch_topmost_only;
     UI::Widget::PrefCheckButton _sel_layer_deselects;
     UI::Widget::PrefCheckButton _sel_cycle;
+    UI::Widget::PrefCheckButton _sel_zero_opacity;
 
     UI::Widget::PrefCheckButton _markers_color_stock;
     UI::Widget::PrefCheckButton _markers_color_custom;
     UI::Widget::PrefCheckButton _markers_color_update;
 
+    UI::Widget::PrefRadioButton _clipboard_style_computed;
+    UI::Widget::PrefRadioButton _clipboard_style_verbatim;
+
     UI::Widget::PrefCheckButton _cleanup_swatches;
 
     UI::Widget::PrefCheckButton _lpe_copy_mirroricons;
+    UI::Widget::PrefCheckButton _lpe_show_experimental;
 
     UI::Widget::PrefSpinButton  _importexport_export_res;
     UI::Widget::PrefSpinButton  _importexport_import_res;
@@ -416,12 +430,11 @@ protected:
     UI::Widget::PrefCheckButton _export_all_extensions;
     UI::Widget::PrefCheckButton _misc_forkvectors;
     UI::Widget::PrefSpinButton  _misc_gradientangle;
+    UI::Widget::PrefSpinButton  _recently_used_fonts_size;
     UI::Widget::PrefCheckButton _misc_gradient_collect;
     UI::Widget::PrefCheckButton _misc_scripts;
-    UI::Widget::PrefCheckButton _misc_namedicon_delay;
 
     // System page
-    UI::Widget::PrefSpinButton  _misc_latency_skew;
     UI::Widget::PrefSpinButton  _misc_simpl;
     Gtk::Entry                  _sys_user_prefs;
     Gtk::Entry                  _sys_tmp_files;
@@ -438,21 +451,23 @@ protected:
     UI::Widget::PrefOpenFolder _sys_user_symbols_dir;
     UI::Widget::PrefOpenFolder _sys_user_paint_servers_dir;
     UI::Widget::PrefMultiEntry _sys_fontdirs_custom;
-    Gtk::Entry                  _sys_user_cache;
-    Gtk::Entry                  _sys_data;
-    Gtk::TextView               _sys_icon;
-    Gtk::ScrolledWindow         _sys_icon_scroll;
-    Gtk::TextView               _sys_systemdata;
-    Gtk::ScrolledWindow         _sys_systemdata_scroll;
+    UI::Widget::PrefEntryFile  _sys_shared_path;
+    Gtk::Entry                 _sys_user_cache;
+    Gtk::Entry                 _sys_data;
+    Gtk::TextView              _sys_icon;
+    Gtk::ScrolledWindow        _sys_icon_scroll;
+    Gtk::TextView              _sys_systemdata;
+    Gtk::ScrolledWindow        _sys_systemdata_scroll;
 
     // UI page
     UI::Widget::PrefCombo       _ui_languages;
     UI::Widget::PrefCheckButton _ui_colorsliders_top;
     UI::Widget::PrefSpinButton  _misc_recent;
+    UI::Widget::PrefCheckButton _ui_rulersel;
     UI::Widget::PrefCheckButton _ui_realworldzoom;
+    UI::Widget::PrefCheckButton _ui_pageorigin;
     UI::Widget::PrefCheckButton _ui_partialdynamic;
     UI::Widget::ZoomCorrRulerSlider _ui_zoom_correction;
-    UI::Widget::PrefCheckButton _show_filters_info_box;
     UI::Widget::PrefCheckButton _ui_yaxisdown;
     UI::Widget::PrefCheckButton _ui_rotationlock;
     UI::Widget::PrefCheckButton _ui_cursorscaling;
@@ -488,7 +503,7 @@ protected:
     UI::Widget::PrefSpinButton  _save_autosave_max;
 
     Gtk::ComboBoxText   _cms_display_profile;
-    UI::Widget::PrefCheckButton     _cms_from_display;
+    UI::Widget::PrefCheckButton     _cms_from_user;
     UI::Widget::PrefCombo           _cms_intent;
 
     UI::Widget::PrefCheckButton     _cms_softproof;
@@ -497,7 +512,6 @@ protected:
     Gtk::ComboBoxText   _cms_proof_profile;
     UI::Widget::PrefCombo           _cms_proof_intent;
     UI::Widget::PrefCheckButton     _cms_proof_blackpoint;
-    UI::Widget::PrefCheckButton     _cms_proof_preserveblack;
 
     Gtk::Notebook       _grids_notebook;
     UI::Widget::PrefRadioButton     _grids_no_emphasize_on_zoom;
@@ -561,27 +575,6 @@ protected:
     /*
      * Keyboard shortcut members
      */
-    class ModelColumns: public Gtk::TreeModel::ColumnRecord {
-    public:
-        ModelColumns() {
-            add(name);
-            add(id);
-            add(shortcut);
-            add(description);
-            add(shortcutkey);
-            add(user_set);
-        }
-        ~ModelColumns() override = default;
-
-        Gtk::TreeModelColumn<Glib::ustring> name;
-        Gtk::TreeModelColumn<Glib::ustring> id;
-        Gtk::TreeModelColumn<Glib::ustring> shortcut;
-        Gtk::TreeModelColumn<Glib::ustring> description;
-        Gtk::TreeModelColumn<Gtk::AccelKey> shortcutkey;
-        Gtk::TreeModelColumn<unsigned int> user_set;
-    };
-    ModelColumns _kb_columns;
-    static ModelColumns &onKBGetCols();
     Glib::RefPtr<Gtk::TreeStore> _kb_store;
     Gtk::TreeView _kb_tree;
     Gtk::CellRendererAccel _kb_shortcut_renderer;
@@ -590,7 +583,7 @@ protected:
     /*
      * Keyboard modifiers interface
      */
-    class ModifierColumns: public Gtk::TreeModel::ColumnRecord {
+    class ModifierColumns final : public Gtk::TreeModel::ColumnRecord {
     public:
         ModifierColumns() {
             add(name);
@@ -599,7 +592,7 @@ protected:
             add(and_modifiers);
             add(user_set);
         }
-        ~ModifierColumns() override = default;
+        ~ModifierColumns() final = default;
 
         Gtk::TreeModelColumn<Glib::ustring> name;
         Gtk::TreeModelColumn<Glib::ustring> id;
@@ -623,19 +616,19 @@ protected:
     int _natural_width;
     int _natural_height;
     bool GetSizeRequest(const Gtk::TreeModel::iterator& iter);
-    void get_preferred_width_vfunc (int& minimum_width, int& natural_width) const override {
+    void get_preferred_width_vfunc (int& minimum_width, int& natural_width) const final {
         minimum_width = _minimum_width;
         natural_width = _natural_width;
     }
-    void get_preferred_width_for_height_vfunc (int height, int& minimum_width, int& natural_width) const override {
+    void get_preferred_width_for_height_vfunc (int height, int& minimum_width, int& natural_width) const final {
         minimum_width = _minimum_width;
         natural_width = _natural_width;
     }
-    void get_preferred_height_vfunc (int& minimum_height, int& natural_height) const override {
+    void get_preferred_height_vfunc (int& minimum_height, int& natural_height) const final {
         minimum_height = _minimum_height;
         natural_height = _natural_height;
     }
-    void get_preferred_height_for_width_vfunc (int width, int& minimum_height, int& natural_height) const override {
+    void get_preferred_height_for_width_vfunc (int width, int& minimum_height, int& natural_height) const final {
         minimum_height = _minimum_height;
         natural_height = _natural_height;
     }
@@ -644,12 +637,14 @@ protected:
 
     Gtk::TreeModel::iterator AddPage(UI::Widget::DialogPage& p, Glib::ustring title, int id);
     Gtk::TreeModel::iterator AddPage(UI::Widget::DialogPage& p, Glib::ustring title, Gtk::TreeModel::iterator parent, int id);
-    Gtk::TreePath get_next_result(Gtk::TreeIter& iter, bool check_children = true);
-    Gtk::TreePath get_prev_result(Gtk::TreeIter& iter, bool iterate = true);
-    bool matchPage(const Gtk::TreeModel::iterator& iter);
+    Gtk::TreePath get_next_result(Gtk::TreeModel::iterator& iter, bool check_children = true);
+    Gtk::TreePath get_prev_result(Gtk::TreeModel::iterator& iter, bool iterate = true);
+    bool matchPage(Gtk::TreeModel::const_iterator const &iter);
 
     static void AddSelcueCheckbox(UI::Widget::DialogPage& p, Glib::ustring const &prefs_path, bool def_value);
     static void AddGradientCheckbox(UI::Widget::DialogPage& p, Glib::ustring const &prefs_path, bool def_value);
+    static void AddLayerChangeCheckbox(UI::Widget::DialogPage &p, Glib::ustring const &prefs_path, bool def_value);
+    static void AddPageChangeCheckbox(UI::Widget::DialogPage &p, Glib::ustring const &prefs_path, bool def_value);
     static void AddConvertGuidesCheckbox(UI::Widget::DialogPage& p, Glib::ustring const &prefs_path, bool def_value);
     static void AddFirstAndLastCheckbox(UI::Widget::DialogPage& p, Glib::ustring const &prefs_path, bool def_value);
     static void AddDotSizeSpinbutton(UI::Widget::DialogPage& p, Glib::ustring const &prefs_path, double def_value);
@@ -672,7 +667,8 @@ protected:
     void add_highlight(Gtk::Label *label, Glib::ustring const &key);
 
     bool recursive_filter(Glib::ustring &key, Gtk::TreeModel::const_iterator const &row);
-    bool on_navigate_key_press(GdkEventKey *evt);
+    gboolean on_navigate_key_pressed(GtkEventControllerKey const *controller,
+                                 unsigned keyval, unsigned keycode, GdkModifierType state);
 
     void initPageTools();
     void initPageUI();
@@ -697,9 +693,11 @@ protected:
     void onKBListKeyboardShortcuts();
     void onKBTreeEdited (const Glib::ustring& path, guint accel_key, Gdk::ModifierType accel_mods, guint hardware_keycode);
     void onKBTreeCleared(const Glib::ustring& path_string);
-    bool onKBSearchKeyEvent(GdkEventKey *event);
+    gboolean onKBSearchKeyReleased(GtkEventControllerKey const *controller,
+                               unsigned keyval, unsigned keycode, GdkModifierType state);
     bool onKBSearchFilter(const Gtk::TreeModel::const_iterator& iter);
-    static void onKBShortcutRenderer(Gtk::CellRenderer *rndr, Gtk::TreeIter const &iter);
+    static void onKBShortcutRenderer(Gtk::CellRenderer *renderer,
+                                     Gtk::TreeModel::const_iterator const &iter);
     void on_modifier_selection_changed();
     void on_modifier_enabled();
     void on_modifier_edited();
@@ -710,28 +708,20 @@ private:
   void comboThemeChange();
   void contrastThemeChange();
   void preferDarkThemeChange();
-  bool contrastChange(GdkEventButton* button_event);
   void symbolicThemeCheck();
   void toggleSymbolic();
   void changeIconsColors();
   void resetIconsColors(bool themechange = false);
   void resetIconsColorsWrapper();
-  void changeIconsColor(guint32 /*color*/);
   void get_highlight_colors(guint32 &colorsetbase, guint32 &colorsetsuccess, guint32 &colorsetwarning,
                             guint32 &colorseterror);
 
-  bool on_outline_overlay_changed(GdkEventFocus * /* focus_event */);
   std::map<Glib::ustring, bool> dark_themes;
-  InkscapePreferences();
-  InkscapePreferences(InkscapePreferences const &d);
-  InkscapePreferences operator=(InkscapePreferences const &d);
   bool _init;
   Inkscape::PrefObserver _theme_oberver;
 };
 
-} // namespace Dialog
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Dialog
 
 #endif //INKSCAPE_UI_DIALOG_INKSCAPE_PREFERENCES_H
 

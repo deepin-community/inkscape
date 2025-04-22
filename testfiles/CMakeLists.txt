@@ -58,27 +58,43 @@ if(${CMAKE_SIZEOF_VOID_P} EQUAL 8)
 endif()
 
 set(TEST_SOURCES
+    actions-svg-processing
+    async_channel-test
+    async_funclog-test
+    async_progress-test
     uri-test
     util-test
     drag-and-drop-svgz
+    drawing-pattern-test
     extract-uri-test
     attributes-test
     color-profile-test
     dir-util-test
+    oklab-color-test
+    sp-item-test
     sp-object-test
+    sp-object-tags-test
+    object-links-test
     object-set-test
     object-style-test
     path-boolop-test
+    path-reverse-lpe-test
+    preferences-test
     rebase-hrefs-test
+    stream-test
     style-elem-test
     style-internal-test
     style-test
     svg-affine-test
+    svg-box-test
     svg-color-test
     svg-length-test
     svg-stringstream-test
     sp-gradient-test
     svg-path-geom-test
+    visual-bounds-test
+    geom-pathstroke-test
+    livarot-pathoutline-test
     object-test
     sp-glyph-kerning-test
     cairo-utils-test
@@ -91,7 +107,7 @@ set(TEST_SOURCES
     ${LPE_TESTS_64bit}
     )
 
-add_library(cpp_test_static_library SHARED unittest.cpp doc-per-case-test.cpp lpespaths-test.h)
+add_library(cpp_test_static_library SHARED unittest.cpp doc-per-case-test.cpp lpespaths-test.h test-with-svg-object-pairs.cpp)
 target_link_libraries(cpp_test_static_library PUBLIC ${GTEST_LIBRARIES} inkscape_base)
 
 add_custom_target(tests)

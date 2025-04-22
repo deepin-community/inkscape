@@ -12,167 +12,182 @@
  */
 
 #include "scalar.h"
-#include "spinbutton.h"
+
+#include <cmath>
 #include <gtkmm/scale.h>
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+#include "spinbutton.h"
+#include "ui/pack.h"
+
+namespace Inkscape::UI::Widget {
 
 Scalar::Scalar(Glib::ustring const &label, Glib::ustring const &tooltip,
-               Glib::ustring const &suffix,
                Glib::ustring const &icon,
                bool mnemonic)
-    : Labelled(label, tooltip, new SpinButton(), suffix, icon, mnemonic),
-      setProgrammatically(false)
+    : Scalar{label, tooltip, {}, 0u, icon, mnemonic}
 {
 }
 
 Scalar::Scalar(Glib::ustring const &label, Glib::ustring const &tooltip,
                unsigned digits,
-               Glib::ustring const &suffix,
                Glib::ustring const &icon,
                bool mnemonic)
-    : Labelled(label, tooltip, new SpinButton(0.0, digits), suffix, icon, mnemonic),
-      setProgrammatically(false)
+    : Scalar{label, tooltip, {}, digits, icon, mnemonic}
 {
 }
 
 Scalar::Scalar(Glib::ustring const &label, Glib::ustring const &tooltip,
-               Glib::RefPtr<Gtk::Adjustment> &adjust,
+               Glib::RefPtr<Gtk::Adjustment> const &adjust,
                unsigned digits,
-               Glib::ustring const &suffix,
                Glib::ustring const &icon,
                bool mnemonic)
-    : Labelled(label, tooltip, new SpinButton(adjust, 0.0, digits), suffix, icon, mnemonic),
+    : Labelled(label, tooltip, new SpinButton(adjust, 0.0, digits), icon, mnemonic),
       setProgrammatically(false)
 {
 }
 
 unsigned Scalar::getDigits() const
 {
-    g_assert(_widget != nullptr);
-    return static_cast<SpinButton*>(_widget)->get_digits();
+    return get_spin_button().get_digits();
 }
 
 double Scalar::getStep() const
 {
-    g_assert(_widget != nullptr);
     double step, page;
-    static_cast<SpinButton*>(_widget)->get_increments(step, page);
+    get_spin_button().get_increments(step, page);
     return step;
 }
 
 double Scalar::getPage() const
 {
-    g_assert(_widget != nullptr);
     double step, page;
-    static_cast<SpinButton*>(_widget)->get_increments(step, page);
+    get_spin_button().get_increments(step, page);
     return page;
 }
 
 double Scalar::getRangeMin() const
 {
-    g_assert(_widget != nullptr);
     double min, max;
-    static_cast<SpinButton*>(_widget)->get_range(min, max);
+    get_spin_button().get_range(min, max);
     return min;
 }
 
 double Scalar::getRangeMax() const
 {
-    g_assert(_widget != nullptr);
     double min, max;
-    static_cast<SpinButton*>(_widget)->get_range(min, max);
+    get_spin_button().get_range(min, max);
     return max;
 }
 
 double Scalar::getValue() const
 {
-    g_assert(_widget != nullptr);
-    return static_cast<SpinButton*>(_widget)->get_value();
+    return get_spin_button().get_value();
 }
 
 int Scalar::getValueAsInt() const
 {
-    g_assert(_widget != nullptr);
-    return static_cast<SpinButton*>(_widget)->get_value_as_int();
+    return get_spin_button().get_value_as_int();
 }
 
 
 void Scalar::setDigits(unsigned digits)
 {
-    g_assert(_widget != nullptr);
-    static_cast<SpinButton*>(_widget)->set_digits(digits);
+    return get_spin_button().set_digits(digits);
+}
+
+void Scalar::setNoLeadingZeros()
+{
+    if (getDigits()) {
+        auto &spin_button = get_spin_button();
+        spin_button.set_numeric(false);
+        spin_button.set_update_policy(Gtk::UPDATE_ALWAYS);
+        spin_button.signal_output().connect(sigc::mem_fun(*this, &Scalar::setNoLeadingZerosOutput));
+    }
+}
+
+bool
+Scalar::setNoLeadingZerosOutput()
+{
+    auto &spin_button = get_spin_button();
+    double digits = std::pow(10.0, spin_button.get_digits());
+    double val = std::round(spin_button.get_value() * digits) / digits;
+    spin_button.set_text(Glib::ustring::format(val));
+    return true;
+}
+
+void 
+Scalar::setWidthChars(gint width_chars) {
+    get_spin_button().property_width_chars() = width_chars;
 }
 
 void Scalar::setIncrements(double step, double /*page*/)
 {
-    g_assert(_widget != nullptr);
-    static_cast<SpinButton*>(_widget)->set_increments(step, 0);
+    get_spin_button().set_increments(step, 0);
 }
 
 void Scalar::setRange(double min, double max)
 {
-    g_assert(_widget != nullptr);
-    static_cast<SpinButton*>(_widget)->set_range(min, max);
+    get_spin_button().set_range(min, max);
 }
 
 void Scalar::setValue(double value, bool setProg)
 {
-    g_assert(_widget != nullptr);
     if (setProg) {
         setProgrammatically = true; // callback is supposed to reset back, if it cares
     }
-    static_cast<SpinButton*>(_widget)->set_value(value);
+    get_spin_button().set_value(value);
+    setProgrammatically = false;
 }
 
 void Scalar::setWidthChars(unsigned chars)
 {
-    g_assert(_widget != NULL);
-    static_cast<SpinButton*>(_widget)->set_width_chars(chars);
+    get_spin_button().set_width_chars(chars);
 }
 
 void Scalar::update()
 {
-    g_assert(_widget != nullptr);
-    static_cast<SpinButton*>(_widget)->update();
+    get_spin_button().update();
 }
 
 void Scalar::addSlider()
 {
-    auto scale = new Gtk::Scale(static_cast<SpinButton*>(_widget)->get_adjustment());
+    auto const scale = Gtk::make_managed<Gtk::Scale>(get_spin_button().get_adjustment());
     scale->set_draw_value(false);
-    pack_start(*manage (scale));
+    UI::pack_start(*this, *scale);
 }
 
-Glib::SignalProxy0<void> Scalar::signal_value_changed()
+Glib::SignalProxy<void> Scalar::signal_value_changed()
 {
-    return static_cast<SpinButton*>(_widget)->signal_value_changed();
-}
-
-Glib::SignalProxy1<bool, GdkEventButton*> Scalar::signal_button_release_event()
-{
-    return static_cast<SpinButton*>(_widget)->signal_button_release_event();
+    return get_spin_button().signal_value_changed();
 }
 
 void Scalar::hide_label() {
-    if (auto label = const_cast<Gtk::Label*>(getLabel())) {
-        label->hide();
+    if (auto const label = getLabel()) {
+        label->set_visible(false);
         label->set_no_show_all();
         label->set_hexpand(true);
     }
-    if (_widget) {
-        remove(*_widget);
-        _widget->set_hexpand();
-        this->pack_end(*_widget);
+
+    if (auto const widget = getWidget()) {
+        remove(*widget);
+        widget->set_hexpand();
+        UI::pack_end(*this, *widget);
     }
 }
 
+SpinButton const &Scalar::get_spin_button() const
+{
+    auto const spinButton = dynamic_cast<SpinButton const *>(getWidget());
+    g_assert(spinButton);
+    return *spinButton;
+}
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+SpinButton &Scalar::get_spin_button()
+{
+    return const_cast<SpinButton &>(const_cast<Scalar const &>(*this).get_spin_button());
+}
+
+} // namespace Inkscape::UI::Widget
 
 /*
   Local Variables:

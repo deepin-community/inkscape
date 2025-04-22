@@ -6,10 +6,14 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "live_effects/lpe-bendpath.h"
+
 #include <vector>
 
+#include "inkscape.h"
+#include "selection.h"
 #include "display/curve.h"
-#include "live_effects/lpe-bendpath.h"
+#include "object/sp-lpe-item.h"
 #include "ui/knot/knot-holder.h"
 #include "ui/knot/knot-holder-entity.h"
 
@@ -46,8 +50,9 @@ class KnotHolderEntityWidthBendPath : public LPEKnotHolderEntity {
         KnotHolderEntityWidthBendPath(LPEBendPath * effect) : LPEKnotHolderEntity(effect) {}
         ~KnotHolderEntityWidthBendPath() override
         {
-            LPEBendPath *lpe = dynamic_cast<LPEBendPath *> (_effect);
-            lpe->_knot_entity = nullptr;
+            if (auto const lpe = dynamic_cast<LPEBendPath *> (_effect)) {
+                lpe->_knotholder = nullptr;
+            }
         }
         void knot_set(Geom::Point const &p, Geom::Point const &origin, guint state) override;
         Geom::Point knot_get() const override;
@@ -72,14 +77,19 @@ LPEBendPath::LPEBendPath(LivePathEffectObject *lpeobject) :
     prop_scale.param_set_digits(3);
     prop_scale.param_set_increments(0.01, 0.10);
     
-    _knot_entity = nullptr;
+    _knotholder = nullptr;
     _provides_knotholder_entities = true;
     apply_to_clippath_and_mask = true;
     concatenate_before_pwd2 = true;
 }
 
 LPEBendPath::~LPEBendPath()
-= default;
+{
+    if (_knotholder) {
+        _knotholder->clear();
+        _knotholder = nullptr;
+    }
+}
 
 
 bool 
@@ -102,14 +112,14 @@ LPEBendPath::doBeforeEffect (SPLPEItem const* lpeitem)
     if (is_load) {
         bend_path.reload();
     }
-    if (_knot_entity) {
+    if (_knotholder && !_knotholder->entity.empty()) {
         if (hide_knot) {
             helper_path.clear();
-            _knot_entity->knot->hide();
+            _knotholder->entity.front()->knot->hide();
         } else {
-            _knot_entity->knot->show();
+            _knotholder->entity.front()->knot->show();
         }
-        _knot_entity->update_knot();
+        _knotholder->update_knots();
     }
 }
 
@@ -119,7 +129,7 @@ void LPEBendPath::transform_multiply(Geom::Affine const &postmul, bool /*set*/)
     SPItem *linked = nullptr;
     if (SP_ACTIVE_DESKTOP) {
         selection = SP_ACTIVE_DESKTOP->getSelection();
-        linked = dynamic_cast<SPItem *>(bend_path.getObject());
+        linked = bend_path.getItem();
     }
     if (linked) {
         linked->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
@@ -192,7 +202,7 @@ void
 LPEBendPath::resetDefaults(SPItem const* item)
 {
     Effect::resetDefaults(item);
-    original_bbox(SP_LPE_ITEM(item), false, true);
+    original_bbox(cast<SPLPEItem>(item), false, true);
 
     Geom::Point start(boundingbox_X.min(), (boundingbox_Y.max()+boundingbox_Y.min())/2);
     Geom::Point end(boundingbox_X.max(), (boundingbox_Y.max()+boundingbox_Y.min())/2);
@@ -216,13 +226,14 @@ LPEBendPath::addCanvasIndicators(SPLPEItem const */*lpeitem*/, std::vector<Geom:
 void 
 LPEBendPath::addKnotHolderEntities(KnotHolder *knotholder, SPItem *item)
 {
-    _knot_entity = new BeP::KnotHolderEntityWidthBendPath(this);
-    _knot_entity->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:WidthBend",
+    _knotholder = knotholder;
+    KnotHolderEntity *knot_entity = new BeP::KnotHolderEntityWidthBendPath(this);
+    knot_entity->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:WidthBend",
                          _("Change the width"));
-    knotholder->add(_knot_entity);
+    _knotholder->add(knot_entity);
     if (hide_knot) {
-        _knot_entity->knot->hide();
-        _knot_entity->update_knot();
+        knot_entity->knot->hide();
+        knot_entity->update_knot();
     }
 }
 
@@ -232,6 +243,8 @@ void
 KnotHolderEntityWidthBendPath::knot_set(Geom::Point const &p, Geom::Point const& /*origin*/, guint state)
 {
     LPEBendPath *lpe = dynamic_cast<LPEBendPath *> (_effect);
+    if (!lpe)
+        return;
 
     Geom::Point const s = snap_knot_position(p, state);
     Geom::Path path_in = lpe->bend_path.get_pathvector().pathAt(Geom::PathVectorTime(0, 0, 0.0));
@@ -257,13 +270,16 @@ KnotHolderEntityWidthBendPath::knot_set(Geom::Point const &p, Geom::Point const&
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     prefs->setDouble("/live_effects/bend_path/width", lpe->prop_scale);
 
-    sp_lpe_item_update_patheffect (SP_LPE_ITEM(item), false, true);
+    sp_lpe_item_update_patheffect (cast<SPLPEItem>(item), false, true);
 }
 
 Geom::Point 
 KnotHolderEntityWidthBendPath::knot_get() const
 {
     LPEBendPath *lpe = dynamic_cast<LPEBendPath *> (_effect);
+    if (!lpe)
+        return Geom::Point(0, 0);
+
     Geom::Path path_in = lpe->bend_path.get_pathvector().pathAt(Geom::PathVectorTime(0, 0, 0.0));
     Geom::Point ptA = path_in.pointAt(Geom::PathTime(0, 0.0));
     Geom::Point B = path_in.pointAt(Geom::PathTime(1, 0.0));

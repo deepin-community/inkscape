@@ -13,27 +13,25 @@
 #ifndef SEEN_INKSCAPE_XML_NODE_H
 #define SEEN_INKSCAPE_XML_NODE_H
 
-#include <cassert>
 #include <vector>
-#include <list>
+
 #include <2geom/point.h>
 
 #include "gc-anchored.h"
 #include "inkgc/gc-alloc.h"
 #include "node-iterators.h"
 #include "util/const_char_ptr.h"
-#include "svg/svg-length.h"
+
+class SVGLength;
 
 namespace Inkscape {
 namespace XML {
 
 class AttributeRecord;
 struct Document;
-class Event;
 class NodeObserver;
-struct NodeEventVector;
 
-typedef std::vector<AttributeRecord, Inkscape::GC::Alloc<AttributeRecord, Inkscape::GC::MANUAL>> AttributeVector;
+using AttributeVector = std::vector<AttributeRecord, Inkscape::GC::Alloc<AttributeRecord>>;
 
 /**
  * @brief Enumeration containing all supported node types.
@@ -155,7 +153,7 @@ public:
      * The returned list is a functional programming style list rather than a standard one.
      *
      * @return A list of AttributeRecord structures describing the attributes
-     * @todo This method should return std::map<Glib::Quark const, gchar const *>
+     * @todo This method should return std::map<Glib::Quark const, char const *>
      *       or something similar with a custom allocator
      */
     virtual const AttributeVector & attributeList() const=0;
@@ -206,10 +204,24 @@ public:
      *
      * @param key Name of the attribute to change
      * @param value The new value of the attribute
-     * @param is_interactive Ignored
      */
 
     void setAttribute(Util::const_char_ptr key, Util::const_char_ptr value);
+
+    /**
+     * @brief Copy attribute value from another node to this node
+     *
+     * @param key Name of the attribute to change
+     * @param source_node Node from which to take the attribute value
+     * @param remove_if_empty
+     *   If true, and the source node has no such attribute, or the source
+     *   node's value for the attribute is an empty string, the attribute
+     *   will be removed (if present) from this node.
+     *
+     * @return true if the attribute was set, false otherwise.
+     */
+
+    bool copyAttribute(Util::const_char_ptr key, Node const *source_node, bool remove_if_empty = false);
 
     /**
      * Parses the boolean value of an attribute "key" in repr and sets val accordingly, or to false if
@@ -454,14 +466,14 @@ public:
      * @param src The node to check for elements into this node
      * @param key The attribute to use as the identity attribute
      */
-    virtual void cleanOriginal(Node *src, gchar const *key) = 0;
+    virtual void cleanOriginal(Node *src, char const *key) = 0;
 
     /**
      * @brief Compare 2 nodes equality
      * @param other The other node to compare
      * @param recursive Recursive mode check
      */
-    virtual bool equal(Node const *other, bool recursive) = 0;
+    virtual bool equal(Node const *other, bool recursive, bool skip_ids = false) = 0;
     /**
      * @brief Merge all children of another node with the current
      *
@@ -534,22 +546,6 @@ public:
      * @param observer The object to be removed
      */
     virtual void removeSubtreeObserver(NodeObserver &observer) = 0;
-
-    /**
-     * @brief Add a set node change callbacks with an associated data
-     * @deprecated Use addObserver(NodeObserver &) instead
-     */
-    virtual void addListener(NodeEventVector const *vector, void *data) = 0;
-    /**
-     * @brief Remove a set of node change callbacks by their associated data
-     * @deprecated Use removeObserver(NodeObserver &) instead
-     */
-    virtual void removeListenerByData(void *data) = 0;
-    /**
-     * @brief Generate a sequence of events corresponding to the state of this node
-     * @deprecated Use synthesizeEvents(NodeObserver &) instead
-     */
-    virtual void synthesizeEvents(NodeEventVector const *vector, void *data) = 0;
 
     virtual void recursivePrintTree(unsigned level) = 0;
 

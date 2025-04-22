@@ -1,8 +1,14 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 """
 Test elements extra logic from svg xml lxml custom classes.
 """
+
+import os
+import sys
+from importlib import resources
+
+from lxml import etree
 
 from ..utils import PY3
 from ..inx import InxFile
@@ -87,12 +93,16 @@ class InxMixin:
                     inxdefault,
                     f"Default value is not the same for {inx.filename}:param:{param}",
                 )
+            inxchoices = params[param]["choices"]
+            argschoices = args[param]["choices"]
+            if argschoices is not None and len(argschoices) > 0:
+                assert set(inxchoices).issubset(
+                    argschoices
+                ), f"params don't match: inx={inxchoices}, py={argschoices}"
 
     def introspect_arg_parser(self, arg_parser):
         """Pull apart the arg parser to find out what we have in it"""
-        for (
-            action
-        ) in arg_parser._optionals._actions:  # pylint: disable=protected-access
+        for action in arg_parser._optionals._actions:  # pylint: disable=protected-access
             for opt in action.option_strings:
                 # Ignore params internal to inkscape (thus not in the inx)
                 if opt.startswith("--") and opt[2:] not in INTERNAL_ARGS:
@@ -126,3 +136,47 @@ class InxMixin:
             "default": param.text,
             "choices": None,
         }
+
+    def assertInxSchemaValid(self, inx_file):  # pylint: disable=invalid-name
+        """Validate inx file schema."""
+        self.assertTrue(INX_SCHEMAS, "no schema files found")
+        with open(inx_file, "rb") as fp:
+            inx_doc = etree.parse(fp)
+
+        for schema_name, schema in INX_SCHEMAS.items():
+            with self.subTest(schema_file=schema_name):
+                schema.assert_(inx_doc)
+
+
+def _load_inx_schemas():
+    _SCHEMA_CLASSES = {
+        ".rng": etree.RelaxNG,
+        ".schema": etree.Schematron,  # "pre-ISO-Schematron"
+    }
+
+    if sys.version_info > (3, 9):
+
+        def _contents(pkg):
+            return [path.name for path in resources.files(pkg).iterdir()]
+    else:
+        _contents = resources.contents
+
+    for name in _contents(__package__):
+        _, ext = os.path.splitext(name)
+        schema_class = _SCHEMA_CLASSES.get(ext)
+        if schema_class is None:
+            continue
+
+        if sys.version_info > (3, 9):
+
+            def _open_binary(pkg, res):
+                return resources.files(pkg).joinpath(res).open("rb")
+        else:
+            _open_binary = resources.open_binary
+
+        with _open_binary(__package__, name) as fp:
+            schema_doc = etree.parse(fp)
+        yield name, schema_class(schema_doc)
+
+
+INX_SCHEMAS = dict(_load_inx_schemas())

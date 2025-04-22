@@ -16,6 +16,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -28,20 +29,21 @@
 #include "node-toolbar.h"
 
 #include <glibmm/i18n.h>
-
+#include <giomm/simpleactiongroup.h>
 #include <gtkmm/adjustment.h>
+#include <gtkmm/box.h>
+#include <gtkmm/button.h>
 #include <gtkmm/image.h>
-#include <gtkmm/menutoolbutton.h>
-#include <gtkmm/separatortoolitem.h>
+#include <gtkmm/togglebutton.h>
+#include <sigc++/functors/mem_fun.h>
 
 #include "desktop.h"
 #include "document-undo.h"
 #include "inkscape.h"
-#include "selection-chemistry.h"
-
 #include "object/sp-namedview.h"
-
-#include "ui/icon-names.h"
+#include "page-manager.h"
+#include "selection.h"
+#include "ui/builder-utils.h"
 #include "ui/simple-pref-pusher.h"
 #include "ui/tool/control-point-selection.h"
 #include "ui/tool/multi-path-manipulator.h"
@@ -49,316 +51,145 @@
 #include "ui/widget/canvas.h"
 #include "ui/widget/combo-tool-item.h"
 #include "ui/widget/spinbutton.h"
-#include "ui/widget/spin-button-tool-item.h"
+#include "ui/widget/toolbar-menu-button.h"
 #include "ui/widget/unit-tracker.h"
-
 #include "widgets/widget-sizes.h"
 
 using Inkscape::UI::Widget::UnitTracker;
 using Inkscape::Util::Unit;
 using Inkscape::Util::Quantity;
 using Inkscape::DocumentUndo;
-using Inkscape::Util::unit_table;
 using Inkscape::UI::Tools::NodeTool;
 
 /** Temporary hack: Returns the node tool in the active desktop.
  * Will go away during tool refactoring. */
 static NodeTool *get_node_tool()
 {
-    NodeTool *tool = nullptr;
-    if (SP_ACTIVE_DESKTOP ) {
-        Inkscape::UI::Tools::ToolBase *ec = SP_ACTIVE_DESKTOP->event_context;
-        if (INK_IS_NODE_TOOL(ec)) {
-            tool = static_cast<NodeTool*>(ec);
-        }
+    if (SP_ACTIVE_DESKTOP) {
+        return dynamic_cast<NodeTool *>(SP_ACTIVE_DESKTOP->getTool());
     }
-    return tool;
+    return nullptr;
 }
 
-namespace Inkscape {
-namespace UI {
-namespace Toolbar {
+namespace Inkscape::UI::Toolbar {
 
 NodeToolbar::NodeToolbar(SPDesktop *desktop)
-    : Toolbar(desktop),
-    _tracker(new UnitTracker(Inkscape::Util::UNIT_TYPE_LINEAR)),
-    _freeze(false)
+    : Toolbar(desktop)
+    , _tracker{std::make_unique<UnitTracker>(Inkscape::Util::UNIT_TYPE_LINEAR)}
+    , _freeze(false)
+    , _builder(create_builder("toolbar-node.ui"))
+    , _nodes_lpeedit_btn(get_widget<Gtk::Button>(_builder, "_nodes_lpeedit_btn"))
+    , _show_helper_path_btn(&get_widget<Gtk::ToggleButton>(_builder, "_show_helper_path_btn"))
+    , _show_handles_btn(&get_widget<Gtk::ToggleButton>(_builder, "_show_handles_btn"))
+    , _show_transform_handles_btn(&get_widget<Gtk::ToggleButton>(_builder, "_show_transform_handles_btn"))
+    , _object_edit_mask_path_btn(&get_widget<Gtk::ToggleButton>(_builder, "_object_edit_mask_path_btn"))
+    , _object_edit_clip_path_btn(&get_widget<Gtk::ToggleButton>(_builder, "_object_edit_clip_path_btn"))
+    , _nodes_x_item(get_derived_widget<UI::Widget::SpinButton>(_builder, "_nodes_x_item"))
+    , _nodes_y_item(get_derived_widget<UI::Widget::SpinButton>(_builder, "_nodes_y_item"))
 {
-    auto prefs = Inkscape::Preferences::get();
-
     Unit doc_units = *desktop->getNamedView()->display_units;
     _tracker->setActiveUnit(&doc_units);
 
-    {
-        auto insert_node_item = Gtk::manage(new Gtk::MenuToolButton());
-        insert_node_item->set_icon_name(INKSCAPE_ICON("node-add"));
-        insert_node_item->set_label(_("Insert node"));
-        insert_node_item->set_tooltip_text(_("Insert new nodes into selected segments"));
-        insert_node_item->signal_clicked().connect(sigc::mem_fun(*this, &NodeToolbar::edit_add));
+    _toolbar = &get_widget<Gtk::Box>(_builder, "node-toolbar");
 
-        auto insert_node_menu = Gtk::manage(new Gtk::Menu());
+    // Setup the derived spin buttons.
+    setup_derived_spin_button(_nodes_x_item, "x");
+    setup_derived_spin_button(_nodes_y_item, "y");
 
-        {
-            // TODO: Consider moving back to icons in menu?
-            //auto insert_min_x_icon = Gtk::manage(new Gtk::Image());
-            //insert_min_x_icon->set_from_icon_name(INKSCAPE_ICON("node_insert_min_x"), Gtk::ICON_SIZE_MENU);
-            //auto insert_min_x_item = Gtk::manage(new Gtk::MenuItem(*insert_min_x_icon));
-            auto insert_min_x_item = Gtk::manage(new Gtk::MenuItem(_("Insert node at min X")));
-            insert_min_x_item->set_tooltip_text(_("Insert new nodes at min X into selected segments"));
-            insert_min_x_item->signal_activate().connect(sigc::mem_fun(*this, &NodeToolbar::edit_add_min_x));
-            insert_node_menu->append(*insert_min_x_item);
-        }
-        {
-            //auto insert_max_x_icon = Gtk::manage(new Gtk::Image());
-            //insert_max_x_icon->set_from_icon_name(INKSCAPE_ICON("node_insert_max_x"), Gtk::ICON_SIZE_MENU);
-            //auto insert_max_x_item = Gtk::manage(new Gtk::MenuItem(*insert_max_x_icon));
-            auto insert_max_x_item = Gtk::manage(new Gtk::MenuItem(_("Insert node at max X")));
-            insert_max_x_item->set_tooltip_text(_("Insert new nodes at max X into selected segments"));
-            insert_max_x_item->signal_activate().connect(sigc::mem_fun(*this, &NodeToolbar::edit_add_max_x));
-            insert_node_menu->append(*insert_max_x_item);
-        }
-        {
-            //auto insert_min_y_icon = Gtk::manage(new Gtk::Image());
-            //insert_min_y_icon->set_from_icon_name(INKSCAPE_ICON("node_insert_min_y"), Gtk::ICON_SIZE_MENU);
-            //auto insert_min_y_item = Gtk::manage(new Gtk::MenuItem(*insert_min_y_icon));
-            auto insert_min_y_item = Gtk::manage(new Gtk::MenuItem(_("Insert node at min Y")));
-            insert_min_y_item->set_tooltip_text(_("Insert new nodes at min Y into selected segments"));
-            insert_min_y_item->signal_activate().connect(sigc::mem_fun(*this, &NodeToolbar::edit_add_min_y));
-            insert_node_menu->append(*insert_min_y_item);
-        }
-        {
-            //auto insert_max_y_icon = Gtk::manage(new Gtk::Image());
-            //insert_max_y_icon->set_from_icon_name(INKSCAPE_ICON("node_insert_max_y"), Gtk::ICON_SIZE_MENU);
-            //auto insert_max_y_item = Gtk::manage(new Gtk::MenuItem(*insert_max_y_icon));
-            auto insert_max_y_item = Gtk::manage(new Gtk::MenuItem(_("Insert node at max Y")));
-            insert_max_y_item->set_tooltip_text(_("Insert new nodes at max Y into selected segments"));
-            insert_max_y_item->signal_activate().connect(sigc::mem_fun(*this, &NodeToolbar::edit_add_max_y));
-            insert_node_menu->append(*insert_max_y_item);
-        }
+    auto unit_menu = _tracker->create_tool_item(_("Units"), (""));
+    get_widget<Gtk::Box>(_builder, "unit_menu_box").add(*unit_menu);
 
-        insert_node_menu->show_all();
-        insert_node_item->set_menu(*insert_node_menu);
-        add(*insert_node_item);
-    }
+    // Fetch all the ToolbarMenuButtons at once from the UI file
+    // Menu Button #1
+    auto popover_box1 = &get_widget<Gtk::Box>(_builder, "popover_box1");
+    auto menu_btn1 = &get_derived_widget<UI::Widget::ToolbarMenuButton>(_builder, "menu_btn1");
 
-    {
-        auto delete_item = Gtk::manage(new Gtk::ToolButton(_("Delete node")));
-        delete_item->set_tooltip_text(_("Delete selected nodes"));
-        delete_item->set_icon_name(INKSCAPE_ICON("node-delete"));
-        delete_item->signal_clicked().connect(sigc::mem_fun(*this, &NodeToolbar::edit_delete));
-        add(*delete_item);
-    }
+    // Menu Button #2
+    auto popover_box2 = &get_widget<Gtk::Box>(_builder, "popover_box2");
+    auto menu_btn2 = &get_derived_widget<UI::Widget::ToolbarMenuButton>(_builder, "menu_btn2");
 
-    add(* Gtk::manage(new Gtk::SeparatorToolItem()));
+    // Initialize all the ToolbarMenuButtons only after all the children of the
+    // toolbar have been fetched. Otherwise, the children to be moved in the
+    // popover will get mapped to a different position and it will probably
+    // cause segfault.
+    auto children = _toolbar->get_children();
 
-    {
-        auto join_item = Gtk::manage(new Gtk::ToolButton(_("Join nodes")));
-        join_item->set_tooltip_text(_("Join selected nodes"));
-        join_item->set_icon_name(INKSCAPE_ICON("node-join"));
-        join_item->signal_clicked().connect(sigc::mem_fun(*this, &NodeToolbar::edit_join));
-        add(*join_item);
-    }
+    menu_btn1->init(1, "tag1", popover_box1, children);
+    addCollapsibleButton(menu_btn1);
+    menu_btn2->init(2, "tag2", popover_box2, children);
+    addCollapsibleButton(menu_btn2);
 
-    {
-        auto break_item = Gtk::manage(new Gtk::ToolButton(_("Break nodes")));
-        break_item->set_tooltip_text(_("Break path at selected nodes"));
-        break_item->set_icon_name(INKSCAPE_ICON("node-break"));
-        break_item->signal_clicked().connect(sigc::mem_fun(*this, &NodeToolbar::edit_break));
-        add(*break_item);
-    }
+    add(*_toolbar);
 
-    add(* Gtk::manage(new Gtk::SeparatorToolItem()));
+    // Attach the signals.
 
-    {
-        auto join_segment_item = Gtk::manage(new Gtk::ToolButton(_("Join with segment")));
-        join_segment_item->set_tooltip_text(_("Join selected endnodes with a new segment"));
-        join_segment_item->set_icon_name(INKSCAPE_ICON("node-join-segment"));
-        join_segment_item->signal_clicked().connect(sigc::mem_fun(*this, &NodeToolbar::edit_join_segment));
-        add(*join_segment_item);
-    }
+    get_widget<Gtk::Button>(_builder, "insert_node_btn")
+        .signal_clicked()
+        .connect(sigc::mem_fun(*this, &NodeToolbar::edit_add));
 
-    {
-        auto delete_segment_item = Gtk::manage(new Gtk::ToolButton(_("Delete segment")));
-        delete_segment_item->set_tooltip_text(_("Delete segment between two non-endpoint nodes"));
-        delete_segment_item->set_icon_name(INKSCAPE_ICON("node-delete-segment"));
-        delete_segment_item->signal_clicked().connect(sigc::mem_fun(*this, &NodeToolbar::edit_delete_segment));
-        add(*delete_segment_item);
-    }
+    setup_insert_node_menu();
 
-    add(* Gtk::manage(new Gtk::SeparatorToolItem()));
+    get_widget<Gtk::Button>(_builder, "delete_btn")
+        .signal_clicked()
+        .connect(sigc::mem_fun(*this, &NodeToolbar::edit_delete));
 
-    {
-        auto cusp_item = Gtk::manage(new Gtk::ToolButton(_("Node Cusp")));
-        cusp_item->set_tooltip_text(_("Make selected nodes corner"));
-        cusp_item->set_icon_name(INKSCAPE_ICON("node-type-cusp"));
-        cusp_item->signal_clicked().connect(sigc::mem_fun(*this, &NodeToolbar::edit_cusp));
-        add(*cusp_item);
-    }
+    get_widget<Gtk::Button>(_builder, "join_btn")
+        .signal_clicked()
+        .connect(sigc::mem_fun(*this, &NodeToolbar::edit_join));
+    get_widget<Gtk::Button>(_builder, "break_btn")
+        .signal_clicked()
+        .connect(sigc::mem_fun(*this, &NodeToolbar::edit_break));
 
-    {
-        auto smooth_item = Gtk::manage(new Gtk::ToolButton(_("Node Smooth")));
-        smooth_item->set_tooltip_text(_("Make selected nodes smooth"));
-        smooth_item->set_icon_name(INKSCAPE_ICON("node-type-smooth"));
-        smooth_item->signal_clicked().connect(sigc::mem_fun(*this, &NodeToolbar::edit_smooth));
-        add(*smooth_item);
-    }
+    get_widget<Gtk::Button>(_builder, "join_segment_btn")
+        .signal_clicked()
+        .connect(sigc::mem_fun(*this, &NodeToolbar::edit_join_segment));
+    get_widget<Gtk::Button>(_builder, "delete_segment_btn")
+        .signal_clicked()
+        .connect(sigc::mem_fun(*this, &NodeToolbar::edit_delete_segment));
 
-    {
-        auto symmetric_item = Gtk::manage(new Gtk::ToolButton(_("Node Symmetric")));
-        symmetric_item->set_tooltip_text(_("Make selected nodes symmetric"));
-        symmetric_item->set_icon_name(INKSCAPE_ICON("node-type-symmetric"));
-        symmetric_item->signal_clicked().connect(sigc::mem_fun(*this, &NodeToolbar::edit_symmetrical));
-        add(*symmetric_item);
-    }
+    get_widget<Gtk::Button>(_builder, "cusp_btn")
+        .signal_clicked()
+        .connect(sigc::mem_fun(*this, &NodeToolbar::edit_cusp));
+    get_widget<Gtk::Button>(_builder, "smooth_btn")
+        .signal_clicked()
+        .connect(sigc::mem_fun(*this, &NodeToolbar::edit_smooth));
+    get_widget<Gtk::Button>(_builder, "symmetric_btn")
+        .signal_clicked()
+        .connect(sigc::mem_fun(*this, &NodeToolbar::edit_symmetrical));
+    get_widget<Gtk::Button>(_builder, "auto_btn")
+        .signal_clicked()
+        .connect(sigc::mem_fun(*this, &NodeToolbar::edit_auto));
 
-    {
-        auto auto_item = Gtk::manage(new Gtk::ToolButton(_("Node Auto")));
-        auto_item->set_tooltip_text(_("Make selected nodes auto-smooth"));
-        auto_item->set_icon_name(INKSCAPE_ICON("node-type-auto-smooth"));
-        auto_item->signal_clicked().connect(sigc::mem_fun(*this, &NodeToolbar::edit_auto));
-        add(*auto_item);
-    }
+    get_widget<Gtk::Button>(_builder, "line_btn")
+        .signal_clicked()
+        .connect(sigc::mem_fun(*this, &NodeToolbar::edit_toline));
+    get_widget<Gtk::Button>(_builder, "curve_btn")
+        .signal_clicked()
+        .connect(sigc::mem_fun(*this, &NodeToolbar::edit_tocurve));
 
-    add(* Gtk::manage(new Gtk::SeparatorToolItem()));
+    _pusher_show_outline.reset(new UI::SimplePrefPusher(_show_helper_path_btn, "/tools/nodes/show_outline"));
+    _show_helper_path_btn->signal_toggled().connect(sigc::bind(sigc::mem_fun(*this, &NodeToolbar::on_pref_toggled),
+                                                               _show_helper_path_btn, "/tools/nodes/show_outline"));
 
-    {
-        auto line_item = Gtk::manage(new Gtk::ToolButton(_("Node Line")));
-        line_item->set_tooltip_text(_("Make selected segments lines"));
-        line_item->set_icon_name(INKSCAPE_ICON("node-segment-line"));
-        line_item->signal_clicked().connect(sigc::mem_fun(*this, &NodeToolbar::edit_toline));
-        add(*line_item);
-    }
+    _pusher_show_handles.reset(new UI::SimplePrefPusher(_show_handles_btn, "/tools/nodes/show_handles"));
+    _show_handles_btn->signal_toggled().connect(sigc::bind(sigc::mem_fun(*this, &NodeToolbar::on_pref_toggled),
+                                                           _show_handles_btn, "/tools/nodes/show_handles"));
 
-    {
-        auto curve_item = Gtk::manage(new Gtk::ToolButton(_("Node Curve")));
-        curve_item->set_tooltip_text(_("Make selected segments curves"));
-        curve_item->set_icon_name(INKSCAPE_ICON("node-segment-curve"));
-        curve_item->signal_clicked().connect(sigc::mem_fun(*this, &NodeToolbar::edit_tocurve));
-        add(*curve_item);
-    }
+    _pusher_show_transform_handles.reset(
+        new UI::SimplePrefPusher(_show_transform_handles_btn, "/tools/nodes/show_transform_handles"));
+    _show_transform_handles_btn->signal_toggled().connect(
+        sigc::bind(sigc::mem_fun(*this, &NodeToolbar::on_pref_toggled), _show_transform_handles_btn,
+                   "/tools/nodes/show_transform_handles"));
 
-    add(* Gtk::manage(new Gtk::SeparatorToolItem()));
+    _pusher_edit_masks.reset(new SimplePrefPusher(_object_edit_mask_path_btn, "/tools/nodes/edit_masks"));
+    _object_edit_mask_path_btn->signal_toggled().connect(sigc::bind(
+        sigc::mem_fun(*this, &NodeToolbar::on_pref_toggled), _object_edit_mask_path_btn, "/tools/nodes/edit_masks"));
 
-    {
-        auto object_to_path_item = Gtk::manage(new Gtk::ToolButton(_("_Object to Path")));
-        object_to_path_item->set_tooltip_text(_("Convert selected object to path"));
-        object_to_path_item->set_icon_name(INKSCAPE_ICON("object-to-path"));
-        // Must use C API until GTK4.
-        gtk_actionable_set_action_name(GTK_ACTIONABLE(object_to_path_item->gobj()), "app.object-to-path");
-        add(*object_to_path_item);
-    }
-
-    {
-        auto stroke_to_path_item = Gtk::manage(new Gtk::ToolButton(_("_Stroke to Path")));
-        stroke_to_path_item->set_tooltip_text(_("Convert selected object's stroke to paths"));
-        stroke_to_path_item->set_icon_name(INKSCAPE_ICON("stroke-to-path"));
-        // Must use C API until GTK4.
-        gtk_actionable_set_action_name(GTK_ACTIONABLE(stroke_to_path_item->gobj()), "app.object-stroke-to-path");
-        add(*stroke_to_path_item);
-    }
-
-    add(* Gtk::manage(new Gtk::SeparatorToolItem()));
-
-    /* X coord of selected node(s) */
-    {
-        std::vector<double> values = {1, 2, 3, 5, 10, 20, 50, 100, 200, 500};
-        auto nodes_x_val = prefs->getDouble("/tools/nodes/Xcoord", 0);
-        _nodes_x_adj = Gtk::Adjustment::create(nodes_x_val, -1e6, 1e6, SPIN_STEP, SPIN_PAGE_STEP);
-        _nodes_x_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("node-x", _("X:"), _nodes_x_adj));
-        _nodes_x_item->set_tooltip_text(_("X coordinate of selected node(s)"));
-        _nodes_x_item->set_custom_numeric_menu_data(values);
-        _tracker->addAdjustment(_nodes_x_adj->gobj());
-        _nodes_x_item->get_spin_button()->addUnitTracker(_tracker.get());
-        _nodes_x_item->set_focus_widget(desktop->canvas);
-        _nodes_x_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(*this, &NodeToolbar::value_changed), Geom::X));
-        _nodes_x_item->set_sensitive(false);
-        add(*_nodes_x_item);
-    }
-
-    /* Y coord of selected node(s) */
-    {
-        std::vector<double> values = {1, 2, 3, 5, 10, 20, 50, 100, 200, 500};
-        auto nodes_y_val = prefs->getDouble("/tools/nodes/Ycoord", 0);
-        _nodes_y_adj = Gtk::Adjustment::create(nodes_y_val, -1e6, 1e6, SPIN_STEP, SPIN_PAGE_STEP);
-        _nodes_y_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("node-y", _("Y:"), _nodes_y_adj));
-        _nodes_y_item->set_tooltip_text(_("Y coordinate of selected node(s)"));
-        _nodes_y_item->set_custom_numeric_menu_data(values);
-        _tracker->addAdjustment(_nodes_y_adj->gobj());
-        _nodes_y_item->get_spin_button()->addUnitTracker(_tracker.get());
-        _nodes_y_item->set_focus_widget(desktop->canvas);
-        _nodes_y_adj->signal_value_changed().connect(sigc::bind(sigc::mem_fun(*this, &NodeToolbar::value_changed), Geom::Y));
-        _nodes_y_item->set_sensitive(false);
-        add(*_nodes_y_item);
-    }
-
-    // add the units menu
-    {
-        auto unit_menu = _tracker->create_tool_item(_("Units"), (""));
-        add(*unit_menu);
-    }
-
-    add(* Gtk::manage(new Gtk::SeparatorToolItem()));
-
-    {
-        _object_edit_clip_path_item = add_toggle_button(_("Edit clipping paths"),
-                                                        _("Show clipping path(s) of selected object(s)"));
-        _object_edit_clip_path_item->set_icon_name(INKSCAPE_ICON("path-clip-edit"));
-        _pusher_edit_clipping_paths.reset(new SimplePrefPusher(_object_edit_clip_path_item, "/tools/nodes/edit_clipping_paths"));
-        _object_edit_clip_path_item->signal_toggled().connect(sigc::bind(sigc::mem_fun(*this, &NodeToolbar::on_pref_toggled),
-                                                                         _object_edit_clip_path_item,
-                                                                         "/tools/nodes/edit_clipping_paths"));
-    }
-
-    {
-        _object_edit_mask_path_item = add_toggle_button(_("Edit masks"),
-                                                        _("Show mask(s) of selected object(s)"));
-        _object_edit_mask_path_item->set_icon_name(INKSCAPE_ICON("path-mask-edit"));
-        _pusher_edit_masks.reset(new SimplePrefPusher(_object_edit_mask_path_item, "/tools/nodes/edit_masks"));
-        _object_edit_mask_path_item->signal_toggled().connect(sigc::bind(sigc::mem_fun(*this, &NodeToolbar::on_pref_toggled),
-                                                                         _object_edit_mask_path_item,
-                                                                         "/tools/nodes/edit_masks"));
-    }
-
-    {
-        _nodes_lpeedit_item = Gtk::manage(new Gtk::ToolButton(N_("Next path effect parameter")));
-        _nodes_lpeedit_item->set_tooltip_text(N_("Show next editable path effect parameter"));
-        _nodes_lpeedit_item->set_icon_name(INKSCAPE_ICON("path-effect-parameter-next"));
-        // Must use C API until GTK4.
-        gtk_actionable_set_action_name(GTK_ACTIONABLE(_nodes_lpeedit_item->gobj()), "win.path-effect-parameter-next");
-        add(*_nodes_lpeedit_item);
-    }
-
-    add(* Gtk::manage(new Gtk::SeparatorToolItem()));
-
-    {
-        _show_transform_handles_item = add_toggle_button(_("Show Transform Handles"),
-                                                         _("Show transformation handles for selected nodes"));
-        _show_transform_handles_item->set_icon_name(INKSCAPE_ICON("node-transform"));
-        _pusher_show_transform_handles.reset(new UI::SimplePrefPusher(_show_transform_handles_item, "/tools/nodes/show_transform_handles"));
-        _show_transform_handles_item->signal_toggled().connect(sigc::bind(sigc::mem_fun(*this, &NodeToolbar::on_pref_toggled),
-                                                                          _show_transform_handles_item,
-                                                                          "/tools/nodes/show_transform_handles"));
-    }
-
-    {
-        _show_handles_item = add_toggle_button(_("Show Handles"),
-                                               _("Show Bezier handles of selected nodes"));
-        _show_handles_item->set_icon_name(INKSCAPE_ICON("show-node-handles"));
-        _pusher_show_handles.reset(new UI::SimplePrefPusher(_show_handles_item, "/tools/nodes/show_handles"));
-        _show_handles_item->signal_toggled().connect(sigc::bind(sigc::mem_fun(*this, &NodeToolbar::on_pref_toggled),
-                                                                _show_handles_item,
-                                                                "/tools/nodes/show_handles"));
-    }
-
-    {
-        _show_helper_path_item = add_toggle_button(_("Show Outline"),
-                                                   _("Show path outline (without path effects)"));
-        _show_helper_path_item->set_icon_name(INKSCAPE_ICON("show-path-outline"));
-        _pusher_show_outline.reset(new UI::SimplePrefPusher(_show_helper_path_item, "/tools/nodes/show_outline"));
-        _show_helper_path_item->signal_toggled().connect(sigc::bind(sigc::mem_fun(*this, &NodeToolbar::on_pref_toggled),
-                                                                _show_helper_path_item,
-                                                                "/tools/nodes/show_outline"));
-    }
+    _pusher_edit_clipping_paths.reset(
+        new SimplePrefPusher(_object_edit_clip_path_btn, "/tools/nodes/edit_clipping_paths"));
+    _object_edit_clip_path_btn->signal_toggled().connect(sigc::bind(sigc::mem_fun(*this, &NodeToolbar::on_pref_toggled),
+                                                                    _object_edit_clip_path_btn,
+                                                                    "/tools/nodes/edit_clipping_paths"));
 
     sel_changed(desktop->getSelection());
     desktop->connectEventContextChanged(sigc::mem_fun(*this, &NodeToolbar::watch_ec));
@@ -366,17 +197,37 @@ NodeToolbar::NodeToolbar(SPDesktop *desktop)
     show_all();
 }
 
-GtkWidget *
-NodeToolbar::create(SPDesktop *desktop)
-{
-    auto holder = new NodeToolbar(desktop);
-    return GTK_WIDGET(holder->gobj());
-} // NodeToolbar::prep()
+NodeToolbar::~NodeToolbar() = default;
 
-void
-NodeToolbar::value_changed(Geom::Dim2 d)
+void NodeToolbar::setup_derived_spin_button(Inkscape::UI::Widget::SpinButton &btn, Glib::ustring const &name)
 {
-    auto adj = (d == Geom::X) ? _nodes_x_adj : _nodes_y_adj;
+    auto adj = btn.get_adjustment();
+    adj->set_value(0);
+    adj->signal_value_changed().connect(
+        sigc::bind(sigc::mem_fun(*this, &NodeToolbar::value_changed), name == "x" ? Geom::X : Geom::Y));
+
+    _tracker->addAdjustment(adj->gobj());
+    btn.addUnitTracker(_tracker.get());
+    btn.set_defocus_widget(_desktop->getCanvas());
+
+    // TODO: Handle this in the toolbar class.
+    btn.set_sensitive(false);
+}
+
+void NodeToolbar::setup_insert_node_menu()
+{
+    // insert_node_menu
+    auto const actions = Gio::SimpleActionGroup::create();
+    actions->add_action("insert-min-x", sigc::mem_fun(*this, &NodeToolbar::edit_add_min_x));
+    actions->add_action("insert-max-x", sigc::mem_fun(*this, &NodeToolbar::edit_add_max_x));
+    actions->add_action("insert-min-y", sigc::mem_fun(*this, &NodeToolbar::edit_add_min_y));
+    actions->add_action("insert-max-y", sigc::mem_fun(*this, &NodeToolbar::edit_add_max_y));
+    insert_action_group("node-toolbar", actions);
+}
+
+void NodeToolbar::value_changed(Geom::Dim2 d)
+{
+    auto adj = (d == Geom::X) ? _nodes_x_item.get_adjustment() : _nodes_y_item.get_adjustment();
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
 
@@ -385,11 +236,6 @@ NodeToolbar::value_changed(Geom::Dim2 d)
     }
 
     Unit const *unit = _tracker->getActiveUnit();
-
-    if (DocumentUndo::getUndoSensitive(_desktop->getDocument())) {
-        prefs->setDouble(Glib::ustring("/tools/nodes/") + (d == Geom::X ? "x" : "y"),
-            Quantity::convert(adj->get_value(), unit, "px"));
-    }
 
     // quit if run by the attr_changed listener
     if (_freeze || _tracker->isUpdating()) {
@@ -403,6 +249,14 @@ NodeToolbar::value_changed(Geom::Dim2 d)
     if (nt && !nt->_selected_nodes->empty()) {
         double val = Quantity::convert(adj->get_value(), unit, "px");
         double oldval = nt->_selected_nodes->pointwiseBounds()->midpoint()[d];
+
+        // Adjust the coordinate to the current page, if needed
+        auto &pm = _desktop->getDocument()->getPageManager();
+        if (prefs->getBool("/options/origincorrection/page", true)) {
+            auto page = pm.getSelectedPageRect();
+            oldval -= page.corner(0)[d];
+        }
+
         Geom::Point delta(0,0);
         delta[d] = val - oldval;
         nt->_multipath->move(delta);
@@ -411,29 +265,27 @@ NodeToolbar::value_changed(Geom::Dim2 d)
     _freeze = false;
 }
 
-void
-NodeToolbar::sel_changed(Inkscape::Selection *selection)
+void NodeToolbar::sel_changed(Inkscape::Selection *selection)
 {
     SPItem *item = selection->singleItem();
-    if (item && SP_IS_LPE_ITEM(item)) {
-       if (SP_LPE_ITEM(item)->hasPathEffect()) {
-           _nodes_lpeedit_item->set_sensitive(true);
-       } else {
-           _nodes_lpeedit_item->set_sensitive(false);
-       }
+    if (item && is<SPLPEItem>(item)) {
+        if (cast_unsafe<SPLPEItem>(item)->hasPathEffect()) {
+            _nodes_lpeedit_btn.set_sensitive(true);
+        } else {
+            _nodes_lpeedit_btn.set_sensitive(false);
+        }
     } else {
-       _nodes_lpeedit_item->set_sensitive(false);
+        _nodes_lpeedit_btn.set_sensitive(false);
     }
 }
 
-void
-NodeToolbar::watch_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec)
+void NodeToolbar::watch_ec(SPDesktop *desktop, Inkscape::UI::Tools::ToolBase *tool)
 {
-    if (INK_IS_NODE_TOOL(ec)) {
+    if (INK_IS_NODE_TOOL(tool)) {
         // watch selection
         c_selection_changed = desktop->getSelection()->connectChanged(sigc::mem_fun(*this, &NodeToolbar::sel_changed));
         c_selection_modified = desktop->getSelection()->connectModified(sigc::mem_fun(*this, &NodeToolbar::sel_modified));
-        c_subselection_changed = desktop->connect_control_point_selected([=](void* sender, Inkscape::UI::ControlPointSelection* selection) {
+        c_subselection_changed = desktop->connect_control_point_selected([this](void* sender, Inkscape::UI::ControlPointSelection* selection) {
             coord_changed(selection);
         });
 
@@ -448,15 +300,13 @@ NodeToolbar::watch_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec)
     }
 }
 
-void
-NodeToolbar::sel_modified(Inkscape::Selection *selection, guint /*flags*/)
+void NodeToolbar::sel_modified(Inkscape::Selection *selection, guint /*flags*/)
 {
     sel_changed(selection);
 }
 
 /* is called when the node selection is modified */
-void
-NodeToolbar::coord_changed(Inkscape::UI::ControlPointSelection* selected_nodes) // gpointer /*shape_editor*/)
+void NodeToolbar::coord_changed(Inkscape::UI::ControlPointSelection *selected_nodes) // gpointer /*shape_editor*/)
 {
     // quit if run by the attr_changed listener
     if (_freeze) {
@@ -474,28 +324,35 @@ NodeToolbar::coord_changed(Inkscape::UI::ControlPointSelection* selected_nodes) 
 
     if (!selected_nodes || selected_nodes->empty()) {
         // no path selected
-        _nodes_x_item->set_sensitive(false);
-        _nodes_y_item->set_sensitive(false);
+        _nodes_x_item.set_sensitive(false);
+        _nodes_y_item.set_sensitive(false);
     } else {
-        _nodes_x_item->set_sensitive(true);
-        _nodes_y_item->set_sensitive(true);
-        Geom::Coord oldx = Quantity::convert(_nodes_x_adj->get_value(), unit, "px");
-        Geom::Coord oldy = Quantity::convert(_nodes_y_adj->get_value(), unit, "px");
+        _nodes_x_item.set_sensitive(true);
+        _nodes_y_item.set_sensitive(true);
+        auto adj_x = _nodes_x_item.get_adjustment();
+        auto adj_y = _nodes_y_item.get_adjustment();
+        Geom::Coord oldx = Quantity::convert(adj_x->get_value(), unit, "px");
+        Geom::Coord oldy = Quantity::convert(adj_y->get_value(), unit, "px");
         Geom::Point mid = selected_nodes->pointwiseBounds()->midpoint();
 
+        // Adjust shown coordinate according to the selected page
+        if (Preferences::get()->getBool("/options/origincorrection/page", true)) {
+            auto &pm = _desktop->getDocument()->getPageManager();
+            mid *= pm.getSelectedPageAffine().inverse();
+        }
+
         if (oldx != mid[Geom::X]) {
-            _nodes_x_adj->set_value(Quantity::convert(mid[Geom::X], "px", unit));
+            adj_x->set_value(Quantity::convert(mid[Geom::X], "px", unit));
         }
         if (oldy != mid[Geom::Y]) {
-            _nodes_y_adj->set_value(Quantity::convert(mid[Geom::Y], "px", unit));
+            adj_y->set_value(Quantity::convert(mid[Geom::Y], "px", unit));
         }
     }
 
     _freeze = false;
 }
 
-void
-NodeToolbar::edit_add()
+void NodeToolbar::edit_add()
 {
     NodeTool *nt = get_node_tool();
     if (nt) {
@@ -503,8 +360,7 @@ NodeToolbar::edit_add()
     }
 }
 
-void
-NodeToolbar::edit_add_min_x()
+void NodeToolbar::edit_add_min_x()
 {
     NodeTool *nt = get_node_tool();
     if (nt) {
@@ -512,8 +368,7 @@ NodeToolbar::edit_add_min_x()
     }
 }
 
-void
-NodeToolbar::edit_add_max_x()
+void NodeToolbar::edit_add_max_x()
 {
     NodeTool *nt = get_node_tool();
     if (nt) {
@@ -521,8 +376,7 @@ NodeToolbar::edit_add_max_x()
     }
 }
 
-void
-NodeToolbar::edit_add_min_y()
+void NodeToolbar::edit_add_min_y()
 {
     NodeTool *nt = get_node_tool();
     if (nt) {
@@ -530,8 +384,7 @@ NodeToolbar::edit_add_min_y()
     }
 }
 
-void
-NodeToolbar::edit_add_max_y()
+void NodeToolbar::edit_add_max_y()
 {
     NodeTool *nt = get_node_tool();
     if (nt) {
@@ -539,18 +392,15 @@ NodeToolbar::edit_add_max_y()
     }
 }
 
-void
-NodeToolbar::edit_delete()
+void NodeToolbar::edit_delete()
 {
     NodeTool *nt = get_node_tool();
     if (nt) {
-        Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-        nt->_multipath->deleteNodes(prefs->getBool("/tools/nodes/delete_preserves_shape", true));
+        nt->_multipath->deleteNodes(Preferences::get()->getBool("/tools/nodes/delete_preserves_shape", true));
     }
 }
 
-void
-NodeToolbar::edit_join()
+void NodeToolbar::edit_join()
 {
     NodeTool *nt = get_node_tool();
     if (nt) {
@@ -558,8 +408,7 @@ NodeToolbar::edit_join()
     }
 }
 
-void
-NodeToolbar::edit_break()
+void NodeToolbar::edit_break()
 {
     NodeTool *nt = get_node_tool();
     if (nt) {
@@ -567,8 +416,7 @@ NodeToolbar::edit_break()
     }
 }
 
-void
-NodeToolbar::edit_delete_segment()
+void NodeToolbar::edit_delete_segment()
 {
     NodeTool *nt = get_node_tool();
     if (nt) {
@@ -576,8 +424,7 @@ NodeToolbar::edit_delete_segment()
     }
 }
 
-void
-NodeToolbar::edit_join_segment()
+void NodeToolbar::edit_join_segment()
 {
     NodeTool *nt = get_node_tool();
     if (nt) {
@@ -585,8 +432,7 @@ NodeToolbar::edit_join_segment()
     }
 }
 
-void
-NodeToolbar::edit_cusp()
+void NodeToolbar::edit_cusp()
 {
     NodeTool *nt = get_node_tool();
     if (nt) {
@@ -594,8 +440,7 @@ NodeToolbar::edit_cusp()
     }
 }
 
-void
-NodeToolbar::edit_smooth()
+void NodeToolbar::edit_smooth()
 {
     NodeTool *nt = get_node_tool();
     if (nt) {
@@ -603,8 +448,7 @@ NodeToolbar::edit_smooth()
     }
 }
 
-void
-NodeToolbar::edit_symmetrical()
+void NodeToolbar::edit_symmetrical()
 {
     NodeTool *nt = get_node_tool();
     if (nt) {
@@ -612,8 +456,7 @@ NodeToolbar::edit_symmetrical()
     }
 }
 
-void
-NodeToolbar::edit_auto()
+void NodeToolbar::edit_auto()
 {
     NodeTool *nt = get_node_tool();
     if (nt) {
@@ -621,8 +464,7 @@ NodeToolbar::edit_auto()
     }
 }
 
-void
-NodeToolbar::edit_toline()
+void NodeToolbar::edit_toline()
 {
     NodeTool *nt = get_node_tool();
     if (nt) {
@@ -630,8 +472,7 @@ NodeToolbar::edit_toline()
     }
 }
 
-void
-NodeToolbar::edit_tocurve()
+void NodeToolbar::edit_tocurve()
 {
     NodeTool *nt = get_node_tool();
     if (nt) {
@@ -639,17 +480,12 @@ NodeToolbar::edit_tocurve()
     }
 }
 
-void
-NodeToolbar::on_pref_toggled(Gtk::ToggleToolButton *item,
-                             const Glib::ustring&   path)
+void NodeToolbar::on_pref_toggled(Gtk::ToggleButton *item, const Glib::ustring &path)
 {
-    auto prefs = Inkscape::Preferences::get();
-    prefs->setBool(path, item->get_active());
+    Preferences::get()->setBool(path, item->get_active());
 }
 
-}
-}
-}
+} // namespace Inkscape::UI::Toolbar
 
 /*
   Local Variables:

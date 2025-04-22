@@ -27,17 +27,14 @@ information about the installed packages.
 import os
 import sys
 import json
-import logging
 from fnmatch import fnmatch
+from typing import List
 
+from .factory import PackageInxFile
 from .utils import (
     DATA_DIR,
-    ICON_SEP,
     parse_metadata,
     clean_author,
-    get_user_directory,
-    get_inkscape_directory,
-    ExtensionInx,
 )
 
 # The ORDER of these places is important, when installing packages it will
@@ -97,7 +94,9 @@ class PackageItem(object):
     stars = property(lambda self: self.info["stats"]["liked"])
     downloads = property(lambda self: self.info["stats"]["downloaded"])
     verified = property(lambda self: self.info["verified"])
-    recommended = property(lambda self: self.info["stats"].get("extra", 0) == 7)
+    recommended = property(
+        lambda self: self.info["stats"].get("extra", 0) == 7
+    )
 
     targets = property(lambda self: self.info.get("Inkscape Version", []))
     target = property(lambda self: ", ".join(self.targets))
@@ -179,6 +178,13 @@ class PackageItem(object):
             if missing or name not in self._missing
         ]
 
+    def get_inx_files(self) -> List[PackageInxFile]:
+        return [
+            PackageInxFile(self.remote(f"../{name}").normpath())
+            for name in self.get_files()
+            if name.endswith(".inx")
+        ]
+
 
 class OrphanedItem(PackageItem):
     """
@@ -236,7 +242,10 @@ class OrphanedItem(PackageItem):
 
     def get_missing(self):
         """Returns a set of files which don't exist, even though they were said to"""
-        return [(fn, self._items.get(fn, None)) for fn in self._removed - self._files]
+        return [
+            (fn, self._items.get(fn, None))
+            for fn in self._removed - self._files
+        ]
 
 
 class PythonItem(PackageItem):
@@ -312,7 +321,7 @@ class PythonPackage(object):
                 self._metadata = clean_author(json.loads(md_json))
 
         if self._metadata is None:
-            raise KeyError("Can't find package meta data: {}".format(self.path))
+            raise KeyError(f"Can't find package meta data: {self.path}")
         return self._metadata
 
     def get_file(self, name):

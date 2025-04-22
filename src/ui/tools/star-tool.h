@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef __SP_STAR_CONTEXT_H__
-#define __SP_STAR_CONTEXT_H__
+#ifndef INKSCAPE_UI_TOOLS_STAR_TOOL_H
+#define INKSCAPE_UI_TOOLS_STAR_TOOL_H
 
 /*
  * Star drawing context
@@ -19,54 +19,67 @@
 #include <sigc++/sigc++.h>
 #include <2geom/point.h>
 #include "ui/tools/tool-base.h"
+#include "object/weakptr.h"
+
+#include "2geom/affine.h"
 
 class SPStar;
 
-namespace Inkscape {
+namespace Inkscape { class Selection; }
 
-class Selection;
+namespace Inkscape::UI::Tools {
 
-namespace UI {
-namespace Tools {
-
-class StarTool : public ToolBase {
+class StarTool : public ToolBase
+{
 public:
     StarTool(SPDesktop *desktop);
     ~StarTool() override;
 
-    void set(const Inkscape::Preferences::Entry &val) override;
-    bool root_handler(GdkEvent *event) override;
+    void set(Preferences::Entry const &val) override;
+    bool root_handler(CanvasEvent const &event) override;
 
 private:
-    SPStar *star;
+    SPWeakPtr<SPStar> star;
 
     Geom::Point center;
 
     /* Number of corners */
-    gint magnitude;
+    int magnitude = 5;
 
     /* Outer/inner radius ratio */
-    gdouble proportion;
+    double proportion = 0.5;
 
     /* flat sides or not? */
-    bool isflatsided;
+    bool isflatsided = false;
 
     /* rounded corners ratio */
-    gdouble rounded;
+    double rounded = 0.0;
 
     // randomization
-    gdouble randomized;
+    double randomized = 0.0;
+
+    // Scale of the new object
+    Geom::Affine _tr = Geom::identity();
 
     sigc::connection sel_changed_connection;
 
-	void drag(Geom::Point p, guint state);
-	void finishItem();
-	void cancel();
-	void selection_changed(Inkscape::Selection* selection);
+    void drag(Geom::Point p, unsigned state);
+    void finishItem();
+    void cancel();
+    void selection_changed(Selection *selection);
 };
 
-}
-}
-}
+} // namespace Inkscape::UI::Tools
 
-#endif
+#endif // INKSCAPE_UI_TOOLS_STAR_TOOL_H
+
+/*
+  Local Variables:
+  mode:c++
+  c-file-style:"stroustrup"
+  c-file-offsets:((innamespace . 0)(inline-open . 0)(case-label . +))
+  indent-tabs-mode:nil
+  fill-column:99
+  End:
+*/
+// vim: filetype=cpp:expandtab:shiftwidth=4:tabstop=8:softtabstop=4 :

@@ -10,24 +10,15 @@
 #ifndef ABOUTDIALOG_H
 #define ABOUTDIALOG_H
 
+#include <glibmm/main.h>
 #include <gtkmm.h>
 #include <gtkmm/builder.h>
 
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
+namespace Inkscape::UI::Dialog {
 
-class AboutDialog {
+void show_about();
 
-  public:
-    static void show_about();
-
-  private:
-};
-
-} // namespace Dialog
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Dialog
 
 #endif // ABOUTDIALOG_H
 

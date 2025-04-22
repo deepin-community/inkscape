@@ -1,28 +1,33 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-/*
+/** @file
  * Icon Loader
- *
- * Icon Loader management code
- *
+ *//*
  * Authors:
- *  Jabiertxo Arraiza <jabier.arraiza@marker.es>
+ * see git history
+ * Jabiertxo Arraiza <jabier.arraiza@marker.es>
  *
+ * Copyright (C) 2018 Authors
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-
 #include "icon-loader.h"
-#include "inkscape.h"
-#include "io/resource.h"
-#include "svg/svg-color.h"
-#include "widgets/toolbox.h"
 
+#include <unordered_map>
+#include <giomm/themedicon.h>
 #include <gdkmm/display.h>
 #include <gdkmm/screen.h>
+#include <gtkmm/cssprovider.h>
 #include <gtkmm/iconinfo.h>
 #include <gtkmm/icontheme.h>
+#include <gtkmm/image.h>
+#include <gtkmm/stylecontext.h>
+#include <gtkmm/window.h>
 
-Gtk::Image *sp_get_icon_image(Glib::ustring icon_name, gint size)
+#include "desktop.h"
+#include "inkscape.h"
+
+
+Gtk::Image *sp_get_icon_image(Glib::ustring const &icon_name, int size)
 {
     Gtk::Image *icon = new Gtk::Image();
     icon->set_from_icon_name(icon_name, Gtk::IconSize(Gtk::ICON_SIZE_BUTTON));
@@ -30,71 +35,52 @@ Gtk::Image *sp_get_icon_image(Glib::ustring icon_name, gint size)
     return icon;
 }
 
-Gtk::Image *sp_get_icon_image(Glib::ustring icon_name, Gtk::IconSize icon_size)
+Gtk::Image *sp_get_icon_image(Glib::ustring const &icon_name, Gtk::IconSize icon_size)
 {
     Gtk::Image *icon = new Gtk::Image();
     icon->set_from_icon_name(icon_name, icon_size);
     return icon;
 }
 
-Gtk::Image *sp_get_icon_image(Glib::ustring icon_name, Gtk::BuiltinIconSize icon_size)
+Gtk::Image *sp_get_icon_image(Glib::ustring const &icon_name, Gtk::BuiltinIconSize icon_size)
 {
     Gtk::Image *icon = new Gtk::Image();
     icon->set_from_icon_name(icon_name, icon_size);
     return icon;
 }
 
-GtkWidget *sp_get_icon_image(Glib::ustring icon_name, GtkIconSize icon_size)
+GtkWidget *sp_get_icon_image(Glib::ustring const &icon_name, GtkIconSize icon_size)
 {
     return gtk_image_new_from_icon_name(icon_name.c_str(), icon_size);
 }
 
-Glib::RefPtr<Gdk::Pixbuf> sp_get_icon_pixbuf(Glib::ustring icon_name, gint size)
-{
-    Glib::RefPtr<Gdk::Display> display = Gdk::Display::get_default();
-    Glib::RefPtr<Gdk::Screen>  screen = display->get_default_screen();
-    Glib::RefPtr<Gtk::IconTheme> icon_theme = Gtk::IconTheme::get_for_screen(screen);
-    auto prefs = Inkscape::Preferences::get();
-    if (prefs->getBool("/theme/symbolicIcons", false) && icon_name.find("-symbolic") == Glib::ustring::npos) {
-        icon_name += Glib::ustring("-symbolic");
-    }
-    Gtk::IconInfo iconinfo = icon_theme->lookup_icon(icon_name, size, Gtk::ICON_LOOKUP_FORCE_SIZE);
-    Glib::RefPtr<Gdk::Pixbuf> _icon_pixbuf;
-    if (prefs->getBool("/theme/symbolicIcons", false)) {
-        Gtk::Window *window = SP_ACTIVE_DESKTOP->getToplevel();
-        if (window) {
-            Glib::RefPtr<Gtk::StyleContext> stylecontext = window->get_style_context();
-            bool was_symbolic = false;
-            _icon_pixbuf = iconinfo.load_symbolic(stylecontext, was_symbolic);
-        } else {
-            // we never go here
-            _icon_pixbuf = iconinfo.load_icon();
-        }
-    } else {
-        _icon_pixbuf = iconinfo.load_icon();
-    }
-    return _icon_pixbuf;
-}
+namespace Inkscape::UI {
 
-Glib::RefPtr<Gdk::Pixbuf> sp_get_icon_pixbuf(Glib::ustring icon_name, Gtk::IconSize icon_size)
+// Maintain a map of every color requested to a CSS class that will apply it
+[[nodiscard]] static Glib::ustring const &get_color_class(std::uint32_t const rgba_color,
+                                                          Glib::RefPtr<Gdk::Screen> const &screen)
 {
-    int width, height;
-    Gtk::IconSize::lookup(icon_size, width, height);
-    return sp_get_icon_pixbuf(icon_name, width);
-}
+    static std::unordered_map<std::uint32_t, Glib::ustring> color_classes;
+    auto &color_class = color_classes[rgba_color];
+    if (!color_class.empty()) return color_class;
 
-Glib::RefPtr<Gdk::Pixbuf> sp_get_icon_pixbuf(Glib::ustring icon_name, Gtk::BuiltinIconSize icon_size, int scale)
-{
-    int width, height;
-    Gtk::IconSize::lookup(Gtk::IconSize(icon_size), width, height);
-    return sp_get_icon_pixbuf(icon_name, width * scale);
-}
-
-Glib::RefPtr<Gdk::Pixbuf> sp_get_icon_pixbuf(Glib::ustring icon_name, GtkIconSize icon_size, int scale)
-{
-    gint width, height;
-    gtk_icon_size_lookup(icon_size, &width, &height);
-    return sp_get_icon_pixbuf(icon_name, width * scale);
+    // The CSS class is .icon-color-RRGGBBAA
+    std::string hex(9, '\0');
+    std::snprintf(hex.data(), 9, "%08X", rgba_color);
+    color_class = Glib::ustring::compose("icon-color-%1", hex);
+    // GTK CSS does not support #RRGGBBAA, so we split it
+    hex.resize(6);
+    auto const opacity = (rgba_color & 0xFF) / 255.0;
+    // Add a persistent CSS provider for that class+color
+    auto const css_provider = Gtk::CssProvider::create();
+    auto const data = Glib::ustring::compose(
+        ".symbolic .%1, .regular .%1 { -gtk-icon-style: symbolic; color: #%2; opacity: %3; }",
+        color_class, hex, opacity);
+    css_provider->load_from_data(data);
+    // Add it with the needed priority = higher than themes.cpp _colorizeprovider
+    static constexpr auto priority = GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1;
+    Gtk::StyleContext::add_provider_for_screen(screen, css_provider, priority);
+    return color_class;
 }
 
 /**
@@ -102,28 +88,41 @@ Glib::RefPtr<Gdk::Pixbuf> sp_get_icon_pixbuf(Glib::ustring icon_name, GtkIconSiz
  * are always symbolic icons no matter the theme in order to be coloured by the highlight
  * color.
  *
+ * This function returns a struct containing the icon name you should use in a
+ * GtkImage/GtkCellRenderer, & a CSS class that will apply the requested color.
+ *
  * @param shape_type - A string id for the shape from SPItem->typeName()
- * @param color - The fg color of the shape icon
- * @param size - The icon size to generate
+ * @param rgba_color - The fg color of the shape icon, in 32-bit unsigned int RGBA format.
  */
-Glib::RefPtr<Gdk::Pixbuf> sp_get_shape_icon(Glib::ustring shape_type, Gdk::RGBA color, gint size, int scale)
+GetShapeIconResult get_shape_icon(Glib::ustring const &shape_type, std::uint32_t const rgba_color)
 {
     Glib::RefPtr<Gdk::Display> display = Gdk::Display::get_default();
     Glib::RefPtr<Gdk::Screen>  screen = display->get_default_screen();
     Glib::RefPtr<Gtk::IconTheme> icon_theme = Gtk::IconTheme::get_for_screen(screen);
 
-    Gtk::IconInfo iconinfo = icon_theme->lookup_icon("shape-" + shape_type + "-symbolic",
-                                                     size * scale, Gtk::ICON_LOOKUP_FORCE_SIZE);
-    if (!iconinfo) {
-        iconinfo = icon_theme->lookup_icon("shape-unknown-symbolic", size * scale, Gtk::ICON_LOOKUP_FORCE_SIZE);
-        // We know this could fail, but it should exist, so persist.
+    auto icon_name = Glib::ustring::compose("shape-%1-symbolic", shape_type);
+    if (!icon_theme->has_icon(icon_name)) {
+        icon_name = Glib::ustring::compose("%1-symbolic", shape_type);
+        if (!icon_theme->has_icon(icon_name)) {
+            icon_name = "shape-unknown-symbolic";
+        }
     }
-    // Gtkmm requires all colours, even though gtk does not
-    auto other = Gdk::RGBA("black");
-    bool was_symbolic = false;
-    return iconinfo.load_symbolic(color, other, other, other, was_symbolic);
+
+    return {std::move(icon_name), get_color_class(rgba_color, screen)};
 }
 
+/// As get_shape_icon(), but returns a ready-made, managed Image having that icon name & CSS class.
+Gtk::Image *get_shape_image(Glib::ustring const &shape_type, std::uint32_t const rgba_color,
+                            Gtk::IconSize const icon_size)
+{
+    auto const [icon_name, color_class] = get_shape_icon(shape_type, rgba_color);
+    auto const icon = Gio::ThemedIcon::create(icon_name);
+    auto const image = Gtk::make_managed<Gtk::Image>(icon, icon_size);
+    image->get_style_context()->add_class(color_class);
+    return image;
+}
+
+} // namespace Inkscape::UI
 
 /*
   Local Variables:

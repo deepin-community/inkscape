@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: UTF-8 -*-
 #
 # Copyright (C) 2009 John Beard john.j.beard@gmail.com
@@ -128,7 +128,6 @@ def get_codewords(text, nd, nc, inter, size144):
         )  # partition the data into datamtrix-sized chunks (1558 =156*8 + 155*2 )
 
         for i in range(len(data_blocks)):  # for each datamtrix
-
             inter = 8
             nd = 156
             nc = 62
@@ -266,6 +265,7 @@ def randomise_pad_253(pad_value, pad_position):
 
 # REED-SOLOMON ENCODING ROUTINES =====================================
 
+
 # "prod(x,y,log,alog,gf)" returns the product "x" times "y"
 def prod(x, y, log, alog, gf):
     if x == 0 or y == 0:
@@ -324,7 +324,6 @@ def reed_solomon(data, nd, nc):
     c = gen_poly_coeffs(nc, log, alog, gf)
 
     for block in data:  # for each block of data codewords
-
         block.extend([0] * (nc + 1))  # extend to make space for the error codewords
 
         # generate "nc" checkwords in the list block
@@ -434,7 +433,6 @@ def place_bits(data, nrow, ncol):
     row = 4
     col = 0
     while True:
-
         # first check for one of the special corner cases, then...
         if (row == nrow) and (col == 0):
             char += place_square(0, array, nrow, ncol, nrow, ncol, data[char])
@@ -495,9 +493,9 @@ def add_finder_pattern(array, data_nrow, data_ncol, reg_row, reg_col):
 
     for i in range(reg_row):  # for each row of data regions
         for j in range(ncol):
-            datamatrix[i * (data_nrow + 2) + data_nrow + 1][
-                j
-            ] = 1  # horizontal black bar at bottom
+            datamatrix[i * (data_nrow + 2) + data_nrow + 1][j] = (
+                1  # horizontal black bar at bottom
+            )
             datamatrix[i * (data_nrow + 2)][j] = (j + 1) % 2  # alternating blocks
 
     for i in range(data_nrow * reg_row):

@@ -14,10 +14,11 @@ Build-Depends:
  python3,
 Build-Depends-Arch:
  imagemagick (>= 0) <!nocheck>,
- lib2geom-dev (>= 1.2.2-2) [!i386],
+ lib2geom-dev (>= 1.3),
  libaspell-dev,
  libboost-dev,
  libboost-filesystem-dev,
+ libboost-stacktrace-dev,
  libcdr-dev,
  libdbus-1-dev,
  libdbus-glib-1-dev,
@@ -29,6 +30,7 @@ Build-Depends-Arch:
  libgspell-1-dev,
  libgtk-3-dev,
  libgtkmm-3.0-dev,
+ libgtksourceview-4-dev,
  libgtkspell3-3-dev,
  libjemalloc-dev,
  liblcms2-dev,
@@ -42,27 +44,26 @@ Build-Depends-Arch:
  librevenge-dev,
  librsvg2-common,
  libsigc++-2.0-dev (>= 2.0.16-2),
- libsoup2.4-dev,
  libtool,
  libvisio-dev,
  libwpg-dev (>= 0.3.0),
  libxml-parser-perl,
  libxml2-dev (>= 2-2.4.24),
  libxslt1-dev,
- pkg-config,
+ pkgconf,
  python3-lxml <!nocheck>,
  ragel [!i386],
  zlib1g-dev,
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
 Homepage: https://inkscape.org
-Vcs-Git: https://salsa.debian.org/multimedia-team/inkscape.git -b trixie
+Vcs-Git: https://salsa.debian.org/multimedia-team/inkscape.git
 Vcs-Browser: https://salsa.debian.org/multimedia-team/inkscape
 
 Package: inkscape
 Architecture: any
 Depends:
- librsvg2-common [amd64 arm64 armel armhf i386 mips64el mipsel ppc64el s390x powerpc ppc64 riscv64 sparc64],
+ librsvg2-common [amd64 arm64 armhf i386 mips64el ppc64el riscv64 s390x loong64 powerpc ppc64 sparc64],
  ${misc:Depends},
  ${python3:Depends},
  ${shlibs:Depends},
@@ -85,6 +86,8 @@ Suggests:
  python3-packaging,
  python3-uniconvertor,
  ruby,
+Breaks: inkscape-open-symbols (<= 1.2.1-1)
+Replaces: inkscape-open-symbols (<= 1.2.1-1)
 Description: vector-based drawing program
  Inkscape is an illustration editor which has everything needed to
  create professional-quality computer art. You can use it to make

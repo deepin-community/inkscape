@@ -1,13 +1,20 @@
-Description: skip test 241 - cli_export-png-color-mode-gray-8_png_check_output
- this fails on arm64, s390x, ppc64el
- allegedly a precision error in the gamma
-Bug: https://gitlab.com/inkscape/inkscape/-/issues/3554#note_1035539888
-Forwarded: not-needed
-Last-Update: 2022-12-20
+From: Mattia Rizzolo <mattia@debian.org>
+Date: Tue, 20 Dec 2022 02:34:52 +0100
+Subject: skip test 241 - cli_export-png-color-mode-gray-8_png_check_output
 
+this fails on arm64, s390x, ppc64el
+allegedly a precision error in the gamma
+
+Forwarded: https://gitlab.com/inkscape/inkscape/-/issues/3554#note_1035539888
+---
+ testfiles/cli_tests/CMakeLists.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/testfiles/cli_tests/CMakeLists.txt b/testfiles/cli_tests/CMakeLists.txt
+index 4b8b7ef..e001bb9 100644
 --- a/testfiles/cli_tests/CMakeLists.txt
 +++ b/testfiles/cli_tests/CMakeLists.txt
-@@ -515,7 +515,7 @@
+@@ -596,7 +596,7 @@ add_cli_test(export-background-opacity_png  PARAMETERS --export-background=yello
  
  # --export-png-color-mode=COLOR-MODE
  # SVG, PDF, PS, EPS, EMF, WMF: Vector formats - bitmap bit-depth and color-type not relevant there.

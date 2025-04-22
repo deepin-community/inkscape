@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /**
  * @file
- * Dialog for renaming layers.
+ * Dialog for editing power strokes.
  */
 /* Author:
  *   Bryce W. Harrington <bryce@bryceharrington.com>
@@ -15,19 +15,22 @@
  */
 
 #include "lpe-powerstroke-properties.h"
+
 #include <boost/lexical_cast.hpp>
 #include <glibmm/i18n.h>
-#include "inkscape.h"
+#include <glibmm/main.h>
+#include <sigc++/adaptors/bind.h>
+#include <sigc++/adaptors/hide.h>
+#include <sigc++/functors/mem_fun.h>
+
 #include "desktop.h"
 #include "document-undo.h"
+#include "inkscape.h"
 #include "layer-manager.h"
-
 #include "selection-chemistry.h"
-//#include "event-context.h"
+#include "ui/pack.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Dialogs {
+namespace Inkscape::UI::Dialog {
 
 PowerstrokePropertiesDialog::PowerstrokePropertiesDialog()
     : _knotpoint(nullptr),
@@ -63,7 +66,7 @@ PowerstrokePropertiesDialog::PowerstrokePropertiesDialog()
     _layout_table.attach(_powerstroke_width_label,   0,1,1,1);
     _layout_table.attach(_powerstroke_width_entry,   1,1,1,1);
 
-    mainVBox->pack_start(_layout_table, true, true, 4);
+    UI::pack_start(*mainVBox, _layout_table, true, true, 4);
 
     // Buttons
     _close_button.set_can_default();
@@ -93,9 +96,6 @@ PowerstrokePropertiesDialog::PowerstrokePropertiesDialog()
     set_focus(_powerstroke_width_entry);
 }
 
-PowerstrokePropertiesDialog::~PowerstrokePropertiesDialog() {
-}
-
 void PowerstrokePropertiesDialog::showDialog(SPDesktop *desktop, Geom::Point knotpoint, const Inkscape::LivePathEffect::PowerStrokePointArrayParamKnotHolderEntity *pt)
 {
     PowerstrokePropertiesDialog *dialog = new PowerstrokePropertiesDialog();
@@ -110,7 +110,7 @@ void PowerstrokePropertiesDialog::showDialog(SPDesktop *desktop, Geom::Point kno
     desktop->setWindowTransient (dialog->gobj());
     dialog->property_destroy_with_parent() = true;
 
-    dialog->show();
+    dialog->set_visible(true);
     dialog->present();
 }
 
@@ -127,50 +127,21 @@ void
 PowerstrokePropertiesDialog::_close()
 {
     destroy_();
-    Glib::signal_idle().connect(
-        sigc::bind_return(
-            sigc::bind(sigc::ptr_fun<void*, void>(&::operator delete), this),
-            false 
-        )
-    );
-}
-
-bool PowerstrokePropertiesDialog::_handleKeyEvent(GdkEventKey * /*event*/)
-{
-
-    /*switch (get_latin_keyval(event)) {
-        case GDK_KEY_Return:
-        case GDK_KEY_KP_Enter: {
-            _apply();
-            return true;
-        }
-        break;
-    }*/
-    return false;
-}
-
-void PowerstrokePropertiesDialog::_handleButtonEvent(GdkEventButton* event)
-{
-    if ( (event->type == GDK_2BUTTON_PRESS) && (event->button == 1) ) {
-        _apply();
-    }
+    Glib::signal_idle().connect([this] { delete this; return false; });
 }
 
 void PowerstrokePropertiesDialog::_setKnotPoint(Geom::Point knotpoint)
 {
-	_powerstroke_position_entry.set_value(knotpoint.x());
-	_powerstroke_width_entry.set_value(knotpoint.y());
+    _powerstroke_position_entry.set_value(knotpoint.x());
+    _powerstroke_width_entry.set_value(knotpoint.y());
 }
 
 void PowerstrokePropertiesDialog::_setPt(const Inkscape::LivePathEffect::PowerStrokePointArrayParamKnotHolderEntity *pt)
 {
-	_knotpoint = const_cast<Inkscape::LivePathEffect::PowerStrokePointArrayParamKnotHolderEntity *>(pt);
+    _knotpoint = const_cast<Inkscape::LivePathEffect::PowerStrokePointArrayParamKnotHolderEntity *>(pt);
 }
 
-} // namespace
-} // namespace
-} // namespace
-
+} // namespace Inkscape::UI::Dialog
 
 /*
   Local Variables:

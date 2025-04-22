@@ -4,7 +4,7 @@
 
 /**
  * @file
- * Some things pertinent to all visible shapes: SPItem, SPItemView, SPItemCtx, SPItemClass, SPEvent.
+ * Some things pertinent to all visible shapes: SPItem, SPItemView, SPItemCtx.
  */
 
 /*
@@ -21,13 +21,15 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <cstdint>
+#include <vector>
 #include <2geom/forward.h>
 #include <2geom/affine.h>
 #include <2geom/rect.h>
-#include <vector>
 
 #include "sp-object.h"
-
+#include "sp-marker-loc.h"
+#include "display/drawing-item-ptr.h"
 #include "xml/repr.h"
 
 class SPGroup;
@@ -38,59 +40,35 @@ class SPMaskReference;
 class SPAvoidRef;
 class SPPattern;
 struct SPPrintContext;
-typedef unsigned int guint32;
 
 namespace Inkscape {
-
 class Drawing;
 class DrawingItem;
 class URIReference;
 class SnapCandidatePoint;
 class SnapPreferences;
-
-namespace UI {
-namespace View {
-class SVGViewWidget;
-}
-}
-}
+} // namespace Inkscape
 
 // TODO make a completely new function that transforms either the fill or
 // stroke of any SPItem  without adding an extra parameter to adjust_pattern.
 enum PaintServerTransform { TRANSFORM_BOTH, TRANSFORM_FILL, TRANSFORM_STROKE };
 
-/**
- * Event structure.
- *
- * @todo This is just placeholder. Plan:
- * We do extensible event structure, that hold applicable (ui, non-ui)
- * data pointers. So it is up to given object/arena implementation
- * to process correct ones in meaningful way.
- * Also, this probably goes to SPObject base class.
- *
- * GUI Code should not be here!
- */
-class SPEvent {
-
-public:
-    enum Type {
-        INVALID,
-        NONE,
-        ACTIVATE,
-        MOUSEOVER,
-        MOUSEOUT
-    };
-
-    Type type;
-    Inkscape::UI::View::SVGViewWidget* view;
+struct SPItemView
+{
+    unsigned flags;
+    unsigned key;
+    DrawingItemPtr<Inkscape::DrawingItem> drawingitem;
+    SPItemView(unsigned flags, unsigned key, DrawingItemPtr<Inkscape::DrawingItem> drawingitem);
 };
 
-class SPItemView {
-public:
-    SPItemView *next;
-    unsigned int flags;
-    unsigned int key;
-    Inkscape::DrawingItem *arenaitem;
+enum SPItemKey
+{
+    ITEM_KEY_CLIP,
+    ITEM_KEY_MASK,
+    ITEM_KEY_FILL,
+    ITEM_KEY_STROKE,
+    ITEM_KEY_MARKERS,
+    ITEM_KEY_SIZE = ITEM_KEY_MARKERS + SP_MARKER_LOC_QTY
 };
 
 /* flags */
@@ -108,8 +86,8 @@ public:
 /**
  * Contains transformations to document/viewport and the viewport size.
  */
-class SPItemCtx : public SPCtx {
-public:
+struct SPItemCtx : SPCtx
+{
     /** Item to document transformation */
     Geom::Affine i2doc;
 
@@ -125,9 +103,11 @@ public:
  * SPItem is an abstract base class for all graphic (visible) SVG nodes. It
  * is a subclass of SPObject, with great deal of specific functionality.
  */
-class SPItem : public SPObject {
+class SPItem : public SPObject
+{
 public:
-    enum BBoxType {
+    enum BBoxType
+    {
         // legacy behavior: includes crude stroke, markers; excludes long miters, blur margin; is known to be wrong for caps
         APPROXIMATE_BBOX,
         // includes only the bare path bbox, no stroke, no nothing
@@ -140,6 +120,7 @@ public:
 
     SPItem();
     ~SPItem() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     unsigned int sensitive : 1;
     unsigned int stop_paint: 1;
@@ -147,6 +128,10 @@ public:
     double transform_center_x;
     double transform_center_y;
     bool freeze_stroke_width;
+
+    // Used in the layers/objects dialog, this remembers if this item's
+    // children are visible in the expanded state in the tree.
+    bool _is_expanded = false;
 
     Geom::Affine transform;
     mutable Geom::OptRect doc_bbox;
@@ -158,19 +143,23 @@ public:
     SPClipPathReference &getClipRef();
     SPMaskReference &getMaskRef();
 
-    SPAvoidRef &getAvoidRef();
+    std::optional<Geom::PathVector> getClipPathVector() const;
+    std::optional<Geom::PathVector> getClipPathVector(SPItem const *root) const;
 
-  private:
+    SPAvoidRef &getAvoidRef();
+    std::vector<std::pair <Glib::ustring, Glib::ustring> > rootsatellites;
+
+private:
     SPClipPathReference *clip_ref;
     SPMaskReference *mask_ref;
 
     // Used for object-avoiding connectors
     SPAvoidRef *avoidRef;
 
-  public:
-    SPItemView *display;
+public:
+    std::vector<SPItemView> views;
 
-    sigc::signal<void, Geom::Affine const *, SPItem *> _transformed_signal;
+    sigc::signal<void (Geom::Affine const *, SPItem *)> _transformed_signal;
 
     bool isLocked() const;
     void setLocked(bool lock);
@@ -183,16 +172,16 @@ public:
         return sensitive;
     };
 
-    void setHighlight(guint32 color);
+    void setHighlight(uint32_t color);
     bool isHighlightSet() const;
-    virtual guint32 highlight_color() const;
+    virtual uint32_t highlight_color() const;
 
     //====================
 
     bool isEvaluated() const;
     void setEvaluated(bool visible);
     void resetEvaluated();
-
+    bool unoptimized();
     bool isHidden(unsigned display_key) const;
 
     /**
@@ -211,10 +200,11 @@ public:
      * Sets the transform_center_x and transform_center_y properties to retain the rotation center
      */
     void setCenter(Geom::Point const &object_centre);
+    bool updateCenterIfSet(Geom::Point const &center);
 
     void unsetCenter();
     bool isCenterSet() const;
-    Geom::Point getCenter() const;
+    Geom::Point getCenter(bool ensure_uptodate = true) const;
     void scaleCenter(Geom::Scale const &sc);
 
     bool isVisibleAndUnlocked() const;
@@ -238,7 +228,7 @@ public:
      */
     void moveTo(SPItem *target, bool intoafter);
 
-    sigc::connection connectTransformed(sigc::slot<void, Geom::Affine const *, SPItem *> slot)  {
+    sigc::connection connectTransformed(sigc::slot<void (Geom::Affine const *, SPItem *)> slot)  {
         return _transformed_signal.connect(slot);
     }
 
@@ -276,6 +266,15 @@ public:
 
     Geom::OptRect documentBounds(BBoxType type) const;
     Geom::OptRect documentPreferredBounds() const;
+
+    /**
+     * Get an exact geometric shape representing the visual bounds of the item in the document
+     * coordinates. This is different than a simple bounding rectangle aligned to the coordinate axes:
+     * the returned pathvector may effectively describe any shape and coincides with an appropriately
+     * transformed path-vector for paths. Even for rectangular items such as SPImage, the bounds may be
+     * a parallelogram resulting from transforming the bounding rectangle by an affine transformation.
+     */
+    virtual std::optional<Geom::PathVector> documentExactBounds() const;
 
     /**
      * Get item's geometric bbox in desktop coordinate system.
@@ -320,12 +319,21 @@ public:
      * @return First allocated key; hence if the returned key is n
      * you can use n, n + 1, ..., n + (numkeys - 1)
      */
-    static unsigned int display_key_new(unsigned int numkeys);
+    static unsigned int display_key_new(unsigned numkeys);
+
+    /**
+     * Ensures that a drawing item's key is the first of a block of ITEM_KEY_SIZE keys,
+     * assigning it such a key if necessary.
+     *
+     * @return The value of di->key() after assignment.
+     */
+    static unsigned ensure_key(Inkscape::DrawingItem *di);
 
     Inkscape::DrawingItem *invoke_show(Inkscape::Drawing &drawing, unsigned int key, unsigned int flags);
 
     // Removed item from display tree.
     void invoke_hide(unsigned int key);
+    void invoke_hide_except(unsigned key, const std::vector<SPItem const *> &to_keep);
 
     void getSnappoints(std::vector<Inkscape::SnapCandidatePoint> &p, Inkscape::SnapPreferences const *snapprefs=nullptr) const;
     void adjust_pattern(/* Geom::Affine const &premul, */ Geom::Affine const &postmul, bool set = false,
@@ -333,6 +341,8 @@ public:
     void adjust_hatch(/* Geom::Affine const &premul, */ Geom::Affine const &postmul, bool set = false,
                       PaintServerTransform = TRANSFORM_BOTH);
     void adjust_gradient(/* Geom::Affine const &premul, */ Geom::Affine const &postmul, bool set = false);
+    void adjust_clip(/* Geom::Affine const &premul, */ Geom::Affine const &postmul, bool set = false);
+    void remove_clip_transforms();
     void adjust_stroke(double ex);
 
     /**
@@ -347,6 +357,12 @@ public:
      */
     void adjust_paint_recursive(Geom::Affine advertized_transform, Geom::Affine t_ancestors,
                                 PaintServerType type = GRADIENT);
+
+    /**
+     * Checks for visual collision with another item
+     */
+    bool collidesWith(Geom::PathVector const &shape) const;
+    bool collidesWith(SPItem const &other) const;
 
     /**
      * Set a new transform on an object.
@@ -364,76 +380,76 @@ public:
      */
     void set_item_transform(Geom::Affine const &transform_matrix);
 
-    int emitEvent (SPEvent &event);
-
     /**
      * Return the arenaitem corresponding to the given item in the display
      * with the given key
      */
-    Inkscape::DrawingItem *get_arenaitem(unsigned int key);
+    Inkscape::DrawingItem *get_arenaitem(unsigned key) const;
 
     /**
      * Returns the accumulated transformation of the item and all its ancestors, including root's viewport.
-     * @pre (item != NULL) and SP_IS_ITEM(item).
      */
     Geom::Affine i2doc_affine() const;
 
     /**
-     * Returns the transformation from item to desktop coords
+     * Returns the transformation from item to desktop coords.
      */
     Geom::Affine i2dt_affine() const;
 
     void set_i2d_affine(Geom::Affine const &transform);
 
     /**
-     * should rather be named "sp_item_d2i_affine" to match "sp_item_i2d_affine" (or vice versa).
+     * Returns the transformation from desktop to item coords.
      */
     Geom::Affine dt2i_affine() const;
 
-    guint32 _highlightColor;
+    uint32_t _highlightColor;
+
+    bool isExpanded() const { return _is_expanded; }
+    void setExpanded(bool expand) { _is_expanded = expand; }
 
 private:
     enum EvaluatedStatus
     {
-        StatusUnknown, StatusCalculated, StatusSet
+        StatusUnknown,
+        StatusCalculated,
+        StatusSet
     };
 
     mutable bool _is_evaluated;
     mutable EvaluatedStatus _evaluated_status;
 
-    static SPItemView *sp_item_view_new_prepend(SPItemView *list, SPItem *item, unsigned flags, unsigned key, Inkscape::DrawingItem *arenaitem);
-    static void clip_ref_changed(SPObject *old_clip, SPObject *clip, SPItem *item);
-    static void mask_ref_changed(SPObject *old_clip, SPObject *clip, SPItem *item);
-    static void fill_ps_ref_changed(SPObject *old_clip, SPObject *clip, SPItem *item);
-    static void stroke_ps_ref_changed(SPObject *old_clip, SPObject *clip, SPItem *item);
+    void clip_ref_changed(SPObject *old_clip, SPObject *clip);
+    void mask_ref_changed(SPObject *old_mask, SPObject *mask);
+    void fill_ps_ref_changed(SPObject *old_ps, SPObject *ps);
+    void stroke_ps_ref_changed(SPObject *old_ps, SPObject *ps);
+    void filter_ref_changed(SPObject *old_obj, SPObject *obj);
 
 public:
-        void rotate_rel(Geom::Rotate const &rotation);
-        void scale_rel(Geom::Scale const &scale);
-        void skew_rel(double skewX, double skewY);
-        void move_rel( Geom::Translate const &tr);
+    void rotate_rel(Geom::Rotate const &rotation);
+    void scale_rel(Geom::Scale const &scale);
+    void skew_rel(double skewX, double skewY);
+    void move_rel( Geom::Translate const &tr);
 	void build(SPDocument *document, Inkscape::XML::Node *repr) override;
 	void release() override;
 	void set(SPAttr key, char const* value) override;
 	void update(SPCtx *ctx, unsigned int flags) override;
-        void modified(unsigned int flags) override;
+    void modified(unsigned int flags) override;
 	Inkscape::XML::Node* write(Inkscape::XML::Document *xml_doc, Inkscape::XML::Node *repr, unsigned int flags) override;
 
 	virtual Geom::OptRect bbox(Geom::Affine const &transform, SPItem::BBoxType type) const;
 	virtual void print(SPPrintContext *ctx);
-        virtual const char* typeName() const;
-        virtual const char* displayName() const;
+    virtual const char* typeName() const;
+    virtual const char* displayName() const;
 	virtual char* description() const;
 	virtual Inkscape::DrawingItem* show(Inkscape::Drawing &drawing, unsigned int key, unsigned int flags);
 	virtual void hide(unsigned int key);
     virtual void snappoints(std::vector<Inkscape::SnapCandidatePoint> &p, Inkscape::SnapPreferences const *snapprefs) const;
     virtual Geom::Affine set_transform(Geom::Affine const &transform);
+    virtual void removeTransformsRecursively(SPObject const *root);
 
     virtual void convert_to_guides() const;
-
-    virtual int event(SPEvent *event);
 };
-
 
 // Utility
 
@@ -445,7 +461,7 @@ Geom::Affine i2anc_affine(SPObject const *item, SPObject const *ancestor);
 
 Geom::Affine i2i_affine(SPObject const *src, SPObject const *dest);
 
-Geom::Affine sp_item_transform_repr (SPItem *item);
+Geom::Affine sp_item_transform_repr(SPItem *item);
 
 /* fixme: - these are evil, but OK */
 
@@ -453,16 +469,11 @@ int sp_item_repr_compare_position(SPItem const *first, SPItem const *second);
 
 inline bool sp_item_repr_compare_position_bool(SPObject const *first, SPObject const *second)
 {
-    return sp_repr_compare_position(first->getRepr(),
-            second->getRepr())<0;
+    return sp_repr_compare_position(first->getRepr(), second->getRepr()) < 0;
 }
 
-
-SPItem *sp_item_first_item_child (SPObject *obj);
-SPItem const *sp_item_first_item_child (SPObject const *obj);
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_ITEM, SPItem)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_ITEM, SPItem)
+SPItem *sp_item_first_item_child(SPObject *obj);
+SPItem const *sp_item_first_item_child(SPObject const *obj);
 
 #endif // SEEN_SP_ITEM_H
 

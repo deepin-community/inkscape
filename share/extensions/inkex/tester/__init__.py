@@ -29,6 +29,7 @@ import tempfile
 import hashlib
 import random
 import uuid
+import io
 from typing import List, Union, Tuple, Type, TYPE_CHECKING
 
 from io import BytesIO, StringIO
@@ -36,8 +37,9 @@ import xml.etree.ElementTree as xml
 
 from unittest import TestCase as BaseCase
 from inkex.base import InkscapeExtension
+from inkex.extensions import OutputExtension
 
-from .. import Transform
+from .. import Transform, load_svg, SvgDocumentElement
 from ..utils import to_bytes
 from .xmldiff import xmldiff
 from .mock import MockCommandMixin, Capture
@@ -148,9 +150,7 @@ class TestCase(MockCommandMixin, BaseCase):
         """Returns a common minimal svg file"""
         return self.data_file("svg", "default-inkscape-SVG.svg")
 
-    def assertAlmostTuple(
-        self, found, expected, precision=8, msg=""
-    ):  # pylint: disable=invalid-name
+    def assertAlmostTuple(self, found, expected, precision=8, msg=""):  # pylint: disable=invalid-name
         """
         Floating point results may vary with computer architecture; use
         assertAlmostEqual to allow a tolerance in the result.
@@ -215,7 +215,7 @@ class TestCase(MockCommandMixin, BaseCase):
             places = 7
         if isinstance(first, (list, tuple)):
             assert len(first) == len(second)
-            for (f, s) in zip(first, second):
+            for f, s in zip(first, second):
                 self.assertDeepAlmostEqual(f, s, places, msg, delta)
         else:
             self.assertAlmostEqual(first, second, places, msg, delta)
@@ -239,6 +239,36 @@ class TestCase(MockCommandMixin, BaseCase):
             self._effect = self.effect_class()
         return self._effect
 
+    def import_string(self, string, *args) -> SvgDocumentElement:
+        """Runs a string through an import extension, with optional arguments
+        provided as "--arg=value" arguments"""
+        stream = io.BytesIO(string.encode())
+        reader = self.effect_class()
+        out = io.BytesIO()
+        reader.parse_arguments([*args])
+        reader.options.input_file = stream
+        reader.options.output = out
+        reader.load_raw()
+        reader.save_raw(reader.effect())
+        out.seek(0)
+        decoded = out.read().decode("utf-8")
+        document = load_svg(decoded)
+        return document
+
+    def export_svg(self, document, *args) -> str:
+        """Runs a svg through an export extension, with optional arguments
+        provided as "--arg=value" arguments"""
+        assert isinstance(self, OutputExtension)
+        output = StringIO()
+        writer = self.effect_class()
+        writer.parse_arguments([*args])
+        writer.svg = document.getroot()
+        writer.document = document
+        writer.effect()
+        writer.save(output)
+        output.seek(0)
+        return output.read()
+
 
 class InkscapeExtensionTestMixin:
     """Automatically setup self.effect for each test and test with an empty svg"""
@@ -254,9 +284,94 @@ class InkscapeExtensionTestMixin:
         self.effect.run([self.empty_svg])
 
 
-class ComparisonMixin:
+class ComparisonMeta(type):
+    """Metaclass for ComparisonMixin which creates parametrized tests that can be run
+    independently. See :class:`~inkex.tester.ComparisonMixin` for details.
+
+    ..versionadded :: 1.4"""
+
+    def __init__(cls, name, bases, attrs):
+        super().__init__(name, bases, attrs)
+        if name == "ComparisonMixin":
+            return  # don't execute on the base class
+        _compare_file = cls.compare_file
+        _comparisons = cls.comparisons
+        if hasattr(cls, "comparisons_cmpfile_dict"):
+            _comparisons = cls.comparisons_cmpfile_dict.keys()
+
+            def get_compare_cmpfile(self, args, addout=None):
+                return self.data_file("refs", cls.comparisons_cmpfile_dict[args])
+
+            setattr(cls, "get_compare_cmpfile", get_compare_cmpfile)
+
+        test_method_name = f"test_all_comparisons"
+        if hasattr(cls, test_method_name):
+            return  # Custom test logic, don't touch
+
+        append = isinstance(_compare_file, (list, tuple))
+        compare_file = _compare_file if append else [_compare_file]
+        try:
+            for file in compare_file:
+                for comparison in _comparisons:
+                    test_method_name = f"test_comparison_{comparison}_{file}"
+                    setattr(
+                        cls,
+                        test_method_name,
+                        ComparisonMeta.create_test_method(
+                            comparison,
+                            file,
+                            os.path.basename(file) if append else None,
+                        ),
+                    )
+        except TypeError:
+            # If the compare_file or compare_
+            test_method_name = f"test_all_comparisons"
+
+            def test_method(self):
+                if not isinstance(self.compare_file, (list, tuple)):
+                    self._test_comparisons(self.compare_file)
+                else:
+                    for compare_file in self.compare_file:
+                        self._test_comparisons(
+                            compare_file, addout=os.path.basename(compare_file)
+                        )
+
+            setattr(cls, test_method_name, test_method)
+
+    @staticmethod
+    def create_test_method(comparison, file, addout):
+        def _test_method(self):
+            self._test_comparison(comparison, file, addout)
+
+        return _test_method
+
+
+class ComparisonMixin(metaclass=ComparisonMeta):
     """
-    Add comparison tests to any existing test suite.
+    This mixin allows to easily specify a set of run-through unit tests for an
+    extension, which is specified in :attr:`inkex.tester.TestCase.effect_class`.
+
+    The commandline parameters are passed in :attr:`comparisons`, the input file
+    in :attr:`compare_file` (either a list of files, or a single file).
+
+    The :class:`ComparisonMeta` metaclass creates a set of independent unit tests
+    out of this data. Behavior notest:
+
+    - The unit tests created are the cross product of :attr:`comparisons` and
+      :attr:`compare_file`. If :attr:`compare_file` is a list, the comparison file name
+      is suffixed with the current ``compare_file`` name.
+    - Optionally, :attr:`comparisons_cmpfile_dict` may be specified as
+      ``Dict[Tuple[str], str]`` where the keys are sets of command line parameters and
+      the values are the filenames of the output file. This takes precedence over
+      :attr:`comparisons`.
+    - If any of those values are properties, their values cannot be accessed at test
+      collection time and there will only be a single test, ``test_all_comparisons``
+      with otherwise identical behavior.
+    - If the class overrides ``test_all_comparisons``, no additional tests are
+      generated to allow for custom comparison logic.
+
+    To create the comparison files for the unit tests, use the ``EXPORT_COMPARE``
+    environment variable.
     """
 
     compare_file: Union[List[str], Tuple[str], str] = "svg/shapes.svg"
@@ -285,27 +400,18 @@ class ComparisonMixin:
             return "txt"
         return self.compare_file_extension
 
-    def test_all_comparisons(self):
-        """Testing all comparisons"""
-        if not isinstance(self.compare_file, (list, tuple)):
-            self._test_comparisons(self.compare_file)
-        else:
-            for compare_file in self.compare_file:
-                self._test_comparisons(
-                    compare_file, addout=os.path.basename(compare_file)
-                )
-
     def _test_comparisons(self, compare_file, addout=None):
         for args in self.comparisons:
-            self.assertCompare(
-                compare_file,
-                self.get_compare_cmpfile(args, addout),
-                args,
-            )
+            self._test_comparison(args, compare_file=compare_file, addout=addout)
 
-    def assertCompare(
-        self, infile, cmpfile, args, outfile=None
-    ):  # pylint: disable=invalid-name
+    def _test_comparison(self, args, compare_file, addout=None):
+        self.assertCompare(
+            compare_file,
+            self.get_compare_cmpfile(args, addout),
+            args,
+        )
+
+    def assertCompare(self, infile, cmpfile, args, outfile=None):  # pylint: disable=invalid-name
         """
         Compare the output of a previous run against this one.
 
@@ -361,9 +467,7 @@ class ComparisonMixin:
             if write_output:
                 if isinstance(data_a, str):
                     data_a = data_a.encode("utf-8")
-                with open(write_output, "wb") as fhl:
-                    fhl.write(self._apply_compare_filters(data_a, True))
-                    print(f"Written output: {write_output}")
+                self.write_compare_data(infile, write_output, data_a)
                 # This only reruns if the original test failed.
                 # The idea here is to make sure the new output file is "stable"
                 # Because some tests can produce random changes and we don't
@@ -373,6 +477,12 @@ class ComparisonMixin:
                     self._base_compare(data_a, cmpfile, COMPARE_CHECK)
             if not write_output == cmpfile:
                 raise
+
+    def write_compare_data(self, infile, outfile, data):
+        """Write output"""
+        with open(outfile, "wb") as fhl:
+            fhl.write(self._apply_compare_filters(data, True))
+            print(f"Written output: {outfile}")
 
     def _base_compare(self, data_a, data_b, compare_mode):
         data_a = self._apply_compare_filters(data_a)

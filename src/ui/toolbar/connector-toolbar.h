@@ -19,6 +19,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -29,14 +30,15 @@
  */
 
 #include "toolbar.h"
-
-#include <gtkmm/adjustment.h>
-
-class SPDesktop;
+#include "ui/widget/spinbutton.h"
+#include "xml/node-observer.h"
 
 namespace Gtk {
-class ToolButton;
-}
+class Builder;
+class ToggleButton;
+} // namespace Gtk
+
+class SPDesktop;
 
 namespace Inkscape {
 class Selection;
@@ -47,20 +49,34 @@ class Node;
 
 namespace UI {
 namespace Toolbar {
-class ConnectorToolbar : public Toolbar {
+
+class ConnectorToolbar final
+    : public Toolbar
+    , private XML::NodeObserver
+{
+public:
+    ConnectorToolbar(SPDesktop *desktop);
+    ~ConnectorToolbar() override;
+
 private:
-    Gtk::ToggleToolButton *_orthogonal;
-    Gtk::ToggleToolButton *_directed_item;
-    Gtk::ToggleToolButton *_overlap_item;
+    using ValueChangedMemFun = void (ConnectorToolbar::*)();
 
-    Glib::RefPtr<Gtk::Adjustment> _curvature_adj;
-    Glib::RefPtr<Gtk::Adjustment> _spacing_adj;
-    Glib::RefPtr<Gtk::Adjustment> _length_adj;
+    Glib::RefPtr<Gtk::Builder> _builder;
 
-    bool _freeze;
+    Gtk::ToggleButton &_orthogonal_btn;
+    Gtk::ToggleButton &_directed_btn;
+    Gtk::ToggleButton &_overlap_btn;
 
-    Inkscape::XML::Node *_repr;
+    UI::Widget::SpinButton &_curvature_item;
+    UI::Widget::SpinButton &_spacing_item;
+    UI::Widget::SpinButton &_length_item;
 
+    bool _freeze{false};
+
+    Inkscape::XML::Node *_repr{nullptr};
+
+    void setup_derived_spin_button(UI::Widget::SpinButton &btn, Glib::ustring const &name, double default_value,
+                                   ValueChangedMemFun const value_changed_mem_fun);
     void path_set_avoid();
     void path_set_ignore();
     void orthogonal_toggled();
@@ -72,12 +88,11 @@ private:
     void length_changed();
     void selection_changed(Inkscape::Selection *selection);
 
-protected:
-    ConnectorToolbar(SPDesktop *desktop);
+	void notifyAttributeChanged(Inkscape::XML::Node &node, GQuark name,
+								Inkscape::Util::ptr_shared old_value,
+								Inkscape::Util::ptr_shared new_value) final;
 
 public:
-    static GtkWidget * create(SPDesktop *desktop);
-
     static void event_attr_changed(Inkscape::XML::Node *repr,
                                    gchar const         *name,
                                    gchar const         * /*old_value*/,

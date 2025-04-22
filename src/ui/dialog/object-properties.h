@@ -27,9 +27,8 @@
  *   Abhishek Sharma
  */
 
-#ifndef SEEN_DIALOGS_ITEM_PROPERTIES_H
-#define SEEN_DIALOGS_ITEM_PROPERTIES_H
-
+#ifndef SEEN_INKSCAPE_UI_DIALOG_OBJECTPROPERTIES_H
+#define SEEN_INKSCAPE_UI_DIALOG_OBJECTPROPERTIES_H
 
 #include <gtkmm/checkbutton.h>
 #include <gtkmm/comboboxtext.h>
@@ -40,23 +39,21 @@
 #include <gtkmm/textview.h>
 
 #include "ui/dialog/dialog-base.h"
-#include "ui/widget/scrollprotected.h"
 #include "ui/widget/color-picker.h"
-#include "ui/widget/frame.h"
 
 class SPAttributeTable;
 class SPItem;
 
 namespace Gtk {
 class Grid;
-}
+} // namespace Gtk
 
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
+namespace Inkscape::UI::Dialog {
 
 /**
- * A dialog widget to show object properties.
+ * A subdialog widget to show object properties.
+ *
+ * Note: This component is embedded in ObjectAttributes dialog and not used on its own.
  *
  * A widget to enter an ID, label, title and description for an object.
  * In addition it allows to edit the properties of an object.
@@ -66,8 +63,6 @@ class ObjectProperties : public DialogBase
 public:
     ObjectProperties();
     ~ObjectProperties() override {};
-
-    static ObjectProperties &getInstance() { return *new ObjectProperties(); }
 
     /// Updates entries and other child widgets on selection change, object modification, etc.
     void update_entries();
@@ -79,6 +74,7 @@ private:
     std::vector<Glib::ustring> _int_attrs;
     std::vector<Glib::ustring> _int_labels;
 
+    Gtk::Expander _exp_properties; //the expander for properties
     Gtk::Label _label_id; //the label for the object ID
     Gtk::Entry _entry_id; //the entry for the object ID
     Gtk::Label _label_label; //the label for the object label
@@ -89,9 +85,6 @@ private:
     Gtk::Label _label_color; //the label for the object highlight
     Inkscape::UI::Widget::ColorPicker _highlight_color; // color picker for the object highlight
 
-    Gtk::Label _label_image_rendering; // the label for 'image-rendering'
-    Inkscape::UI::Widget::ScrollProtected<Gtk::ComboBoxText> _combo_image_rendering; // the combo box text for 'image-rendering'
-    
     Gtk::Frame  _ft_description; //the frame for the text of the object description
     Gtk::TextView _tv_description; //the text view object showing the object description
 
@@ -113,9 +106,6 @@ private:
     // Callback for highlight color
     void _highlightChanged(guint rgba);
 
-    /// Callback for 'image-rendering'.
-    void _imageRenderingChanged();
-
     /// Callback for checkbox Lock.
     void _sensitivityToggled();
 
@@ -127,11 +117,10 @@ private:
 
     void desktopReplaced() override;
 };
-}
-}
-}
 
-#endif
+} // namespace Inkscape::UI::Dialog
+
+#endif // SEEN_INKSCAPE_UI_DIALOG_OBJECTPROPERTIES_H
 
 /*
   Local Variables:

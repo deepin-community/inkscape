@@ -12,9 +12,10 @@
 #include <gtkmm/box.h>
 #include <gtkmm/checkbutton.h>
 
-#include "xml/node.h"
 #include "extension/extension.h"
 #include "preferences.h"
+#include "ui/pack.h"
+#include "xml/node.h"
 
 namespace Inkscape {
 namespace Extension {
@@ -25,20 +26,17 @@ ParamBool::ParamBool(Inkscape::XML::Node *xml, Inkscape::Extension::Extension *e
     // get value
     if (xml->firstChild()) {
         const char *value = xml->firstChild()->content();
-        if (value) {
-            if (!strcmp(value, "true")) {
-                _value = true;
-            } else if (!strcmp(value, "false")) {
-                _value = false;
-            } else {
-                g_warning("Invalid default value ('%s') for parameter '%s' in extension '%s'",
-                          value, _name, _extension->get_id());
-            }
-        }
+        if (value)
+            string_to_value(value);
     }
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     _value = prefs->getBool(pref_name(), _value);
+}
+
+bool ParamBool::get() const
+{
+    return _value;
 }
 
 bool ParamBool::set(bool in)
@@ -48,11 +46,6 @@ bool ParamBool::set(bool in)
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     prefs->setBool(pref_name(), _value);
 
-    return _value;
-}
-
-bool ParamBool::get() const
-{
     return _value;
 }
 
@@ -70,12 +63,12 @@ public:
      *
      * @param  param  Which parameter to adjust on changing the check button
      */
-    ParamBoolCheckButton(ParamBool *param, char *label, sigc::signal<void> *changeSignal)
+    ParamBoolCheckButton(ParamBool *param, char *label, sigc::signal<void ()> *changeSignal)
         : Gtk::CheckButton(label)
         , _pref(param)
         , _changeSignal(changeSignal) {
         this->set_active(_pref->get());
-        this->signal_toggled().connect(sigc::mem_fun(this, &ParamBoolCheckButton::on_toggle));
+        this->signal_toggled().connect(sigc::mem_fun(*this, &ParamBoolCheckButton::on_toggle));
         return;
     }
 
@@ -88,7 +81,7 @@ public:
 private:
     /** Param to change. */
     ParamBool *_pref;
-    sigc::signal<void> *_changeSignal;
+    sigc::signal<void ()> *_changeSignal;
 };
 
 void ParamBoolCheckButton::on_toggle()
@@ -102,28 +95,35 @@ void ParamBoolCheckButton::on_toggle()
 
 std::string ParamBool::value_to_string() const
 {
-    if (_value) {
-        return "true";
-    }
-    return "false";
+    return _value ? "true" : "false";
 }
 
-Gtk::Widget *ParamBool::get_widget(sigc::signal<void> *changeSignal)
+void ParamBool::string_to_value(const std::string &in)
+{
+    if (in == "true") {
+        _value = true;
+    } else if (in == "false") {
+        _value = false;
+    } else {
+        g_warning("Invalid default value ('%s') for parameter '%s' in extension '%s'", in.c_str(), _name,
+                  _extension->get_id());
+    }
+}
+
+Gtk::Widget *ParamBool::get_widget(sigc::signal<void ()> *changeSignal)
 {
     if (_hidden) {
         return nullptr;
     }
 
-    auto hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, GUI_PARAM_WIDGETS_SPACING));
-    hbox->set_homogeneous(false);
+    auto const hbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL, GUI_PARAM_WIDGETS_SPACING);
 
-    ParamBoolCheckButton * checkbox = Gtk::manage(new ParamBoolCheckButton(this, _text, changeSignal));
-    checkbox->show();
-    hbox->pack_start(*checkbox, false, false);
+    auto const checkbox = Gtk::make_managed<ParamBoolCheckButton>(this, _text, changeSignal);
+    checkbox->set_visible(true);
+    UI::pack_start(*hbox, *checkbox, false, false);
 
-    hbox->show();
-
-    return dynamic_cast<Gtk::Widget *>(hbox);
+    hbox->set_visible(true);
+    return hbox;
 }
 
 }  /* namespace Extension */

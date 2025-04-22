@@ -30,3 +30,10 @@ class TestUngroupComments(ComparisonMixin, TestCase):
         # Groups with comment child elements (https://gitlab.com/inkscape/extensions/-/issues/405)
         ("--id=g13",)
     ]
+
+
+class TestUngroupLayers(ComparisonMixin, TestCase):
+    effect_class = UngroupDeep
+    compare_filters = [CompareOrderIndependentStyle()]
+    compare_file = "svg/layergroups.svg"
+    comparisons = [("--preserve_layers=True",)]

@@ -14,6 +14,7 @@
 
 #include "drag-and-drop.h"
 
+#include <array>
 #include <glibmm/i18n.h>  // Internationalization
 
 #include "desktop-style.h"
@@ -40,9 +41,9 @@
 #include "ui/interface.h"
 #include "ui/tools/tool-base.h"
 #include "ui/widget/canvas.h"  // Target, canvas to world transform.
+#include "ui/widget/desktop-widget.h"
 
-#include "widgets/desktop-widget.h"
-#include "widgets/ege-paint-def.h"
+#include "widgets/paintdef.h"
 
 using Inkscape::DocumentUndo;
 
@@ -60,28 +61,28 @@ enum ui_drop_target_info {
     APP_X_INK_PASTE
 };
 
-static GtkTargetEntry ui_drop_target_entries [] = {
-    // clang-format off
-    {(gchar *)"text/uri-list",                0, URI_LIST        },
-    {(gchar *)"image/svg+xml",                0, SVG_XML_DATA    },
-    {(gchar *)"image/svg",                    0, SVG_DATA        },
-    {(gchar *)"image/png",                    0, PNG_DATA        },
-    {(gchar *)"image/jpeg",                   0, JPEG_DATA       },
-    {(gchar *)"application/x-oswb-color",     0, APP_OSWB_COLOR  },
-    {(gchar *)"application/x-color",          0, APP_X_COLOR     },
-    {(gchar *)"application/x-inkscape-paste", 0, APP_X_INK_PASTE }
-    // clang-format on
+static const std::array<Gtk::TargetEntry, 8> ui_drop_target_entries = {
+    Gtk::TargetEntry("text/uri-list",                Gtk::TargetFlags(0), URI_LIST       ),
+    Gtk::TargetEntry("image/svg+xml",                Gtk::TargetFlags(0), SVG_XML_DATA   ),
+    Gtk::TargetEntry("image/svg",                    Gtk::TargetFlags(0), SVG_DATA       ),
+    Gtk::TargetEntry("image/png",                    Gtk::TargetFlags(0), PNG_DATA       ),
+    Gtk::TargetEntry("image/jpeg",                   Gtk::TargetFlags(0), JPEG_DATA      ),
+    Gtk::TargetEntry("application/x-oswb-color",     Gtk::TargetFlags(0), APP_OSWB_COLOR ),
+    Gtk::TargetEntry("application/x-color",          Gtk::TargetFlags(0), APP_X_COLOR    ),
+    Gtk::TargetEntry("application/x-inkscape-paste", Gtk::TargetFlags(0), APP_X_INK_PASTE)
 };
 
-static GtkTargetEntry *completeDropTargets = nullptr;
-static int completeDropTargetsCount = 0;
+static std::vector<Gtk::TargetEntry> completeDropTargets;
 
-static guint nui_drop_target_entries = G_N_ELEMENTS(ui_drop_target_entries);
+/** Convert screen (x, y) coordinates to desktop coordinates. */
+inline Geom::Point world2desktop(SPDesktop *desktop, int x, int y)
+{
+    g_assert(desktop);
+    return (Geom::Point(x, y) + desktop->getCanvas()->get_area_world().min()) * desktop->w2d();
+}
 
-/* Drag and Drop */
-static
-void
-ink_drag_data_received(GtkWidget *widget,
+// Drag and Drop
+static void ink_drag_data_received(GtkWidget *widget,
                          GdkDragContext *drag_context,
                          gint x, gint y,
                          GtkSelectionData *data,
@@ -90,7 +91,7 @@ ink_drag_data_received(GtkWidget *widget,
                          gpointer user_data)
 {
     auto dtw = static_cast<SPDesktopWidget *>(user_data);
-    SPDesktop *desktop = dtw->desktop;
+    auto const desktop = dtw->get_desktop();
     SPDocument *doc = desktop->doc();
 
     switch (info) {
@@ -99,7 +100,7 @@ ink_drag_data_received(GtkWidget *widget,
             int destX = 0;
             int destY = 0;
             auto canvas = dtw->get_canvas();
-            gtk_widget_translate_coordinates( widget, GTK_WIDGET(canvas->gobj()), x, y, &destX, &destY );
+            gtk_widget_translate_coordinates( widget, canvas->Gtk::Widget::gobj(), x, y, &destX, &destY );
             Geom::Point where( canvas->canvas_to_world(Geom::Point(destX, destY)));
             Geom::Point const button_dt(desktop->w2d(where));
             Geom::Point const button_doc(desktop->dt2doc(button_dt));
@@ -120,11 +121,11 @@ ink_drag_data_received(GtkWidget *widget,
                 SPItem *item = desktop->getItemAtPoint( where, true );
 
                 bool consumed = false;
-                if (desktop->event_context && desktop->event_context->get_drag()) {
-                    consumed = desktop->event_context->get_drag()->dropColor(item, colorspec, button_dt);
+                if (desktop->getTool() && desktop->getTool()->get_drag()) {
+                    consumed = desktop->getTool()->get_drag()->dropColor(item, colorspec, button_dt);
                     if (consumed) {
                         DocumentUndo::done( doc , _("Drop color on gradient"), "" );
-                        desktop->event_context->get_drag()->updateDraggers();
+                        desktop->getTool()->get_drag()->updateDraggers();
                     }
                 }
 
@@ -138,38 +139,37 @@ ink_drag_data_received(GtkWidget *widget,
                 if (!consumed && item) {
                     bool fillnotstroke = (gdk_drag_context_get_actions (drag_context) != GDK_ACTION_MOVE);
                     if (fillnotstroke &&
-                        (SP_IS_SHAPE(item) || SP_IS_TEXT(item) || SP_IS_FLOWTEXT(item))) {
-                        Path *livarot_path = Path_for_item(item, true, true);
-                        livarot_path->ConvertWithBackData(0.04);
+                        (is<SPShape>(item) || is<SPText>(item) || is<SPFlowtext>(item))) {
+                        if (auto livarot_path = Path_for_item(item, true, true)) {
+                            livarot_path->ConvertWithBackData(0.04);
 
-                        std::optional<Path::cut_position> position = get_nearest_position_on_Path(livarot_path, button_doc);
-                        if (position) {
-                            Geom::Point nearest = get_point_on_Path(livarot_path, position->piece, position->t);
-                            Geom::Point delta = nearest - button_doc;
-                            Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-                            delta = desktop->d2w(delta);
-                            double stroke_tolerance =
-                                ( !item->style->stroke.isNone() ?
-                                  desktop->current_zoom() *
-                                  item->style->stroke_width.computed *
-                                  item->i2dt_affine().descrim() * 0.5
-                                  : 0.0)
-                                + prefs->getIntLimited("/options/dragtolerance/value", 0, 0, 100);
+                            if (auto position = get_nearest_position_on_Path(livarot_path.get(), button_doc)) {
+                                Geom::Point nearest = get_point_on_Path(livarot_path.get(), position->piece, position->t);
+                                Geom::Point delta = nearest - button_doc;
+                                Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+                                delta = desktop->d2w(delta);
+                                double stroke_tolerance =
+                                    (!item->style->stroke.isNone() ?
+                                     desktop->current_zoom() *
+                                     item->style->stroke_width.computed *
+                                     item->i2dt_affine().descrim() * 0.5
+                                     : 0.0)
+                                    + prefs->getIntLimited("/options/dragtolerance/value", 0, 0, 100);
 
-                            if (Geom::L2 (delta) < stroke_tolerance) {
-                                fillnotstroke = false;
+                                if (Geom::L2 (delta) < stroke_tolerance) {
+                                    fillnotstroke = false;
+                                }
                             }
                         }
-                        delete livarot_path;
+
+                        SPCSSAttr *css = sp_repr_css_attr_new();
+                        sp_repr_css_set_property(css, fillnotstroke ? "fill" : "stroke", colorspec);
+
+                        sp_desktop_apply_css_recursive(item, css, true);
+                        item->updateRepr();
+
+                        DocumentUndo::done(doc ,  _("Drop color"), "");
                     }
-
-                    SPCSSAttr *css = sp_repr_css_attr_new();
-                    sp_repr_css_set_property( css, fillnotstroke ? "fill":"stroke", colorspec );
-
-                    sp_desktop_apply_css_recursive( item, css, true );
-                    item->updateRepr();
-
-                    DocumentUndo::done( doc ,  _("Drop color"), "" );
                 }
             }
         }
@@ -180,27 +180,22 @@ ink_drag_data_received(GtkWidget *widget,
             bool worked = false;
             Glib::ustring colorspec;
             if ( gtk_selection_data_get_format (data) == 8 ) {
-                ege::PaintDef color;
+                PaintDef color;
                 worked = color.fromMIMEData("application/x-oswb-color",
-                                            reinterpret_cast<char const *>(gtk_selection_data_get_data (data)),
-                                            gtk_selection_data_get_length (data),
-                                            gtk_selection_data_get_format (data));
+                                            reinterpret_cast<char const*>(gtk_selection_data_get_data(data)),
+                                            gtk_selection_data_get_length(data));
                 if ( worked ) {
-                    if ( color.getType() == ege::PaintDef::CLEAR ) {
-                        colorspec = ""; // TODO check if this is sufficient
-                    } else if ( color.getType() == ege::PaintDef::NONE ) {
+                    if ( color.get_type() == PaintDef::NONE ) {
                         colorspec = "none";
                     } else {
-                        unsigned int r = color.getR();
-                        unsigned int g = color.getG();
-                        unsigned int b = color.getB();
+                        auto [r, g, b] = color.get_rgb();
 
                         SPGradient* matches = nullptr;
                         std::vector<SPObject *> gradients = doc->getResourceList("gradient");
                         for (auto gradient : gradients) {
-                            SPGradient* grad = SP_GRADIENT(gradient);
-                            if ( color.descr == grad->getId() ) {
-                                if ( grad->hasStops() ) {
+                            auto grad = cast<SPGradient>(gradient);
+                            if (color.get_description() == grad->getId()) {
+                                if (grad->hasStops()) {
                                     matches = grad;
                                     break;
                                 }
@@ -222,7 +217,7 @@ ink_drag_data_received(GtkWidget *widget,
                 int destX = 0;
                 int destY = 0;
                 auto canvas = dtw->get_canvas();
-                gtk_widget_translate_coordinates( widget, GTK_WIDGET(canvas->gobj()), x, y, &destX, &destY );
+                gtk_widget_translate_coordinates( widget, canvas->Gtk::Widget::gobj(), x, y, &destX, &destY );
                 Geom::Point where( canvas->canvas_to_world(Geom::Point(destX, destY)));
                 Geom::Point const button_dt(desktop->w2d(where));
                 Geom::Point const button_doc(desktop->dt2doc(button_dt));
@@ -230,24 +225,24 @@ ink_drag_data_received(GtkWidget *widget,
                 SPItem *item = desktop->getItemAtPoint( where, true );
 
                 bool consumed = false;
-                if (desktop->event_context && desktop->event_context->get_drag()) {
-                    consumed = desktop->event_context->get_drag()->dropColor(item, colorspec.c_str(), button_dt);
+                if (desktop->getTool() && desktop->getTool()->get_drag()) {
+                    consumed = desktop->getTool()->get_drag()->dropColor(item, colorspec.c_str(), button_dt);
                     if (consumed) {
                         DocumentUndo::done( doc, _("Drop color on gradient"), "" );
-                        desktop->event_context->get_drag()->updateDraggers();
+                        desktop->getTool()->get_drag()->updateDraggers();
                     }
                 }
 
                 if (!consumed && item) {
                     bool fillnotstroke = (gdk_drag_context_get_actions (drag_context) != GDK_ACTION_MOVE);
                     if (fillnotstroke &&
-                        (SP_IS_SHAPE(item) || SP_IS_TEXT(item) || SP_IS_FLOWTEXT(item))) {
-                        Path *livarot_path = Path_for_item(item, true, true);
+                        (is<SPShape>(item) || is<SPText>(item) || is<SPFlowtext>(item))) {
+                        auto livarot_path = Path_for_item(item, true, true);
                         livarot_path->ConvertWithBackData(0.04);
 
-                        std::optional<Path::cut_position> position = get_nearest_position_on_Path(livarot_path, button_doc);
+                        std::optional<Path::cut_position> position = get_nearest_position_on_Path(livarot_path.get(), button_doc);
                         if (position) {
-                            Geom::Point nearest = get_point_on_Path(livarot_path, position->piece, position->t);
+                            Geom::Point nearest = get_point_on_Path(livarot_path.get(), position->piece, position->t);
                             Geom::Point delta = nearest - button_doc;
                             Inkscape::Preferences *prefs = Inkscape::Preferences::get();
                             delta = desktop->d2w(delta);
@@ -263,7 +258,6 @@ ink_drag_data_received(GtkWidget *widget,
                                 fillnotstroke = false;
                             }
                         }
-                        delete livarot_path;
                     }
 
                     SPCSSAttr *css = sp_repr_css_attr_new();
@@ -281,7 +275,6 @@ ink_drag_data_received(GtkWidget *widget,
         case SVG_DATA:
         case SVG_XML_DATA: {
             Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-            prefs->setBool("/options/onimport", true);
             gchar *svgdata = (gchar *)gtk_selection_data_get_data (data);
 
             Inkscape::XML::Document *rnewdoc = sp_repr_read_mem(svgdata, gtk_selection_data_get_length (data), SP_SVG_NS_URI);
@@ -312,7 +305,7 @@ ink_drag_data_received(GtkWidget *widget,
             new_obj = desktop->layerManager().currentLayer()->appendChildRepr(newgroup);
 
             Inkscape::Selection *selection = desktop->getSelection();
-            selection->set(SP_ITEM(new_obj));
+            selection->set(cast<SPItem>(new_obj));
 
             // move to mouse pointer
             {
@@ -326,23 +319,20 @@ ink_drag_data_received(GtkWidget *widget,
 
             Inkscape::GC::release(newgroup);
             DocumentUndo::done( doc, _("Drop SVG"), "" );
-            prefs->setBool("/options/onimport", false);
             break;
         }
 
         case URI_LIST: {
             Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-            prefs->setBool("/options/onimport", true);
             gchar *uri = (gchar *)gtk_selection_data_get_data (data);
             sp_ui_import_files(uri);
-            prefs->setBool("/options/onimport", false);
             break;
         }
 
         case APP_X_INK_PASTE: {
-            Inkscape::UI::ClipboardManager *cm = Inkscape::UI::ClipboardManager::get();
-            cm->paste(desktop);
-            DocumentUndo::done( doc, _("Drop Symbol"), "" );
+            auto *cm = Inkscape::UI::ClipboardManager::get();
+            cm->insertSymbol(desktop, world2desktop(desktop, x, y));
+            DocumentUndo::done(doc, _("Drop Symbol"), "");
             break;
         }
 
@@ -396,61 +386,30 @@ static void ink_drag_leave( GtkWidget */*widget*/,
 }
 #endif
 
-void
-ink_drag_setup(SPDesktopWidget* dtw)
+void ink_drag_setup(SPDesktopWidget *dtw)
 {
-    if ( completeDropTargets == nullptr || completeDropTargetsCount == 0 )
-    {
-        std::vector<Glib::ustring> types;
-
-        std::vector<Gdk::PixbufFormat> list = Gdk::Pixbuf::get_formats();
-        for (auto one:list) {
-            std::vector<Glib::ustring> typesXX = one.get_mime_types();
-            for (auto i:typesXX) {
-                types.push_back(i);
+    if (completeDropTargets.empty()) {
+        for (auto const &entry : ui_drop_target_entries) {
+            completeDropTargets.emplace_back(entry);
+        }
+        for (auto const &fmt : Gdk::Pixbuf::get_formats()) {
+            for (auto &type : fmt.get_mime_types()) {
+                completeDropTargets.emplace_back(std::move(type), Gtk::TargetFlags(0), IMAGE_DATA);
             }
-        }
-        completeDropTargetsCount = nui_drop_target_entries + types.size();
-        completeDropTargets = new GtkTargetEntry[completeDropTargetsCount];
-        for ( int i = 0; i < (int)nui_drop_target_entries; i++ ) {
-            completeDropTargets[i] = ui_drop_target_entries[i];
-        }
-        int pos = nui_drop_target_entries;
-
-        for (auto & type : types) {
-            completeDropTargets[pos].target = g_strdup(type.c_str());
-            completeDropTargets[pos].flags = 0;
-            completeDropTargets[pos].info = IMAGE_DATA;
-            pos++;
         }
     }
 
     auto canvas = dtw->get_canvas();
 
-    gtk_drag_dest_set(GTK_WIDGET(canvas->gobj()),
-                      GTK_DEST_DEFAULT_ALL,
-                      completeDropTargets,
-                      completeDropTargetsCount,
-                      GdkDragAction(GDK_ACTION_COPY | GDK_ACTION_MOVE));
+    canvas->drag_dest_set(completeDropTargets,
+                          Gtk::DestDefaults::DEST_DEFAULT_ALL,
+                          Gdk::DragAction::ACTION_COPY | Gdk::DragAction::ACTION_MOVE);
 
     g_signal_connect(G_OBJECT(canvas->gobj()),
                      "drag_data_received",
                      G_CALLBACK(ink_drag_data_received),
                      dtw);
-
-#if 0
-    g_signal_connect(G_OBJECT(win->gobj()),
-                     "drag_motion",
-                     G_CALLBACK(ink_drag_motion),
-                     NULL);
-
-    g_signal_connect(G_OBJECT(win->gobj()),
-                     "drag_leave",
-                     G_CALLBACK(ink_drag_leave),
-                     NULL);
-#endif
 }
-
 
 /*
   Local Variables:

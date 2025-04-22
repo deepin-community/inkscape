@@ -14,30 +14,34 @@
  *
  */
 
-
 #ifndef INKVIEW_APPLICATION_H
 #define INKVIEW_APPLICATION_H
 
-#include <gtkmm.h>
+#include <glibmm/refptr.h>
+#include <gtkmm/application.h>
+
+namespace Glib {
+class ustring;
+class VariantDict;
+} // namespace Glib
 
 class InkviewWindow;
 
 class InkviewApplication : public Gtk::Application
 {
-protected:
-    InkviewApplication();
-
 public:
-    static Glib::RefPtr<InkviewApplication> create();
+    /// Exclusively for the creation of the singleton instance inside main().
+    InkviewApplication();
+    ~InkviewApplication() override;
 
 protected:
-    void on_startup()  override;
+    void on_startup() override;
     void on_activate() override;
-    void on_open(const Gio::Application::type_vec_files& files, const Glib::ustring& hint) override;
+    void on_open(Gio::Application::type_vec_files const &files, Glib::ustring const &hint) override;
 
 private:
     // Callbacks
-    int  on_handle_local_options(const Glib::RefPtr<Glib::VariantDict>& options);
+    int on_handle_local_options(Glib::RefPtr<Glib::VariantDict> const &options);
 
     // Command line options
     bool   fullscreen;
@@ -46,7 +50,7 @@ private:
     double scale;
     bool   preload;
 
-    InkviewWindow* window;
+    InkviewWindow *window;
 };
 
 #endif // INKVIEW_APPLICATION_H

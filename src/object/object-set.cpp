@@ -21,14 +21,25 @@
 #include "persp3d.h"
 #include "preferences.h"
 
+#include "desktop.h"
+#include "document.h"
+
 namespace Inkscape {
 
-bool ObjectSet::add(SPObject* object, bool nosignal) {
+ObjectSet::ObjectSet(SPDesktop *desktop)
+    : _desktop(desktop)
+{
+    if (desktop) {
+        _document = desktop->getDocument();
+    }
+}
+
+bool ObjectSet::add(SPObject *object, bool nosignal, bool skipHierarchyChecks)
+{
     g_return_val_if_fail(object != nullptr, false);
-    g_return_val_if_fail(SP_IS_OBJECT(object), false);
 
     // any ancestor is in the set - do nothing
-    if (_anyAncestorIsInSet(object)) {
+    if (!skipHierarchyChecks && _anyAncestorIsInSet(object)) {
         return false;
     }
 
@@ -37,7 +48,9 @@ bool ObjectSet::add(SPObject* object, bool nosignal) {
 //    object = _getMutualAncestor(object);
 
     // remove all descendants from the set
-    _removeDescendantsFromSet(object);
+    if (!skipHierarchyChecks) {
+        _removeDescendantsFromSet(object);
+    }
 
     _add(object);
     if (!nosignal)
@@ -56,7 +69,6 @@ void ObjectSet::add(XML::Node *repr)
 
 bool ObjectSet::remove(SPObject* object) {
     g_return_val_if_fail(object != nullptr, false);
-    g_return_val_if_fail(SP_IS_OBJECT(object), false);
 
     // object is the top of subtree
     if (includes(object)) {
@@ -82,7 +94,6 @@ void ObjectSet::_emitChanged(bool persist_selection_context /*= false*/) {
 
 bool ObjectSet::includes(SPObject *object, bool anyAncestor) {
     g_return_val_if_fail(object != nullptr, false);
-    g_return_val_if_fail(SP_IS_OBJECT(object), false);
     if (anyAncestor) {
         return _anyAncestorIsInSet(object);
     } else {
@@ -90,10 +101,17 @@ bool ObjectSet::includes(SPObject *object, bool anyAncestor) {
     }
 }
 
+bool ObjectSet::includes(Inkscape::XML::Node *node, bool anyAncestor)
+{
+    if (node) {
+        return includes(document()->getObjectByRepr(node), anyAncestor);
+    }
+    return false;
+}
+
 SPObject * 
 ObjectSet::includesAncestor(SPObject *object) {
     g_return_val_if_fail(object != nullptr, nullptr);
-    g_return_val_if_fail(SP_IS_OBJECT(object), nullptr);
     SPObject* o = object;
     while (o != nullptr) {
         if (includes(o)) {
@@ -102,6 +120,16 @@ ObjectSet::includesAncestor(SPObject *object) {
         o = o->parent;
     }
     return nullptr;
+}
+
+bool ObjectSet::includesDescendant(SPObject *object)
+{
+    if (!object) {
+        return false;
+    }
+
+    return includes(object) || std::any_of(object->children.begin(), object->children.end(),
+                                           [this](auto &child) { return includesDescendant(&child); });
 }
 
 void ObjectSet::clear() {
@@ -220,8 +248,8 @@ SPObject *ObjectSet::single() {
 SPItem *ObjectSet::singleItem() {
     if (_container.size() == 1) {
         SPObject* obj = *_container.begin();
-        if (SP_IS_ITEM(obj)) {
-            return SP_ITEM(obj);
+        if (is<SPItem>(obj)) {
+            return cast<SPItem>(obj);
         }
     }
 
@@ -230,12 +258,12 @@ SPItem *ObjectSet::singleItem() {
 
 SPItem *ObjectSet::firstItem() const
 {
-    return _container.size() ? SP_ITEM(_container.front()) : nullptr;
+    return _container.size() ? cast<SPItem>(_container.front()) : nullptr;
 }
 
 SPItem *ObjectSet::lastItem() const
 {
-    return _container.size() ? SP_ITEM(_container.back()) : nullptr;
+    return _container.size() ? cast<SPItem>(_container.back()) : nullptr;
 }
 
 SPItem *ObjectSet::smallestItem(CompareSize compare) {
@@ -314,32 +342,6 @@ void ObjectSet::set(XML::Node *repr)
     }
 }
 
-int ObjectSet::setBetween(SPObject *obj_a, SPObject *obj_b)
-{
-    auto parent = obj_a->parent;
-    if (!obj_b)
-        obj_b = lastItem();
-
-    if (!obj_a || !obj_b || parent != obj_b->parent) {
-        return 0;
-    } else if (obj_a == obj_b) {
-        set(obj_a);
-        return 1;
-    }
-    clear();
-
-    int count = 0;
-    int min = std::min(obj_a->getPosition(), obj_b->getPosition());
-    int max = std::max(obj_a->getPosition(), obj_b->getPosition());
-    for (int i = min ; i <= max ; i++) {
-        if (auto child = parent->nthChild(i)) {
-            count += add(child);
-        }    
-    }
-    return count;
-}
-
-
 void ObjectSet::setReprList(std::vector<XML::Node*> const &list) {
     if(!document())
         return;
@@ -366,9 +368,8 @@ void ObjectSet::enforceIds()
     for (auto *item : items) {
         if (!item->getId()) {
             // Selected object does not have an ID, so assign it a unique ID
-            gchar *id = sp_object_get_unique_id(item, nullptr);
+            auto id = item->generate_unique_id();
             item->setAttribute("id", id);
-            g_free(id);
             idAssigned = true;
         }
     }
@@ -444,6 +445,15 @@ Geom::OptRect ObjectSet::documentBounds(SPItem::BBoxType type) const
     return bbox;
 }
 
+Geom::OptRect ObjectSet::documentPreferredBounds() const
+{
+    if (Inkscape::Preferences::get()->getInt("/tools/bounding_box") == 0) {
+        return documentBounds(SPItem::VISUAL_BBOX);
+    } else {
+        return documentBounds(SPItem::GEOMETRIC_BBOX);
+    }
+}
+
 // If we have a selection of multiple items, then the center of the first item
 // will be returned; this is also the case in SelTrans::centerRequest()
 std::optional<Geom::Point> ObjectSet::center() const {
@@ -500,7 +510,7 @@ void ObjectSet::_remove3DBoxesRecursively(SPObject *obj) {
     for (auto box : boxes) {
         std::list<SPBox3D *>::iterator b = std::find(_3dboxes.begin(), _3dboxes.end(), box);
         if (b == _3dboxes.end()) {
-            g_print ("Warning! Trying to remove unselected box from selection.\n");
+            g_warning ("Warning! Trying to remove unselected box from selection.");
             return;
         }
         _3dboxes.erase(b);
