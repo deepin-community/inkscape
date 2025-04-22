@@ -10,16 +10,16 @@
 #include <glibmm/i18n.h>
 
 #include "live_effects/effect.h"
+#include "object/sp-lpe-item.h"
 #include "svg/svg.h"
 #include "svg/stringstream.h"
 #include "ui/icon-names.h"
+#include "ui/pack.h"
 #include "ui/knot/knot-holder.h"
 #include "ui/knot/knot-holder-entity.h"
 #include "ui/widget/registered-widget.h"
 
-
 namespace Inkscape {
-
 namespace LivePathEffect {
 
 VectorParam::VectorParam( const Glib::ustring& label, const Glib::ustring& tip,
@@ -32,8 +32,7 @@ VectorParam::VectorParam( const Glib::ustring& label, const Glib::ustring& tip,
 {
 }
 
-VectorParam::~VectorParam()
-= default;
+VectorParam::~VectorParam() = default;
 
 void
 VectorParam::param_set_default()
@@ -105,23 +104,22 @@ VectorParam::param_getDefaultSVGValue() const
 Gtk::Widget *
 VectorParam::param_newWidget()
 {
-    Inkscape::UI::Widget::RegisteredVector * pointwdg = Gtk::manage(
-        new Inkscape::UI::Widget::RegisteredVector( param_label,
-                                                    param_tooltip,
-                                                    param_key,
-                                                    *param_wr,
-                                                    param_effect->getRepr(),
-                                                    param_effect->getSPDoc() ) );
+    auto const pointwdg = Gtk::make_managed<UI::Widget::RegisteredVector>( param_label,
+                                                                           param_tooltip,
+                                                                           param_key,
+                                                                          *param_wr,
+                                                                           param_effect->getRepr(),
+                                                                           param_effect->getSPDoc() );
     pointwdg->setPolarCoords();
     pointwdg->setValue( vector, origin );
     pointwdg->clearProgrammatically();
     pointwdg->set_undo_parameters(_("Change vector parameter"), INKSCAPE_ICON("dialog-path-effects"));
 
-    Gtk::Box * hbox = Gtk::manage( new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL) );
-    hbox->pack_start(*pointwdg, true, true);
+    auto const hbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+    UI::pack_start(*hbox, *pointwdg, true, true);
     hbox->show_all_children();
 
-    return dynamic_cast<Gtk::Widget *> (hbox);
+    return hbox;
 }
 
 void
@@ -137,29 +135,19 @@ VectorParam::param_transform_multiply(Geom::Affine const& postmul, bool /*set*/)
     set_and_write_new_values( origin * postmul, vector * postmul.withoutTranslation() );
 }
 
-
-void
-VectorParam::set_vector_oncanvas_looks(Inkscape::CanvasItemCtrlShape shape,
-                                       Inkscape::CanvasItemCtrlMode mode,
-                                       guint32 color)
+void VectorParam::set_vector_oncanvas_looks(CanvasItemCtrlShape shape, uint32_t color)
 {
     vec_knot_shape = shape;
-    vec_knot_mode  = mode;
     vec_knot_color = color;
 }
 
-void
-VectorParam::set_origin_oncanvas_looks(Inkscape::CanvasItemCtrlShape shape,
-                                       Inkscape::CanvasItemCtrlMode mode,
-                                       guint32 color)
+void VectorParam::set_origin_oncanvas_looks(CanvasItemCtrlShape shape, uint32_t color)
 {
     ori_knot_shape = shape;
-    ori_knot_mode  = mode;
     ori_knot_color = color;
 }
 
-void
-VectorParam::set_oncanvas_color(guint32 color)
+void VectorParam::set_oncanvas_color(uint32_t color)
 {
     vec_knot_color = color;
     ori_knot_color = color;
@@ -174,18 +162,17 @@ public:
         Geom::Point const s = snap_knot_position(p, state);
         param->setOrigin(s);
         param->set_and_write_new_values(param->origin, param->vector);
-        sp_lpe_item_update_patheffect(SP_LPE_ITEM(item), false, false);
+        sp_lpe_item_update_patheffect(cast<SPLPEItem>(item), false, false);
     };
     Geom::Point knot_get() const override {
         return param->origin;
     };
     void knot_ungrabbed(Geom::Point const &p, Geom::Point const &origin, guint state) override
     {
-        param->param_effect->refresh_widgets = true;
-        param->write_to_SVG();
+        param->param_effect->makeUndoDone(_("Move handle"));
     };
     void knot_click(guint /*state*/) override{
-        g_print ("This is the origin handle associated to parameter '%s'\n", param->param_key.c_str());
+        g_message ("This is the origin handle associated to parameter '%s'", param->param_key.c_str());
     };
 
 private:
@@ -202,18 +189,17 @@ public:
         /// @todo implement angle snapping when holding CTRL
         param->setVector(s);
         param->set_and_write_new_values(param->origin, param->vector);
-        sp_lpe_item_update_patheffect(SP_LPE_ITEM(item), false, false);
+        sp_lpe_item_update_patheffect(cast<SPLPEItem>(item), false, false);
     };
     Geom::Point knot_get() const override {
         return param->origin + param->vector;
     };
     void knot_ungrabbed(Geom::Point const &p, Geom::Point const &origin, guint state) override
     {
-        param->param_effect->refresh_widgets = true;
-        param->write_to_SVG();
-    };
+        param->param_effect->makeUndoDone(_("Move handle"));
+    }
     void knot_click(guint /*state*/) override{
-        g_print ("This is the vector handle associated to parameter '%s'\n", param->param_key.c_str());
+        g_message ("This is the vector handle associated to parameter '%s'", param->param_key.c_str());
     };
 
 private:
@@ -235,7 +221,6 @@ VectorParam::addKnotHolderEntities(KnotHolder *knotholder, SPItem *item)
 }
 
 } /* namespace LivePathEffect */
-
 } /* namespace Inkscape */
 
 /*

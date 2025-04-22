@@ -17,32 +17,31 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "ui/interface.h"
-
 #include "system.h"
-#include "preferences.h"
-#include "extension.h"
-#include "db.h"
-#include "input.h"
-#include "output.h"
-#include "effect.h"
-#include "patheffect.h"
-#include "print.h"
-#include "implementation/script.h"
-#include "implementation/xslt.h"
-#include "xml/rebase-hrefs.h"
-#include "io/sys.h"
-#include "inkscape.h"
-#include "document-undo.h"
-#include "loader.h"
 
 #include <glibmm/miscutils.h>
 
+#include "db.h"
+#include "document.h"
+#include "document-undo.h"
+#include "effect.h"
+#include "extension.h"
+#include "implementation/script.h"
+#include "implementation/xslt.h"
+#include "inkscape.h"
+#include "input.h"
+#include "io/sys.h"
+#include "loader.h"
+#include "output.h"
+#include "patheffect.h"
+#include "preferences.h"
+#include "print.h"
+#include "template.h"
+#include "ui/interface.h"
+#include "xml/rebase-hrefs.h"
+
 namespace Inkscape {
 namespace Extension {
-
-static void open_internal(Inkscape::Extension::Extension *in_plug, gpointer in_data);
-static void save_internal(Inkscape::Extension::Extension *in_plug, gpointer in_data);
 
 /**
  * \return   A new document created from the filename passed in
@@ -50,6 +49,7 @@ static void save_internal(Inkscape::Extension::Extension *in_plug, gpointer in_d
  *           a module (including Autodetect)
  * \param    key       Identifier of which module to use
  * \param    filename  The file that should be opened
+ * \param    is_importing Is the request an import request, for example drag & drop
  *
  * First things first, are we looking at an autodetection?  Well if that's the case then the module
  * needs to be found, and that is done with a database lookup through the module DB.  The foreach
@@ -64,15 +64,18 @@ static void save_internal(Inkscape::Extension::Extension *in_plug, gpointer in_d
  *
  * Lastly, the open function is called in the module itself.
  */
-SPDocument *open(Extension *key, gchar const *filename)
+SPDocument *open(Extension *key, gchar const *filename, bool is_importing)
 {
     Input *imod = nullptr;
 
     if (key == nullptr) {
-        gpointer parray[2];
-        parray[0] = (gpointer)filename;
-        parray[1] = (gpointer)&imod;
-        db.foreach(open_internal, (gpointer)&parray);
+        DB::InputList o;
+        for (auto mod : db.get_input_list(o)) {
+            if (mod->can_open_filename(filename)) {
+                imod = mod;
+                break;
+            }
+        }
     } else {
         imod = dynamic_cast<Input *>(key);
     }
@@ -97,7 +100,7 @@ SPDocument *open(Extension *key, gchar const *filename)
         bool ask_svg = prefs->getBool("/dialogs/import/ask_svg");
         Glib::ustring id = Glib::ustring(imod->get_id(), 22);
         if (id.compare("org.inkscape.input.svg") == 0) {
-            if (ask_svg && prefs->getBool("/options/onimport", false)) {
+            if (ask_svg && is_importing) {
                 show = true;
                 imod->set_gui(true);
             } else {
@@ -118,11 +121,11 @@ SPDocument *open(Extension *key, gchar const *filename)
         throw Input::open_failed();
     }
 
-    if (!imod->prefs(filename)) {
+    if (!imod->prefs()) {
         throw Input::open_cancelled();
     }
 
-    SPDocument *doc = imod->open(filename);
+    SPDocument *doc = imod->open(filename, is_importing);
 
     if (!doc) {
         if (last_chance_svg) {
@@ -143,54 +146,6 @@ SPDocument *open(Extension *key, gchar const *filename)
     }
 
     return doc;
-}
-
-/**
- * \return   none
- * \brief    This is the function that searches each module to see
- *           if it matches the filename for autodetection.
- * \param    in_plug  The module to be tested
- * \param    in_data  An array of pointers containing the filename, and
- *                    the place to put a successfully found module.
- *
- * Basically this function only looks at input modules as it is part of the open function.  If the
- * module is an input module, it then starts to take it apart, and the data that is passed in.
- * Because the data being passed in is in such a weird format, there are a few casts to make it
- * easier to use.  While it looks like a lot of local variables, they'll all get removed by the
- * compiler.
- *
- * First thing that is checked is if the filename is shorter than the extension itself.  There is
- * no way for a match in that case.  If it's long enough then there is a string compare of the end
- * of the filename (for the length of the extension), and the extension itself.  If this passes
- * then the pointer passed in is set to the current module.
- */
-static void
-open_internal(Extension *in_plug, gpointer in_data)
-{
-    auto imod = dynamic_cast<Input *>(in_plug);
-    if (imod && !imod->deactivated()) {
-        gpointer *parray = (gpointer *)in_data;
-        gchar const *filename = (gchar const *)parray[0];
-        Input **pimod = (Input **)parray[1];
-
-        // skip all the rest if we already found a function to open it
-        // since they're ordered by preference now.
-        if (!*pimod) {
-            gchar const *ext = imod->get_extension();
-
-            gchar *filenamelower = g_utf8_strdown(filename, -1);
-            gchar *extensionlower = g_utf8_strdown(ext, -1);
-
-            if (g_str_has_suffix(filenamelower, extensionlower)) {
-                *pimod = imod;
-            }
-
-            g_free(filenamelower);
-            g_free(extensionlower);
-        }
-    }
-
-    return;
 }
 
 /**
@@ -222,11 +177,13 @@ save(Extension *key, SPDocument *doc, gchar const *filename, bool check_overwrit
 {
     Output *omod;
     if (key == nullptr) {
-        gpointer parray[2];
-        parray[0] = (gpointer)filename;
-        parray[1] = (gpointer)&omod;
-        omod = nullptr;
-        db.foreach(save_internal, (gpointer)&parray);
+        DB::OutputList o;
+        for (auto mod : db.get_output_list(o)) {
+            if (mod->can_save_filename(filename)) {
+                omod = mod;
+                break;
+            }
+        }
 
         /* This is a nasty hack, but it is required to ensure that
            autodetect will always save with the Inkscape extensions
@@ -256,17 +213,13 @@ save(Extension *key, SPDocument *doc, gchar const *filename, bool check_overwrit
         throw Output::save_cancelled();
     }
 
-    gchar *fileName = g_strdup(filename);
-
-    if (check_overwrite && !sp_ui_overwrite_file(fileName)) {
-        g_free(fileName);
+    if (check_overwrite && !sp_ui_overwrite_file(filename)) {
         throw Output::no_overwrite();
     }
 
     // test if the file exists and is writable
     // the test only checks the file attributes and might pass where ACL does not allow writes
     if (Inkscape::IO::file_test(filename, G_FILE_TEST_EXISTS) && !Inkscape::IO::file_is_writable(filename)) {
-        g_free(fileName);
         throw Output::file_read_only();
     }
 
@@ -282,7 +235,7 @@ save(Extension *key, SPDocument *doc, gchar const *filename, bool check_overwrit
     saved_dataloss = g_strdup(repr->attribute("inkscape:dataloss"));
     if (official) {
         // The document is changing name/uri.
-        doc->changeFilenameAndHrefs(fileName);
+        doc->changeFilenameAndHrefs(filename);
     }
 
     // Update attributes:
@@ -301,7 +254,7 @@ save(Extension *key, SPDocument *doc, gchar const *filename, bool check_overwrit
     }
 
     try {
-        omod->save(doc, fileName);
+        omod->save(doc, filename);
     }
     catch(...) {
         // revert attributes in case of official and overwrite
@@ -319,8 +272,6 @@ save(Extension *key, SPDocument *doc, gchar const *filename, bool check_overwrit
         g_free(saved_dataloss);
         g_free(saved_filename);
 
-        g_free(fileName);
-
         throw;
     }
 
@@ -335,55 +286,6 @@ save(Extension *key, SPDocument *doc, gchar const *filename, bool check_overwrit
 
         g_free(saved_output_extension);
         g_free(saved_dataloss);
-    }
-
-    g_free(fileName);
-    return;
-}
-
-/**
- * \return   none
- * \brief    This is the function that searches each module to see
- *           if it matches the filename for autodetection.
- * \param    in_plug  The module to be tested
- * \param    in_data  An array of pointers containing the filename, and
- *                    the place to put a successfully found module.
- *
- * Basically this function only looks at output modules as it is part of the open function.  If the
- * module is an output module, it then starts to take it apart, and the data that is passed in.
- * Because the data being passed in is in such a weird format, there are a few casts to make it
- * easier to use.  While it looks like a lot of local variables, they'll all get removed by the
- * compiler.
- *
- * First thing that is checked is if the filename is shorter than the extension itself.  There is
- * no way for a match in that case.  If it's long enough then there is a string compare of the end
- * of the filename (for the length of the extension), and the extension itself.  If this passes
- * then the pointer passed in is set to the current module.
- */
-static void
-save_internal(Extension *in_plug, gpointer in_data)
-{
-    auto omod = dynamic_cast<Output *>(in_plug);
-    if (omod && !omod->deactivated()) {
-        gpointer *parray = (gpointer *)in_data;
-        gchar const *filename = (gchar const *)parray[0];
-        Output **pomod = (Output **)parray[1];
-
-        // skip all the rest if we already found someone to save it
-        // since they're ordered by preference now.
-        if (!*pomod) {
-            gchar const *ext = omod->get_extension();
-
-            gchar *filenamelower = g_utf8_strdown(filename, -1);
-            gchar *extensionlower = g_utf8_strdown(ext, -1);
-
-            if (g_str_has_suffix(filenamelower, extensionlower)) {
-                *pomod = omod;
-            }
-
-            g_free(filenamelower);
-            g_free(extensionlower);
-        }
     }
 
     return;
@@ -413,7 +315,7 @@ get_print(gchar const *key)
  * case could apply to modules that are built in (like the SVG load/save functions).
  */
 bool
-build_from_reprdoc(Inkscape::XML::Document *doc, Implementation::Implementation *in_imp, std::string* baseDir)
+build_from_reprdoc(Inkscape::XML::Document *doc, std::unique_ptr<Implementation::Implementation> in_imp, std::string* baseDir, std::string* file_name)
 {
     ModuleImpType module_implementation_type = MODULE_UNKNOWN_IMP;
     ModuleFuncType module_functional_type = MODULE_UNKNOWN_FUNC;
@@ -433,6 +335,8 @@ build_from_reprdoc(Inkscape::XML::Document *doc, Implementation::Implementation 
         /* printf("Child: %s\n", child_repr->name()); */
         if (!strcmp(element_name, INKSCAPE_EXTENSION_NS "input")) {
             module_functional_type = MODULE_INPUT;
+        } else if (!strcmp(element_name, INKSCAPE_EXTENSION_NS "template")) {
+            module_functional_type = MODULE_TEMPLATE;
         } else if (!strcmp(element_name, INKSCAPE_EXTENSION_NS "output")) {
             module_functional_type = MODULE_OUTPUT;
         } else if (!strcmp(element_name, INKSCAPE_EXTENSION_NS "effect")) {
@@ -445,7 +349,7 @@ build_from_reprdoc(Inkscape::XML::Document *doc, Implementation::Implementation 
             module_implementation_type = MODULE_EXTENSION;
         } else if (!strcmp(element_name, INKSCAPE_EXTENSION_NS "xslt")) {
             module_implementation_type = MODULE_XSLT;
-        } else if (!strcmp(element_name,  INKSCAPE_EXTENSION_NS "plugin")) {
+        } else if (!strcmp(element_name, INKSCAPE_EXTENSION_NS "plugin")) {
             module_implementation_type = MODULE_PLUGIN;
         }
 
@@ -454,78 +358,80 @@ build_from_reprdoc(Inkscape::XML::Document *doc, Implementation::Implementation 
         //Inkscape::GC::release(old_repr);
     }
 
-    Implementation::Implementation *imp;
-    if (in_imp == nullptr) {
+    using ImplementationHolder = Util::HybridPointer<Implementation::Implementation>;
+    ImplementationHolder imp;
+    if (in_imp) {
+        imp = std::move(in_imp);
+    } else {
         switch (module_implementation_type) {
             case MODULE_EXTENSION: {
-                Implementation::Script *script = new Implementation::Script();
-                imp = static_cast<Implementation::Implementation *>(script);
+                imp = ImplementationHolder::make_owning<Implementation::Script>();
                 break;
             }
             case MODULE_XSLT: {
-                Implementation::XSLT *xslt = new Implementation::XSLT();
-                imp = static_cast<Implementation::Implementation *>(xslt);
+                imp = ImplementationHolder::make_owning<Implementation::XSLT>();
                 break;
             }
             case MODULE_PLUGIN: {
-                Inkscape::Extension::Loader loader = Inkscape::Extension::Loader();
-                if( baseDir != nullptr){
-                    loader.set_base_directory ( *baseDir );
+                auto loader = Inkscape::Extension::Loader();
+                if (baseDir) {
+                    loader.set_base_directory(*baseDir);
                 }
-                imp = loader.load_implementation(doc);
-                break;
-            }
-            default: {
-                imp = nullptr;
+                imp = ImplementationHolder::make_nonowning(loader.load_implementation(doc));
                 break;
             }
         }
-    } else {
-        imp = in_imp;
     }
 
-    Extension *module = nullptr;
+    std::unique_ptr<Extension> module;
     try {
         switch (module_functional_type) {
             case MODULE_INPUT: {
-                module = new Input(repr, imp, baseDir);
+                module = std::make_unique<Input>(repr, std::move(imp), baseDir);
+                break;
+            }
+            case MODULE_TEMPLATE: {
+                module = std::make_unique<Template>(repr, std::move(imp), baseDir);
                 break;
             }
             case MODULE_OUTPUT: {
-                module = new Output(repr, imp, baseDir);
+                module = std::make_unique<Output>(repr, std::move(imp), baseDir);
                 break;
             }
             case MODULE_FILTER: {
-                module = new Effect(repr, imp, baseDir);
+                module = std::make_unique<Effect>(repr, std::move(imp), baseDir, file_name);
                 break;
             }
             case MODULE_PRINT: {
-                module = new Print(repr, imp, baseDir);
+                module = std::make_unique<Print>(repr, std::move(imp), baseDir);
                 break;
             }
             case MODULE_PATH_EFFECT: {
-                module = new PathEffect(repr, imp, baseDir);
+                module = std::make_unique<PathEffect>(repr, std::move(imp), baseDir);
                 break;
             }
             default: {
                 g_warning("Extension of unknown type!"); // TODO: Should not happen! Is this even useful?
-                module = new Extension(repr, imp, baseDir);
+                module = std::make_unique<Extension>(repr, std::move(imp), baseDir);
                 break;
             }
         }
-    } catch (const Extension::extension_no_id& e) {
+    } catch (const Extension::extension_no_id &) {
         g_warning("Building extension failed. Extension does not have a valid ID");
-    } catch (const Extension::extension_no_name& e) {
+        return false;
+    } catch (const Extension::extension_no_name &) {
         g_warning("Building extension failed. Extension does not have a valid name");
-    } catch (const Extension::extension_not_compatible& e) {
+        return false;
+    } catch (const Extension::extension_not_compatible &) {
         return true; // This is not an actual error; just silently ignore the extension
+    } catch (Extension::no_implementation_for_extension &) {
+        g_warning("Building extension failed: no implementation was found");
+        return false;
     }
 
-    if (module) {
-        return true;
-    }
-
-    return false;
+    assert(module);
+    db.take_ownership(std::move(module));
+    return true;
 }
 
 /**
@@ -539,6 +445,7 @@ void
 build_from_file(gchar const *filename)
 {
     std::string dir = Glib::path_get_dirname(filename);
+    auto file_name = Glib::path_get_basename(filename);
 
     Inkscape::XML::Document *doc = sp_repr_read_file(filename, INKSCAPE_EXTENSION_URI);
     if (!doc) {
@@ -546,7 +453,7 @@ build_from_file(gchar const *filename)
         return;
     }
 
-    if (!build_from_reprdoc(doc, nullptr, &dir)) {
+    if (!build_from_reprdoc(doc, {}, &dir, &file_name)) {
         g_warning("Inkscape::Extension::build_from_file() - Could not parse extension from '%s'.", filename);
     }
 
@@ -554,15 +461,15 @@ build_from_file(gchar const *filename)
 }
 
 /**
- * \brief    This function creates a module from a buffer holding an
- *           XML description.
- * \param    buffer  The buffer holding the XML description of the module.
+ * \brief Create a module from a buffer holding an XML description.
+ * \param buffer The buffer holding the XML description of the module.
+ * \param in_imp An owning pointer to a freshly created implementation.
  *
  * This function calls build_from_reprdoc with using sp_repr_read_mem to create the reprdoc.  It
  * finds the length of the buffer using strlen.
  */
 void
-build_from_mem(gchar const *buffer, Implementation::Implementation *in_imp)
+build_from_mem(gchar const *buffer, std::unique_ptr<Implementation::Implementation> in_imp)
 {
     Inkscape::XML::Document *doc = sp_repr_read_mem(buffer, strlen(buffer), INKSCAPE_EXTENSION_URI);
     if (!doc) {
@@ -570,7 +477,7 @@ build_from_mem(gchar const *buffer, Implementation::Implementation *in_imp)
         return;
     }
 
-    if (!build_from_reprdoc(doc, in_imp, nullptr)) {
+    if (!build_from_reprdoc(doc, std::move(in_imp), nullptr, nullptr)) {
         g_critical("Inkscape::Extension::build_from_mem() - Could not parse extension from memory buffer.");
     }
 

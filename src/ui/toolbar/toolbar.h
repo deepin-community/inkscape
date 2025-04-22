@@ -7,53 +7,51 @@
  * Copyright (C) 2018 Authors
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
+
 #ifndef SEEN_TOOLBAR_H
 #define SEEN_TOOLBAR_H
 
-#include <gtkmm/toolbar.h>
+#include <stack>
+#include <utility>
+#include <vector>
+
+#include <gtkmm/box.h>
 
 class SPDesktop;
 
-namespace Gtk {
-    class Label;
-    class ToggleToolButton;
-}
+namespace Inkscape::UI::Widget { class ToolbarMenuButton; }
 
-namespace Inkscape {
-namespace UI {
-namespace Toolbar {
+namespace Inkscape::UI::Toolbar {
+
 /**
- * \brief An abstract definition for a toolbar within Inkscape
- *
- * \detail This is basically the same as a Gtk::Toolbar but contains a
- *         few convenience functions. All toolbars must define a "create"
- *         function that adds all the required tool-items and returns the
- *         toolbar as a GtkWidget
+ * \brief Base class for all toolbars.
  */
-class Toolbar : public Gtk::Toolbar {
+class Toolbar : public Gtk::Box
+{
 protected:
-    SPDesktop *_desktop;
+    Toolbar(SPDesktop *desktop);
 
-    /**
-     * \brief A default constructor that just assigns the desktop
-     */
-    Toolbar(SPDesktop *desktop)
-        : _desktop(desktop)
-    {}
+    SPDesktop *const _desktop;
+    Gtk::Box *_toolbar = nullptr;
 
-    Gtk::ToolItem         * add_label(const Glib::ustring &label_text);
-    Gtk::ToggleToolButton * add_toggle_button(const Glib::ustring &label_text,
-                                              const Glib::ustring &tooltip_text);
-    void add_separator();
+    void addCollapsibleButton(UI::Widget::ToolbarMenuButton *button);
 
-protected:
-    static GtkWidget * create(SPDesktop *desktop);
+    void get_preferred_width_vfunc(int &min_w, int &nat_w) const override;
+    void get_preferred_height_vfunc(int &min_h, int &nat_h) const override;
+    void on_size_allocate(Gtk::Allocation &allocation) override;
+
+private:
+    std::stack<UI::Widget::ToolbarMenuButton *> _expanded_menu_btns;
+    std::stack<UI::Widget::ToolbarMenuButton *> _collapsed_menu_btns;
+
+    void _resize_handler(Gtk::Allocation &allocation);
+    void _move_children(Gtk::Box *src, Gtk::Box *dest, std::vector<std::pair<int, Gtk::Widget *>> const &children, bool is_expanding = false);
 };
-}
-}
-}
 
-#endif
+} // namespace Inkscape::UI::Toolbar
+
+#endif // SEEN_TOOLBAR_H
+
 /*
   Local Variables:
   mode:c++

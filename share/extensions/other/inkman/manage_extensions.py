@@ -20,15 +20,13 @@
 Inkscape Extensions Manager, Graphical User Interface (Gtk3)
 """
 
-import os
 import sys
 import logging
 import warnings
-warnings.filterwarnings("ignore")
-
-from inkex import gui
 
 from argparse import ArgumentParser
+
+warnings.filterwarnings("ignore")
 
 
 def run(args):
@@ -40,7 +38,9 @@ def run(args):
     arg_parser = ArgumentParser(description=__doc__)
     arg_parser.add_argument("input_file", nargs="?")
     arg_parser.add_argument(
-        "--target", default=TARGETS[0].category, choices=[t.category for t in TARGETS]
+        "--target",
+        default=TARGETS[0].category,
+        choices=[t.category for t in TARGETS],
     )
     arg_parser.add_argument("--for-version", default=None)
     options = arg_parser.parse_args(args)

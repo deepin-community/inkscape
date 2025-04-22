@@ -6,8 +6,12 @@ from .target import ExtensionsTarget, BasicTarget
 
 TARGETS = [
     # Website slug, Visible name, local directory, search instead of list
-    ExtensionsTarget("extension", "Extensions", "extensions", True, filters=("*.inx",)),
-    BasicTarget("template", "Templates", "templates", True, filters=("*.svg",)),
+    ExtensionsTarget(
+        "extension", "Extensions", "extensions", True, filters=("*.inx",)
+    ),
+    BasicTarget(
+        "template", "Templates", "templates", True, filters=("*.svg",)
+    ),
     BasicTarget("palette", "Shared Paletts", "palettes", filters=("*.gpl",)),
     BasicTarget("symbol", "Symbol Collections", "symbols", filters=("*.svg",)),
     BasicTarget("keyboard", "Keyboard Shortcuts", "keys", filters=("*.xml",)),

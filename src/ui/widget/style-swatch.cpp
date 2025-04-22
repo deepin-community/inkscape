@@ -14,104 +14,84 @@
 
 #include "style-swatch.h"
 
+#include <functional>
+#include <utility>
 #include <glibmm/i18n.h>
 #include <gtkmm/grid.h>
+#include <sigc++/adaptors/bind.h>
+#include <sigc++/functors/mem_fun.h>
 
-#include "inkscape.h"
 #include "style.h"
 
 #include "actions/actions-tools.h"  // Open tool preferences.
-
 #include "object/sp-linear-gradient.h"
+#include "object/sp-paint-server.h"
 #include "object/sp-pattern.h"
 #include "object/sp-radial-gradient.h"
-
+#include "ui/controller.h"
+#include "ui/pack.h"
 #include "ui/widget/color-preview.h"
 #include "util/units.h"
-
-#include "widgets/spw-utilities.h"
-
 #include "xml/sp-css-attr.h"
-#include "xml/attribute-record.h"
+
+static constexpr int STYLE_SWATCH_WIDTH = 135;
 
 enum {
     SS_FILL,
     SS_STROKE
 };
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
-
-/**
- * Watches whether the tool uses the current style.
- */
-class StyleSwatch::ToolObserver : public Inkscape::Preferences::Observer {
-public:
-    ToolObserver(Glib::ustring const &path, StyleSwatch &ss) : 
-        Observer(path),
-        _style_swatch(ss)
-    {}
-    void notify(Inkscape::Preferences::Entry const &val) override;
-private:
-    StyleSwatch &_style_swatch;
-};
+namespace Inkscape::UI::Widget {
 
 /**
  * Watches for changes in the observed style pref.
  */
-class StyleSwatch::StyleObserver : public Inkscape::Preferences::Observer {
-public:
-    StyleObserver(Glib::ustring const &path, StyleSwatch &ss) :
-        Observer(path),
-        _style_swatch(ss)
-    {
-        Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-        this->notify(prefs->getEntry(path));
-    }
-    void notify(Inkscape::Preferences::Entry const &val) override {
-        SPCSSAttr *css = val.getInheritedStyle();
-        _style_swatch.setStyle(css);
-        sp_repr_css_attr_unref(css);
-    }
-private:
-    StyleSwatch &_style_swatch;
-};
-
-void StyleSwatch::ToolObserver::notify(Inkscape::Preferences::Entry const &val)
+void style_obs_callback(StyleSwatch &_style_swatch, Preferences::Entry const &val)
 {
-    bool usecurrent = val.getBool();
-
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    if (_style_swatch._style_obs) delete _style_swatch._style_obs;
-
-    if (usecurrent) {
-        _style_swatch._style_obs = new StyleObserver("/desktop/style", _style_swatch);
-        
-        // If desktop's last-set style is empty, a tool uses its own fixed style even if set to use
-        // last-set (so long as it's empty). To correctly show this, we get the tool's style
-        // if the desktop's style is empty.
-        SPCSSAttr *css = prefs->getStyle("/desktop/style");
-        const auto & al = css->attributeList();
-        if (al.empty()) {
-            SPCSSAttr *css2 = prefs->getInheritedStyle(_style_swatch._tool_path + "/style");
-            _style_swatch.setStyle(css2);
-            sp_repr_css_attr_unref(css2);
-        }
-        sp_repr_css_attr_unref(css);
-    } else {
-        _style_swatch._style_obs = new StyleObserver(_style_swatch._tool_path + "/style", _style_swatch);
-    }
-    prefs->addObserver(*_style_swatch._style_obs);
+    SPCSSAttr *css = val.getInheritedStyle();
+    _style_swatch.setStyle(css);
+    sp_repr_css_attr_unref(css);
 }
 
-StyleSwatch::StyleSwatch(SPCSSAttr *css, gchar const *main_tip)
+/**
+ * Watches whether the tool uses the current style.
+ */
+void tool_obs_callback(StyleSwatch &_style_swatch, Preferences::Entry const &val)
+{
+    auto const prefs = Preferences::get();
+    Glib::ustring path;
+    SPCSSAttr *css = nullptr;
+
+    bool usecurrent = val.getBool();
+    if (usecurrent) {
+        path = "/desktop/style";
+        css = prefs->getStyle(path);
+        const auto &al = css->attributeList();
+        if (al.empty()) {
+            // Fallback to own style if desktop style empty (does this ever happen?).
+            sp_repr_css_attr_unref(css);
+            css = nullptr;
+        }
+    }
+
+    if (!css) {
+        path = _style_swatch._tool_path + "/style";
+        css = prefs->getInheritedStyle(path);
+    }
+
+    // Set style at least once.
+    _style_swatch.setStyle(css);
+    sp_repr_css_attr_unref(css);
+
+    auto callback = sigc::bind<0>(&style_obs_callback, std::ref(_style_swatch));
+    _style_swatch._style_obs = StyleSwatch::PrefObs::create(std::move(path), std::move(callback));
+}
+
+StyleSwatch::StyleSwatch(SPCSSAttr *css, gchar const *main_tip, Gtk::Orientation orient)
     : Gtk::Box(Gtk::ORIENTATION_HORIZONTAL),
       _desktop(nullptr),
       _css(nullptr),
-      _tool_obs(nullptr),
-      _style_obs(nullptr),
-      _table(Gtk::manage(new Gtk::Grid())),
+      _table(Gtk::make_managed<Gtk::Grid>()),
       _sw_unit(nullptr),
       _stroke(Gtk::ORIENTATION_HORIZONTAL)
 {
@@ -127,7 +107,7 @@ StyleSwatch::StyleSwatch(SPCSSAttr *css, gchar const *main_tip)
         _label[i].set_margin_start(0);
         _label[i].set_margin_end(0);
 
-        _color_preview[i] = new Inkscape::UI::Widget::ColorPreview (0);
+        _color_preview[i] = std::make_unique<ColorPreview>(0);
     }
 
     _opacity_value.set_halign(Gtk::ALIGN_START);
@@ -140,26 +120,48 @@ StyleSwatch::StyleSwatch(SPCSSAttr *css, gchar const *main_tip)
     _table->set_column_spacing(2);
     _table->set_row_spacing(0);
 
-    _stroke.pack_start(_place[SS_STROKE]);
+    // We let pack()ed children expand but donʼt propagate expand upwards.
+    set_hexpand(false);
+    _stroke.set_hexpand(false);
+
+    UI::pack_start(_stroke, _place[SS_STROKE]);
     _stroke_width_place.add(_stroke_width);
-    _stroke.pack_start(_stroke_width_place, Gtk::PACK_SHRINK);
+    UI::pack_start(_stroke, _stroke_width_place, UI::PackOptions::shrink);
     
     _opacity_place.add(_opacity_value);
 
-    _table->attach(_label[SS_FILL],   0, 0, 1, 1);
-    _table->attach(_label[SS_STROKE], 0, 1, 1, 1);
-    _table->attach(_place[SS_FILL],   1, 0, 1, 1);
-    _table->attach(_stroke,           1, 1, 1, 1);
-    _table->attach(_empty_space,      2, 0, 1, 2);
-    _table->attach(_opacity_place,    2, 0, 1, 2);
-    _swatch.add(*_table);
-    pack_start(_swatch, true, true, 0);
+    if (orient == Gtk::ORIENTATION_VERTICAL) {
+        _table->attach(_label[SS_FILL],   0, 0, 1, 1);
+        _table->attach(_label[SS_STROKE], 0, 1, 1, 1);
+        _table->attach(_place[SS_FILL],   1, 0, 1, 1);
+        _table->attach(_stroke,           1, 1, 1, 1);
+        _table->attach(_empty_space,      2, 0, 1, 2);
+        _table->attach(_opacity_place,    2, 0, 1, 2);
+        _swatch.add(*_table);
+        UI::pack_start(*this, _swatch, true, true);
 
-    set_size_request (STYLE_SWATCH_WIDTH, -1);
+        set_size_request (STYLE_SWATCH_WIDTH, -1);
+    }
+    else {
+        _table->set_column_spacing(4);
+        _table->attach(_label[SS_FILL],   0, 0, 1, 1);
+        _table->attach(_place[SS_FILL],   1, 0, 1, 1);
+        _label[SS_STROKE].set_margin_start(6);
+        _table->attach(_label[SS_STROKE], 2, 0, 1, 1);
+        _table->attach(_stroke,           3, 0, 1, 1);
+        _opacity_place.set_margin_start(6);
+        _table->attach(_opacity_place,    4, 0, 1, 1);
+        _swatch.add(*_table);
+        UI::pack_start(*this, _swatch, true, true);
+
+        int patch_w = 6 * 6;
+        _place[SS_FILL].set_size_request(patch_w, -1);
+        _place[SS_STROKE].set_size_request(patch_w, -1);
+    }
 
     setStyle (css);
 
-    _swatch.signal_button_press_event().connect(sigc::mem_fun(*this, &StyleSwatch::on_click));
+    Controller::add_click(_swatch, sigc::mem_fun(*this, &StyleSwatch::on_click));
 
     if (main_tip)
     {
@@ -175,52 +177,38 @@ void StyleSwatch::setDesktop(SPDesktop *desktop) {
     _desktop = desktop;
 }
 
-bool
-StyleSwatch::on_click(GdkEventButton */*event*/)
+Gtk::EventSequenceState StyleSwatch::on_click(Gtk::GestureMultiPress const & /*click*/,
+                                              int /*n_press*/, double /*x*/, double /*y*/)
 {
     if (_desktop && !_tool_name.empty()) {
         auto win = _desktop->getInkscapeWindow();
         open_tool_preferences(win, _tool_name);
-        return true;
+        return Gtk::EVENT_SEQUENCE_CLAIMED;
     }
-    return false;
+    return Gtk::EVENT_SEQUENCE_NONE;
 }
 
 StyleSwatch::~StyleSwatch()
 {
     if (_css)
         sp_repr_css_attr_unref (_css);
-
-    for (int i = SS_FILL; i <= SS_STROKE; i++) {
-        delete _color_preview[i];
-    }
-
-    if (_style_obs) delete _style_obs;
-    if (_tool_obs) delete _tool_obs;
 }
 
 void
 StyleSwatch::setWatchedTool(const char *path, bool synthesize)
 {
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    
-    if (_tool_obs) {
-        delete _tool_obs;
-        _tool_obs = nullptr;
-    }
+    _tool_obs.reset();
 
     if (path) {
         _tool_path = path;
-        _tool_obs = new ToolObserver(_tool_path + "/usecurrent", *this);
-        prefs->addObserver(*_tool_obs);
+        _tool_obs = PrefObs::create(_tool_path + "/usecurrent",
+                                    sigc::bind<0>(&tool_obs_callback, std::ref(*this)));
     } else {
         _tool_path = "";
     }
     
-    // hack until there is a real synthesize events function for prefs,
-    // which shouldn't be hard to write once there is sufficient need for it
     if (synthesize && _tool_obs) {
-        _tool_obs->notify(prefs->getEntry(_tool_path + "/usecurrent"));
+        _tool_obs->call();
     }
 }
 
@@ -266,15 +254,15 @@ void StyleSwatch::setStyle(SPStyle *query)
         if (paint->set && paint->isPaintserver()) {
             SPPaintServer *server = (i == SS_FILL)? SP_STYLE_FILL_SERVER (query) : SP_STYLE_STROKE_SERVER (query);
 
-            if (SP_IS_LINEARGRADIENT (server)) {
+            if (is<SPLinearGradient>(server)) {
                 _value[i].set_markup(_("L Gradient"));
                 place->add(_value[i]);
                 place->set_tooltip_text((i == SS_FILL)? (_("Linear gradient (fill)")) : (_("Linear gradient (stroke)")));
-            } else if (SP_IS_RADIALGRADIENT (server)) {
+            } else if (is<SPRadialGradient>(server)) {
                 _value[i].set_markup(_("R Gradient"));
                 place->add(_value[i]);
                 place->set_tooltip_text((i == SS_FILL)? (_("Radial gradient (fill)")) : (_("Radial gradient (stroke)")));
-            } else if (SP_IS_PATTERN (server)) {
+            } else if (is<SPPattern>(server)) {
                 _value[i].set_markup(_("Pattern"));
                 place->add(_value[i]);
                 place->set_tooltip_text((i == SS_FILL)? (_("Pattern (fill)")) : (_("Pattern (stroke)")));
@@ -282,7 +270,7 @@ void StyleSwatch::setStyle(SPStyle *query)
 
         } else if (paint->set && paint->isColor()) {
             guint32 color = paint->value.color.toRGBA32( SP_SCALE24_TO_FLOAT ((i == SS_FILL)? query->fill_opacity.value : query->stroke_opacity.value) );
-            ((Inkscape::UI::Widget::ColorPreview*)_color_preview[i])->setRgba32 (color);
+            _color_preview[i]->setRgba32(color);
             _color_preview[i]->show_all();
             place->add(*_color_preview[i]);
             gchar *tip;
@@ -318,7 +306,7 @@ void StyleSwatch::setStyle(SPStyle *query)
         } else {
             double w;
             if (_sw_unit) {
-                w = Inkscape::Util::Quantity::convert(query->stroke_width.computed, "px", _sw_unit);
+                w = Util::Quantity::convert(query->stroke_width.computed, "px", _sw_unit);
             } else {
                 w = query->stroke_width.computed;
             }
@@ -370,9 +358,7 @@ void StyleSwatch::setStyle(SPStyle *query)
     show_all();
 }
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 /*
   Local Variables:

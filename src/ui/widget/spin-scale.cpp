@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+/** \file
+ * Derived from and replaces SpinSlider
+ */
 /*
  * Author:
  *
@@ -15,23 +18,25 @@
 
 #include "spin-scale.h"
 
+#include <utility>
 #include <glibmm/i18n.h>
 #include <glibmm/stringutils.h>
+#include <gtkmm/enums.h>
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+#include "ui/pack.h"
 
-SpinScale::SpinScale(const Glib::ustring label, double value,
+namespace Inkscape::UI::Widget {
+
+SpinScale::SpinScale(Glib::ustring label, double value,
                      double lower, double upper,
                      double step_increment, double page_increment, int digits,
-                     const SPAttr a, const Glib::ustring tip_text)
+                     SPAttr const a, Glib::ustring const &tip_text)
     : AttrWidget(a, value)
     , _inkspinscale(value, lower, upper, step_increment, page_increment, 0)
 {
     set_name("SpinScale");
-
-    _inkspinscale.set_label (label);
+    _inkspinscale.drag_dest_unset();
+    _inkspinscale.set_label(std::move(label));
     _inkspinscale.set_digits (digits);
     _inkspinscale.set_tooltip_text (tip_text);
 
@@ -39,28 +44,27 @@ SpinScale::SpinScale(const Glib::ustring label, double value,
 
     signal_value_changed().connect(signal_attr_changed().make_slot());
 
-    pack_start(_inkspinscale);
+    UI::pack_start(*this, _inkspinscale);
 
     show_all_children();
 }
 
-SpinScale::SpinScale(const Glib::ustring label,
+SpinScale::SpinScale(Glib::ustring label,
                      Glib::RefPtr<Gtk::Adjustment> adjustment, int digits,
-                     const SPAttr a, const Glib::ustring tip_text)
+                     SPAttr const a, Glib::ustring const &tip_text)
     : AttrWidget(a, 0.0)
-    , _inkspinscale(adjustment)
+    , _adjustment{std::move(adjustment)}
+    , _inkspinscale{_adjustment}
 {
     set_name("SpinScale");
 
-    _inkspinscale.set_label (label);
+    _inkspinscale.set_label(std::move(label));
     _inkspinscale.set_digits (digits);
     _inkspinscale.set_tooltip_text (tip_text);
 
-    _adjustment = _inkspinscale.get_adjustment();
-
     signal_value_changed().connect(signal_attr_changed().make_slot());
 
-    pack_start(_inkspinscale);
+    UI::pack_start(*this, _inkspinscale);
 
     show_all_children();
 }
@@ -84,7 +88,7 @@ void SpinScale::set_from_attribute(SPObject* o)
         _adjustment->set_value(get_default()->as_double());
 }
 
-Glib::SignalProxy0<void> SpinScale::signal_value_changed()
+Glib::SignalProxy<void> SpinScale::signal_value_changed()
 {
     return _adjustment->signal_value_changed();
 }
@@ -104,27 +108,19 @@ void SpinScale::set_focuswidget(GtkWidget *widget)
     _inkspinscale.set_focus_widget(widget);
 }
 
-const decltype(SpinScale::_adjustment) SpinScale::get_adjustment() const
+decltype(SpinScale::_adjustment) const &SpinScale::get_adjustment()
 {
     return _adjustment;
 }
 
-decltype(SpinScale::_adjustment) SpinScale::get_adjustment()
-{
-    return _adjustment;
-}
-
-
-DualSpinScale::DualSpinScale(const Glib::ustring label1, const Glib::ustring label2,
+DualSpinScale::DualSpinScale(Glib::ustring label1, Glib::ustring label2,
                              double value, double lower, double upper,
                              double step_increment, double page_increment, int digits,
                              const SPAttr a,
-                             const Glib::ustring tip_text1, const Glib::ustring tip_text2)
+                             Glib::ustring const &tip_text1, Glib::ustring const &tip_text2)
     : AttrWidget(a),
-      _s1(label1, value, lower, upper, step_increment, page_increment, digits, SPAttr::INVALID, tip_text1),
-      _s2(label2, value, lower, upper, step_increment, page_increment, digits, SPAttr::INVALID, tip_text2),
-      //TRANSLATORS: "Link" means to _link_ two sliders together
-      _link(C_("Sliders", "Link"))
+      _s1{std::move(label1), value, lower, upper, step_increment, page_increment, digits, SPAttr::INVALID, tip_text1},
+      _s2{std::move(label2), value, lower, upper, step_increment, page_increment, digits, SPAttr::INVALID, tip_text2}
 {
     set_name("DualSpinScale");
     signal_value_changed().connect(signal_attr_changed().make_slot());
@@ -133,24 +129,38 @@ DualSpinScale::DualSpinScale(const Glib::ustring label1, const Glib::ustring lab
     _s2.get_adjustment()->signal_value_changed().connect(_signal_value_changed.make_slot());
     _s1.get_adjustment()->signal_value_changed().connect(sigc::mem_fun(*this, &DualSpinScale::update_linked));
 
-    _link.signal_toggled().connect(sigc::mem_fun(*this, &DualSpinScale::link_toggled));
+    _link.set_relief(Gtk::RELIEF_NONE);
+    _link.set_focus_on_click(false);
+    _link.set_can_focus(false);
+    _link.get_style_context()->add_class("link-edit-button");
+    _link.set_valign(Gtk::ALIGN_CENTER);
+    _link.signal_clicked().connect(sigc::mem_fun(*this, &DualSpinScale::link_toggled));
 
-    Gtk::Box* vb = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
+    auto const vb = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
     vb->add(_s1);
+    _s1.set_margin_bottom(3);
     vb->add(_s2);
-    pack_start(*vb);
-    pack_start(_link, false, false);
-    _link.set_active(true);
+    UI::pack_start(*this, *vb);
+    UI::pack_start(*this, _link, false, false);
+    set_link_active(true);
+    _s2.set_sensitive(false);
 
     show_all();
 }
 
+void DualSpinScale::set_link_active(bool link) {
+    _linked = link;
+    _link.set_image_from_icon_name(_linked ? "entries-linked" : "entries-unlinked", Gtk::ICON_SIZE_LARGE_TOOLBAR);
+}
+
 Glib::ustring DualSpinScale::get_as_attribute() const
 {
-    if(_link.get_active())
+    if (_linked) {
         return _s1.get_as_attribute();
-    else
+    }
+    else {
         return _s1.get_as_attribute() + " " + _s2.get_as_attribute();
+    }
 }
 
 void DualSpinScale::set_from_attribute(SPObject* o)
@@ -167,7 +177,7 @@ void DualSpinScale::set_from_attribute(SPObject* o)
             if(toks[1])
                 v2 = Glib::Ascii::strtod(toks[1]);
 
-            _link.set_active(toks[1] == nullptr);
+            set_link_active(toks[1] == nullptr);
 
             _s1.get_adjustment()->set_value(v1);
             _s2.get_adjustment()->set_value(v2);
@@ -177,7 +187,7 @@ void DualSpinScale::set_from_attribute(SPObject* o)
     }
 }
 
-sigc::signal<void>& DualSpinScale::signal_value_changed()
+sigc::signal<void ()>& DualSpinScale::signal_value_changed()
 {
     return _signal_value_changed;
 }
@@ -204,20 +214,20 @@ SpinScale& DualSpinScale::get_SpinScale2()
 
 void DualSpinScale::link_toggled()
 {
-    _s2.set_sensitive(!_link.get_active());
+    _linked = !_linked;
+    set_link_active(_linked);
+    _s2.set_sensitive(!_linked);
     update_linked();
 }
 
 void DualSpinScale::update_linked()
 {
-    if(_link.get_active())
+    if (_linked) {
         _s2.set_value(_s1.get_value());
+    }
 }
 
-
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 /*
   Local Variables:

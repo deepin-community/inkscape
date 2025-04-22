@@ -27,66 +27,76 @@ Property management and parsing, CSS cascading, default value storage
     such as whether they are inheritable or can be given as presentation attributes
 """
 
+from __future__ import annotations
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
-import re
-from typing import Tuple, Dict, Type, Union, List, Optional
-from .interfaces.IElement import IBaseElement, ISVGDocumentElement
+from typing import (
+    Dict,
+    List,
+    Optional,
+    TYPE_CHECKING,
+    cast,
+)
+import tinycss2
+import tinycss2.ast
 
-from .units import parse_unit, convert_unit
+from .interfaces.IElement import IBaseElement
 
-from .colors import Color, ColorError
+from .units import convert_unit
+from .utils import FragmentError
+
+from .colors import Color
+
+if TYPE_CHECKING:
+    from .elements import BaseElement
+
+TokenList = List[tinycss2.ast.Node]
 
 
-class BaseStyleValue:
-    """A class encapsuling a single CSS declaration / presentation_attribute"""
+def _make_number_token_dimless(token):
+    if isinstance(token, (tinycss2.ast.NumberToken, tinycss2.ast.PercentageToken)):
+        return token.value
+    if isinstance(token, tinycss2.ast.DimensionToken):
+        return convert_unit(token.serialize(), "px")
+    raise ValueError("Not a number")
 
-    def __init__(self, declaration=None, attr_name=None, value=None, important=False):
-        self.attr_name: str
-        self.value: str
-        self.important: bool
-        if declaration is not None and ":" in declaration:
-            (
-                self.attr_name,
-                self.value,
-                self.important,
-            ) = BaseStyleValue.parse_declaration(declaration)
-        elif attr_name is not None:
-            self.attr_name = attr_name.strip().lower()
-            if isinstance(value, str):
-                self.value = value.strip()
-            else:
-                # maybe its already parsed? then set it
-                self.value = self.unparse_value(value)
-            self.important = important
-            _ = self.parse_value()  # check that we can parse this value
 
-    @classmethod
-    def parse_declaration(cls, declaration: str) -> Tuple[str, str, bool]:
-        """Parse a single css declaration
+def _get_tokens_from_value(value: str) -> TokenList:
+    return tinycss2.parse_one_declaration(f"a:{value}").value
 
-        Args:
-            declaration (str): a css declaration such as:
-                ``fill: #000 !important;``. The trailing semicolon may be ommitted.
 
-        Raises:
-            ValueError: Unable to parse the declaration
+def _is_ws(token: tinycss2.ast.Node) -> bool:
+    return isinstance(token, tinycss2.ast.WhitespaceToken)
 
-        Returns:
-            Tuple[str, str, bool]: a tuple with key, value and importance
-        """
-        if declaration != "" and ":" in declaration:
-            declaration = declaration.replace(";", "")
-            (name, value) = declaration.split(":", 1)
-            # check whether this is an important declaration
-            important = False
-            if "!important" in value:
-                value = value.replace("!important", "")
-                important = True
-            return (name.strip().lower(), value.strip(), important)
-        raise ValueError("Invalid declaration")
 
-    def parse_value(self, element=None):
+def _strip_whitespace_nodes(value: TokenList) -> TokenList:
+    try:
+        while _is_ws(value[0]):
+            del value[0]
+        while _is_ws(value[-1]):
+            del value[-1]
+        return value
+    except IndexError:
+        return []
+
+
+def _is_inherit(value: TokenList | None) -> bool:
+    return (
+        value is not None
+        and len(value) == 1
+        and isinstance(value[0], tinycss2.ast.IdentToken)
+        and value[0].value == "inherit"
+    )
+
+
+class _StyleConverter:
+    """Converter between str and computed value of a style, with context element"""
+
+    # pylint: disable=unused-argument
+    def convert(
+        self, value: TokenList, element: Optional[BaseElement] = None
+    ) -> object:
         """Get parsed property value with resolved urls, color, etc.
 
         Args:
@@ -97,327 +107,228 @@ class BaseStyleValue:
         Returns:
             object: parsed property value
         """
-        if self.value == "inherit":
-            if self.attr_name in all_properties:
-                return self._parse_value(all_properties[self.attr_name][1], element)
-            return None
-        return self._parse_value(self.value, element)
+        return tinycss2.serialize(value)
 
-    def _parse_value(  # pylint: disable=unused-argument, no-self-use
-        self, value: str, element=None
-    ) -> object:
-        """internal parse method, to be overwritten by derived classes
+    def raise_invalid_value(
+        self, value: TokenList, element: Optional[BaseElement] = None
+    ) -> None:
+        """Checks if the value str is valid in the context of element.
 
         Args:
-            value (str): unparsed value
-            element (BaseElement): the SVG element to which this style is applied to
-                [optional]
-
-        Returns:
-            object: the parsed value
-        """
-        return value
-
-    def unparse_value(self, value: object) -> str:
-        """ "Unparses" an object, i.e. converts an object back to an attribute.
-        If the result is invalid, i.e. can't be parsed, an exception is raised.
-
-        Args:
-            value (object): the object to be unparsed
-
-        Returns:
-            str: the attribute value
-        """
-        result = self._unparse_value(value)
-        self._parse_value(result)  # check if value can be parsed (value is valid)
-        return result
-
-    def _unparse_value(self, value: object) -> str:  # pylint: disable=no-self-use
-        return str(value)
-
-    @property
-    def declaration(self) -> str:
-        """The css declaration corresponding to the StyleValue object
-
-        Returns:
-            str: the css declaration, such as "fill: #000 !important;"
-        """
-        return (
-            self.attr_name
-            + ":"
-            + self.value
-            + (" !important" if self.important else "")
-        )
-
-    @classmethod
-    def factory(
-        cls,
-        declaration: Optional[str] = None,
-        attr_name: Optional[str] = None,
-        value: Optional[object] = None,
-        important: Optional[bool] = False,
-    ):
-        """Create an attribute
-
-        Args:
-            declaration (str, optional): the CSS declaration to parse. Defaults to None.
-            attr_name (str, optional): the attribute name. Defaults to None.
-            value (object, optional): the attribute value. Defaults to None.
-            important (bool, optional): whether the attribute is marked !important.
-                Defaults to False.
+            value (str): attribute value
+            element (Optional[BaseElement], optional): Context element. Defaults to
+                None.
 
         Raises:
-            Errors may also be raised on parsing, so make sure to handle them
-
-        Returns:
-            BaseStyleValue: the parsed style
+            various exceptions if the property has a bad value
         """
-        if declaration is not None and ":" in declaration:
-            attr_name, value, important = BaseStyleValue.parse_declaration(declaration)
-        elif attr_name is not None and value is not None:
-            attr_name = attr_name.strip().lower()
-            if isinstance(value, str):
-                value = value.strip()
+        self.convert(value, element)
 
-        if attr_name in all_properties:
-            valuetype = all_properties[attr_name][0]
-            return valuetype(declaration, attr_name, value, important)
-        return BaseStyleValue(declaration, attr_name, value, important)
-
-    def __eq__(self, other):
-        if not (isinstance(other, BaseStyleValue)):
-            return False
-        if self.declaration != other.declaration:
-            return False
-        return True
-
-    @staticmethod
-    def factory_errorhandled(element=None, declaration="", key="", value=""):
-        """Error handling for the factory method: if something goes wrong during
-        parsing, ignore the attribute
+    def convert_back(
+        self, value: object, element: Optional[BaseElement] = None
+    ) -> TokenList:
+        """Converts value back to string in the context of element.
 
         Args:
-            element (BaseElement, optional): The element this declaration is affecting,
-                for finding gradients ect. Defaults to None.
-            declaration (str, optional): the CSS declaration to parse. Defaults to "".
-            key (str, optional): the attribute name. Defaults to "".
-            value (str, optional): the attribute value. Defaults to "".
+            value (object): parsed value of attribute
+            element (_type_, optional): Context element. Defaults to None.
 
         Returns:
-            BaseStyleValue: The parsed style
+            str: _description_
         """
-        try:
-            value = BaseStyleValue.factory(
-                declaration=declaration, attr_name=key, value=value
-            )
-            key = value.attr_name
-            # Try to parse the attribute
-            _ = value.parse_value(element)
-            return (key, value)
-        except ValueError:
-            # something went wrong during parsing, e.g. a bad attribute format
-            # or an attribute referencing a missing gradient
-            # -> ignore this declaration
-            pass
-        except ColorError:
-            # The color parsing methods have their own error type
-            pass
+        return _get_tokens_from_value(str(value))
 
 
-class AlphaValue(BaseStyleValue):
+class _AlphaValueConverter(_StyleConverter):
     """Stores an alpha value (such as opacity), which may be specified as
     as percentage or absolute value.
 
     Reference: https://www.w3.org/TR/css-color/#typedef-alpha-value"""
 
-    def _parse_value(self, value: str, element=None):
-        if value[-1] == "%":  # percentage
-            parsed_value = float(value[:-1]) * 0.01
+    def convert(
+        self, value: TokenList, element: Optional[BaseElement] = None
+    ) -> object:
+        if isinstance(value[0], tinycss2.ast.NumberToken):
+            parsed_value = value[0].value
+        elif isinstance(value[0], tinycss2.ast.PercentageToken):
+            parsed_value = value[0].value / 100
         else:
-            parsed_value = float(value)
-        if parsed_value < 0:
-            return 0
-        if parsed_value > 1:
-            return 1
-        return parsed_value
+            raise ValueError()
+        return min(max(parsed_value, 0), 1)
 
-    def _unparse_value(self, value: object) -> str:
+    def convert_back(
+        self, value: object, element: Optional[BaseElement] = None
+    ) -> TokenList:
         if isinstance(value, (float, int)):
-            if value < 0:
-                return "0"
-            if value > 1:
-                return "1"
-            return str(value)
+            value = min(max(value, 0), 1)
+            return [tinycss2.ast.NumberToken(0, 0, value, value, f"{value}")]
         raise ValueError("Value must be number")
 
 
-class ColorValue(BaseStyleValue):
-    """Stores a color value
+class _ColorValueConverter(_StyleConverter):
+    """Converts a color value
 
     Reference: https://drafts.csswg.org/css-color-3/#valuea-def-color"""
 
-    def _parse_value(self, value: str, element=None):
-        if value == "currentColor":
+    def convert(
+        self, value: TokenList, element: Optional[BaseElement] = None
+    ) -> object:
+        # Process this as string
+        vstr = _StyleConverter.convert(self, value, element)
+        if vstr == "currentColor":
             if element is not None:
-                style = element.specified_style()
-                return style("color")
+                return element.get_computed_style("color")
             return None
-        return Color(value)
+        return Color(vstr)
 
 
-# https://www.w3.org/TR/css3-values/#url-value
-# matches anything inside url() enclosed with single/double quotes
-# (technically a fragment url) or no quotes at all
-URLREGEX = r"url\(\s*('.*?'|\".*?\"|[^\"'].*?)\s*\)"
-
-
-def match_url_and_return_element(string: str, svg):
-    """Parses a string containing an url, e.g. "url(#rect1234)",
-    looks up the element in the svg document and returns it.
-
-    Args:
-        string (str): the string to parse
-        svg (SvgDocumentElement): document referenced in the URL
-
-    Raises:
-        ValueError: if the string has invalid format
-        ValueError: if the referenced element is not found
-
-    Returns:
-        BaseElement: the referenced element
-    """
-    regex = re.compile(URLREGEX)
-    match = regex.match(string)
-    if match:
-        url = match.group(1)
-        paint_server = svg.getElementById(url)
-        return paint_server
-    raise ValueError("invalid URL format")
-
-
-class URLNoneValue(BaseStyleValue):
-    """Stores a value that is either none or an url, such as markers or masks.
+class _URLNoneValueConverter(_StyleConverter):
+    """Converts a value that is either none or an url, such as markers or masks.
 
     Reference: https://www.w3.org/TR/SVG2/painting.html#VertexMarkerProperties"""
 
-    def _parse_value(self, value: str, element=None):
-        if value == "none":
+    def convert(
+        self, value: TokenList, element: Optional[BaseElement] = None
+    ) -> object:
+        if len(value) == 0:
             return None
-        if value[0:4] == "url(":
+        value = value[0]
+        if isinstance(value, tinycss2.ast.URLToken):
             if element is not None and self.element_has_root(element):
-                return match_url_and_return_element(value, element.root)
+                return element.root.getElementById(value.value)
+            return value.serialize()
+        if isinstance(value, tinycss2.ast.IdentToken):
             return None
+
         raise ValueError("Invalid property value")
 
-    def _unparse_value(self, value: object):
+    def convert_back(
+        self, value: object, element: Optional[BaseElement] = None
+    ) -> TokenList:
         if isinstance(value, IBaseElement):
-            return f"url(#{value.get_id()})"
-        return super()._unparse_value(value)
+            if element is not None:
+                value = _URLNoneValueConverter._insert_if_necessary(element, value)
+            return [tinycss2.ast.URLToken(0, 0, value.get_id(), value.get_id(as_url=2))]
+        return [tinycss2.ast.IdentToken(0, 0, "none")]
 
     @staticmethod
     def element_has_root(element) -> bool:
-        "Checks if an element has a root, i.e. if element.root will fail"
+        "Checks if an element has a root"
+        try:
+            _ = element.root
+            return True
+        except FragmentError:
+            return False
 
-        return not (
-            element.getparent() is None and not isinstance(element, ISVGDocumentElement)
-        )
+    @staticmethod
+    def _insert_if_necessary(element: BaseElement, value: BaseElement) -> BaseElement:
+        """Ensures that the return (value or a deep copy of it) is inside the same
+        document as element.
+
+        if element is unrooted, don't do anything (just return value)
+        If element is attached to the same document as value, return value.
+        If value is not attached to a document, attach it to the defs of element's
+        document and return value.
+        If value is already attached to another document, create a copy and return the
+        copy.
+
+        .. versionadded:: 1.4"""
+        # Check if the element is rooted and has the same root as self.element.
+        try:
+            _ = element.root
+            try:
+                if value.root != element.root:
+                    # Create a copy and attach it to the tree.
+                    copy = value.copy()
+                    element.root.defs.append(copy)
+                    return copy
+            except FragmentError:
+                element.root.defs.append(value)
+                return value
+
+        except FragmentError:
+            pass
+        return value
 
 
-class PaintValue(ColorValue, URLNoneValue):
+class _PaintValueConverter(_ColorValueConverter, _URLNoneValueConverter):
     """Stores a paint value (such as fill and stroke), which may be specified
     as color, or url.
 
     Reference: https://www.w3.org/TR/SVG2/painting.html#SpecifyingPaint"""
 
-    def _parse_value(self, value: str, element=None):
-        if value == "none":
-            return None
-        if value in ["context-fill", "context-stroke"]:
-            return value
-        if value == "currentColor":
-            return super()._parse_value(value, element)
-        if value[0:4] == "url(":
-            # First part: fragment url
-            # second part: a fallback color if the url is not found. Colors start with
-            # a letter or a #
-            regex = re.compile(URLREGEX + r"\s*([#\w].*?)?$")
-            match = regex.match(value)
-            if match:
-                url = match.group(1)
-                if element is not None and self.element_has_root(element):
-                    paint_server = element.root.getElementById(url)
-                else:
-                    return None
-                if paint_server is not None:
-                    return paint_server
-                if match.group(2) is None:
-                    raise ValueError("Paint server not found")
-                return Color(match.group(2))
-        return Color(value)
+    def convert(
+        self, value: TokenList, element: Optional[BaseElement] = None
+    ) -> object:
+        v0 = value[0]
+        if isinstance(v0, tinycss2.ast.IdentToken):
+            if v0.value == "none":
+                return None
+            if v0.value == "currentColor":
+                return _ColorValueConverter.convert(self, value, element)
+            if v0.value in ["context-fill", "context-stroke"]:
+                return v0.value
+            else:
+                return Color(v0.value)
 
-    def _unparse_value(self, value: object):
+        if isinstance(v0, tinycss2.ast.HashToken):
+            return Color("#" + v0.value)
+        if isinstance(v0, tinycss2.ast.URLToken):
+            if element is not None and self.element_has_root(element):
+                paint_server = element.root.getElementById(v0.value[1:])
+            else:
+                return None
+            if paint_server is not None:
+                return paint_server
+            for i in value[1:]:
+                if isinstance(i, tinycss2.ast.IdentToken):
+                    return Color(i.value)
+            raise ValueError("Paint server not found")
+        if isinstance(v0, tinycss2.ast.FunctionBlock) and v0.name in [
+            "rgb",
+            "rgba",
+            "hsl",
+            "hsla",
+        ]:
+            arguments = [str(argument.value) for argument in v0.arguments]
+            return Color(f"{v0.name}({''.join(arguments)})")
+        raise ValueError("Unknown color specification")
+
+    def convert_back(
+        self, value: object, element: Optional[BaseElement] = None
+    ) -> TokenList:
         if value is None:
-            return "none"
-        return super()._unparse_value(value)
+            return [tinycss2.ast.IdentToken(0, 0, "none")]
+        if isinstance(value, IBaseElement):
+            return _URLNoneValueConverter.convert_back(self, value, element=element)
+        return _ColorValueConverter.convert_back(self, value, element=element)
 
 
-class EnumValue(BaseStyleValue):
+class _EnumValueConverter(_StyleConverter):
     """Stores a value that can only have a finite set of options"""
 
-    def __init__(self, declaration=None, attr_name=None, value=None, important=False):
-        self.valueset = all_properties[attr_name][4]
-        super().__init__(declaration, attr_name, value, important)
+    def __init__(self, options):
+        self.options = options
 
-    def _parse_value(self, value: str, element=None):
-        if value in self.valueset:
-            return value
-        raise ValueError(
-            f"Value '{value}' is invalid for the property {self.attr_name}. "
-            + f"Allowed values are: {self.valueset + ['inherit']}"
-        )
+    def raise_invalid_value(
+        self, value: TokenList, element: BaseElement | None = None
+    ) -> None:
+        if tinycss2.serialize(value) not in self.options:
+            raise ValueError(
+                f"Value '{tinycss2.serialize(value)}' is invalid for the property"
+            )
 
 
-class ShorthandValue(BaseStyleValue, ABC):
+class _ShorthandValueConverter(_StyleConverter):
     """Stores a value that sets other values (e.g. the font shorthand)"""
 
-    def apply_shorthand(self, style):
-        """Applies a shorthand attribute to its style, respecting the
-        importance state of the individual attributes.
+    def __init__(self, keys) -> None:
+        super().__init__()
 
-        Args:
-            style (Style): the style that the shorthand attribute is contained in,
-                and that the shorthand attribute will be applied on
-        """
-        if self.attr_name not in style:
-            return
-
-        dct = self.get_shorthand_changes()
-        importance = self.important
-
-        # they are ordered in the order of adding the style elements.
-        current_keys = list(style.keys())
-        for curkey in dct:
-            perform = False
-            if curkey not in current_keys:
-                # this is the easiest case, just set the element and the importance
-                perform = True
-            else:
-                if importance != style.get_importance(curkey):
-                    # different importance, result independent of position
-                    perform = importance
-                else:
-                    # only apply if style overwrites previous with same importance
-                    perform = current_keys.index(curkey) < current_keys.index(
-                        self.attr_name
-                    )
-
-            if perform:
-                style[curkey] = dct[curkey]
-                style.set_importance(curkey, importance)
-        style.pop(self.attr_name)
+        self.keys = keys
 
     @abstractmethod
-    def get_shorthand_changes(self) -> Dict[str, str]:
+    def get_shorthand_changes(self, value) -> Dict[str, str]:
         """calculates the value of affected attributes for this shorthand
 
         Returns:
@@ -426,226 +337,29 @@ class ShorthandValue(BaseStyleValue, ABC):
         """
 
 
-class FontValue(ShorthandValue):
+class _FontValueShorthandConverter(_ShorthandValueConverter):
     """Logic for the shorthand font property"""
 
-    def get_shorthand_changes(self):
-        keys = [
-            "font-style",
-            "font-variant",
-            "font-weight",
-            "font-stretch",
-            "font-size",
-            "line-height",
-            "font-family",
-        ]
-        options = {
-            key: all_properties[key][4]
-            for key in keys
-            if isinstance(all_properties[key][4], list)
+    def __init__(self) -> None:
+        super().__init__(
+            [
+                "font-style",
+                "font-variant",
+                "font-weight",
+                "font-stretch",
+                "font-size",
+                "line-height",
+                "font-family",
+            ]
+        )
+        self.options = {
+            key: all_properties[key].converter.options  # type: ignore
+            for key in self.keys
+            if isinstance(all_properties[key].converter, _EnumValueConverter)
         }
-        result = {key: all_properties[key][1] for key in keys}
-
-        tokens = [i for i in self.value.split(" ") if i != ""]
-
-        if len(tokens) == 0:
-            return {}  # shorthand not set, nothing to do
-
-        while not (len(tokens) == 0):
-            cur = tokens[0]
-            if cur in options["font-style"]:
-                result["font-style"] = cur
-            elif cur in options["font-variant"]:
-                result["font-variant"] = cur
-            elif cur in options["font-weight"]:
-                result["font-weight"] = cur
-            elif cur in options["font-stretch"]:
-                result["font-stretch"] = cur
-            else:
-                if "/" in cur:
-                    result["font-size"], result["line-height"] = cur.split("/")
-                else:
-                    result["font-size"] = cur
-                result["font-family"] = " ".join(tokens[1:])
-                break
-            tokens = tokens[1:]  # remove first element
-        return result
-
-
-class MarkerShorthandValue(ShorthandValue, URLNoneValue):
-    """Logic for the marker shorthand property"""
-
-    def get_shorthand_changes(self):
-        if self.value == "":
-            return {}  # shorthand not set, nothing to do
-        return {k: self.value for k in ["marker-start", "marker-end", "marker-mid"]}
-
-    def _parse_value(self, value: str, element=None):
-        # Make sure the parsing routine doesn't choke on an empty shorthand
-        if value == "":
-            return ""
-        return super()._parse_value(value, element)
-
-
-class FontSizeValue(BaseStyleValue):
-    """Logic for the font-size property"""
-
-    def _parse_value(self, value: str, element=None):
-        if element is None:
-            return value  # no additional logic in this case
-        try:
-            return element.to_dimensionless(value)
-        except ValueError:  # unable to parse font size, e.g. font-size:normal
-            return element.to_dimensionless("12pt")
-
-
-class StrokeDasharrayValue(BaseStyleValue):
-    """Logic for the stroke-dasharray property"""
-
-    def _parse_value(self, value: str, element=None):
-        dashes = re.findall(r"[^,\s]+", value)
-        if len(dashes) == 0 or value == "none":
-            return None  # no dasharray applied
-        if not any(parse_unit(i) is None for i in dashes):
-            dashes = [convert_unit(i, "px") for i in dashes]
-        else:
-            return None
-        if any(i < 0 for i in dashes):
-            return None  # one negative value makes the dasharray invalid
-        if len(dashes) % 2 == 1:
-            dashes = 2 * dashes
-        return dashes
-
-    def _unparse_value(self, value: object) -> str:
-        if value is None:
-            return "none"
-        if isinstance(value, list):
-            return " ".join(map(str, value))
-        return str(value)
-
-
-# keys: attributes, right side:
-# - Subclass of BaseStyleValue used for instantiating
-# - default value
-# - is presentation attribute
-# - inherited
-# - additional information, such as valid enum values
-# For properties which have no special implementation yet:
-# "(BaseStyleValue, <default>, <inheritance>, None)"
-
-# Source for this list: https://www.w3.org/TR/SVG2/styling.html#PresentationAttributes
-
-
-all_properties: Dict[
-    str, Tuple[Type[BaseStyleValue], str, bool, bool, Union[List[str], None]]
-] = {
-    "alignment-baseline": (
-        EnumValue,
-        "baseline",
-        True,
-        False,
-        [
-            "baseline",
-            "text-bottom",
-            "alphabetic",
-            "ideographic",
-            "middle",
-            "central",
-            "mathematical",
-            "text-top",
-        ],
-    ),
-    "baseline-shift": (BaseStyleValue, "0", True, False, None),
-    "clip": (BaseStyleValue, "auto", True, False, None),
-    "clip-path": (URLNoneValue, "none", True, False, None),
-    "clip-rule": (EnumValue, "nonzero", True, True, ["nonzero", "evenodd"]),
-    # only used for currentColor, which is not yet implemented
-    "color": (PaintValue, "black", True, True, None),
-    "color-interpolation": (
-        EnumValue,
-        "sRGB",
-        True,
-        True,
-        ["sRGB", "auto", "linearRGB"],
-    ),
-    "color-interpolation-filters": (
-        EnumValue,
-        "linearRGB",
-        True,
-        True,
-        ["auto", "sRGB", "linearRGB"],
-    ),
-    "color-rendering": (
-        EnumValue,
-        "auto",
-        True,
-        True,
-        ["auto", "optimizeSpeed", "optimizeQuality"],
-    ),
-    "cursor": (BaseStyleValue, "auto", True, True, None),
-    "direction": (EnumValue, "ltr", True, True, ["ltr", "rtl"]),
-    "display": (
-        EnumValue,
-        "inline",
-        True,
-        False,
-        [
-            "inline",
-            "block",
-            "list-item",
-            "inline-block",
-            "table",
-            "inline-table",
-            "table-row-group",
-            "table-header-group",
-            "table-footer-group",
-            "table-row",
-            "table-column-group",
-            "table-column",
-            "table-cell",
-            "table-caption",
-            "none",
-        ],
-    ),  # every value except none is rendered normally
-    "dominant-baseline": (
-        EnumValue,
-        "auto",
-        True,
-        True,
-        [
-            "auto",
-            "text-bottom",
-            "alphabetic",
-            "ideographic",
-            "middle",
-            "central",
-            "mathematical",
-            "hanging",
-            "text-top",
-        ],
-    ),
-    "fill": (
-        PaintValue,
-        "black",
-        True,
-        True,
-        None,
-    ),  # the normal fill, not the <animation> one
-    "fill-opacity": (AlphaValue, "1", True, True, None),
-    "fill-rule": (EnumValue, "nonzero", True, True, ["nonzero", "evenodd"]),
-    "filter": (BaseStyleValue, "none", True, False, None),
-    "flood-color": (PaintValue, "black", True, False, None),
-    "flood-opacity": (AlphaValue, "1", True, False, None),
-    "font": (FontValue, "", True, False, None),
-    "font-family": (BaseStyleValue, "sans-serif", True, True, None),
-    "font-size": (FontSizeValue, "medium", True, True, None),
-    "font-size-adjust": (BaseStyleValue, "none", True, True, None),
-    "font-stretch": (
-        EnumValue,
-        "normal",
-        True,
-        True,
-        [
+        # Font stretch can be specified in percent, but for the
+        # shorthand, only a keyword value is allowed
+        self.options["font-stretch"] = (
             "normal",
             "ultra-condensed",
             "extra-condensed",
@@ -655,146 +369,587 @@ all_properties: Dict[
             "expanded",
             "extra-expanded",
             "ultra-expanded",
-        ],
+        )
+
+    def get_shorthand_changes(self, value):
+        result = {key: all_properties[key].default_value for key in self.keys}
+
+        if len(value) == 0:
+            return result  # shorthand not set, nothing to do
+        i = 0
+        while i < len(value):
+            cur = value[i]
+            matched = False
+            if isinstance(cur, tinycss2.ast.IdentToken):
+                matched = True
+                if cur.value in self.options["font-style"]:
+                    result["font-style"] = [cur]
+                elif cur.value in self.options["font-variant"]:
+                    result["font-variant"] = [cur]
+                elif cur.value in self.options["font-weight"]:
+                    result["font-weight"] = [cur]
+                elif cur.value in self.options["font-stretch"]:
+                    result["font-stretch"] = [cur]
+                else:
+                    matched = False
+            if not matched and not isinstance(cur, tinycss2.ast.WhitespaceToken):
+                result["font-size"] = [cur]
+                if (
+                    len(value) > i + 1
+                    and isinstance(value[i + 1], tinycss2.ast.LiteralToken)
+                    and value[i + 1].value == "/"
+                ):
+                    result["line-height"] = [value[i + 2]]
+                    i += 2
+                if len(value[i + 1 :]) > 0:
+                    result["font-family"] = _strip_whitespace_nodes(value[i + 1 :])
+                break
+            i += 1
+        return result
+
+
+class _TextDecorationValueConverter(_ShorthandValueConverter):
+    """Logic for the shorthand font property
+
+    .. versionadded:: 1.3"""
+
+    def __init__(self):
+        super().__init__(
+            ["text-decoration-style", "text-decoration-color", "text-decoration-line"]
+        )
+        self.options = {
+            "text-decoration-" + key: all_properties[
+                "text-decoration-" + key
+            ].converter.options
+            for key in ("line", "style", "color")
+            if isinstance(
+                all_properties["text-decoration-" + key].converter, _EnumValueConverter
+            )
+        }
+
+    def get_shorthand_changes(self, value):
+        result = {
+            "text-decoration-style": all_properties[
+                "text-decoration-style"
+            ].default_value,
+            "text-decoration-color": "currentcolor",
+            "text-decoration-line": [],
+        }
+
+        for cur in (i.serialize() for i in value):
+            if cur in ["underline", "overline", "line-through", "blink"]:
+                result["text-decoration-line"] += [cur]
+            elif cur in self.options["text-decoration-style"]:
+                result["text-decoration-style"] = cur
+            else:
+                result["text-decoration-color"] = cur
+
+        if len(result["text-decoration-line"]) == 0:
+            result["text-decoration-line"] = all_properties[
+                "text-decoration-line"
+            ].default_value
+        else:
+            # Text-decoration-line can have multiple values.
+            result["text-decoration-line"] = " ".join(result["text-decoration-line"])
+
+        return result
+
+
+class _MarkerShorthandValueConverter(_ShorthandValueConverter, _URLNoneValueConverter):
+    """Logic for the marker shorthand property"""
+
+    def __init__(self) -> None:
+        super().__init__(["marker-start", "marker-end", "marker-mid"])
+
+    def get_shorthand_changes(self, value):
+        if value == "":
+            return {}  # shorthand not set, nothing to do
+        return {k: value for k in self.keys}
+
+    def convert_back(
+        self, value: object, element: Optional[BaseElement] = None
+    ) -> TokenList:
+        """Convert value back to a tokenlist"""
+        return _URLNoneValueConverter.convert_back(self, value, element)
+
+
+class _FontSizeValueConverter(_StyleConverter):
+    """Logic for the font-size property"""
+
+    def convert(
+        self, value: TokenList, element: Optional[BaseElement] = None
+    ) -> object:
+        v0 = value[0].serialize()
+        if element is None:
+            return v0  # no additional logic in this case
+        if isinstance(
+            value[0],
+            (
+                tinycss2.ast.NumberToken,
+                tinycss2.ast.PercentageToken,
+                tinycss2.ast.DimensionToken,
+            ),
+        ):
+            return element.to_dimensionless(v0)
+        # unable to parse font size, e.g. font-size:normal
+        return v0
+
+
+class _StrokeDasharrayValueConverter(_StyleConverter):
+    """Logic for the stroke-dasharray property"""
+
+    def convert(
+        self, value: TokenList, element: Optional[BaseElement] = None
+    ) -> object:
+        dashes = []
+        i = 0
+        for i, el in enumerate(value):
+            if (
+                i == 0
+                and isinstance(el, tinycss2.ast.IdentToken)
+                and el.value == "none"
+            ):
+                return []
+            # whitespace or comma separated list
+            if isinstance(el, (tinycss2.ast.WhitespaceToken)) or (
+                isinstance(el, tinycss2.ast.LiteralToken) and el.value == ","
+            ):
+                continue
+            if isinstance(el, (tinycss2.ast.DimensionToken, tinycss2.ast.NumberToken)):
+                dashes.append(_make_number_token_dimless(el))
+            else:
+                return []
+        if any(i < 0 for i in dashes):
+            # one negative value makes the dasharray invalid
+            return []
+        if len(dashes) % 2 == 1:
+            dashes = 2 * dashes
+        return dashes
+
+    def convert_back(
+        self, value: object, element: Optional[BaseElement] = None
+    ) -> TokenList:
+        if value is None or not value:
+            value = "none"
+        if isinstance(value, list):
+            if len(value) == 0:
+                value = "none"
+            else:
+                value = " ".join(map(str, value))
+        return _get_tokens_from_value(str(value))
+
+
+class _FilterListConverter(_URLNoneValueConverter):
+    """Stores a list of Filters
+
+    .. versionadded:: 1.4"""
+
+    def convert(
+        self, value: TokenList, element: Optional[BaseElement] = None
+    ) -> object:
+        if element is None or value == "none":
+            return []
+
+        try:
+            result = [
+                element.root.getElementById(item.value)
+                for item in value
+                if isinstance(item, tinycss2.ast.URLToken)
+            ]
+            return [i for i in result if i is not None]
+        except FragmentError:
+            return [
+                item.serialize()
+                for item in value
+                if isinstance(item, tinycss2.ast.URLToken)
+            ]
+        except ValueError:  # broken link
+            return []
+
+    def convert_back(
+        self, value: object, element: Optional[BaseElement] = None
+    ) -> TokenList:
+        if isinstance(value, IBaseElement) or not isinstance(value, (list, tuple)):
+            value = [value]
+        if all((isinstance(i, str) for i in value)):
+            return _get_tokens_from_value(" ".join(value))  # type: ignore
+        assert element is not None
+        value = cast("List[BaseElement]", value)
+        try:
+            _ = element.root
+            for i in value:
+                if i is None:
+                    continue
+                # insert the element
+                inserted = self._insert_if_necessary(element, cast("BaseElement", i))
+                # if a copy was created, replace the original in the list with the copy
+                if inserted is not i:
+                    for index, item in enumerate(value):
+                        if item is i:
+                            value[index] = inserted
+        except FragmentError:
+            # Element is unrooted, we skip this step.
+            pass
+        return _get_tokens_from_value(
+            " ".join(f"url(#{i.get_id()})" for i in value if i is not None)
+        )
+
+
+@dataclass
+class PropertyDescription:
+    """Describes a CSS / presentation attribute"""
+
+    name: str
+    converter: _StyleConverter
+    default_value: TokenList
+    presentation: bool
+    inherited: bool
+
+    def __init__(
+        self,
+        name: str,
+        converter: _StyleConverter,
+        default_value: str,
+        presentation: bool = False,
+        inherited: bool = False,
+    ):
+        self.presentation = presentation
+        self.inherited = inherited
+        self.default_value = _get_tokens_from_value(default_value)
+        self.name = name
+        self.converter = converter
+
+
+# Source for this list: https://www.w3.org/TR/SVG2/styling.html#PresentationAttributes
+properties_list: List[PropertyDescription] = [
+    PropertyDescription(
+        "alignment-baseline",
+        _EnumValueConverter(
+            [
+                "baseline",
+                "text-bottom",
+                "alphabetic",
+                "ideographic",
+                "middle",
+                "central",
+                "mathematical",
+                "text-top",
+            ]
+        ),
+        "baseline",
+        True,
+        False,
     ),
-    "font-style": (EnumValue, "normal", True, True, ["normal", "italic", "oblique"]),
-    # a lot more values and subproperties in SVG2 / CSS-Fonts3
-    "font-variant": (EnumValue, "normal", True, True, ["normal", "small-caps"]),
-    "font-weight": (
-        EnumValue,
-        "normal",
+    PropertyDescription("baseline-shift", _StyleConverter(), "0", True, False),
+    PropertyDescription("clip", _StyleConverter(), "auto", True, False),
+    PropertyDescription("clip-path", _URLNoneValueConverter(), "none", True, False),
+    PropertyDescription(
+        "clip-rule", _EnumValueConverter(["nonzero", "evenodd"]), "nonzero", True, True
+    ),
+    PropertyDescription("color", _PaintValueConverter(), "black", True, True),
+    PropertyDescription(
+        "color-interpolation",
+        _EnumValueConverter(["sRGB", "auto", "linearRGB"]),
+        "sRGB",
         True,
         True,
-        ["normal", "bold"] + [str(i) for i in range(100, 901, 100)],
     ),
-    "glyph-orientation-horizontal": (BaseStyleValue, "0deg", True, True, None),
-    "glyph-orientation-vertical": (BaseStyleValue, "auto", True, True, None),
-    "image-rendering": (
-        EnumValue,
+    PropertyDescription(
+        "color-interpolation-filters",
+        _EnumValueConverter(["auto", "sRGB", "linearRGB"]),
+        "linearRGB",
+        True,
+        True,
+    ),
+    PropertyDescription(
+        "color-rendering",
+        _EnumValueConverter(
+            ["auto", "optimizeSpeed", "optimizeQuality", "pixelated", "crisp-edges"]
+        ),
         "auto",
         True,
         True,
-        ["auto", "optimizeQuality", "optimizeSpeed"],
     ),
-    "letter-spacing": (BaseStyleValue, "normal", True, True, None),
-    "lighting-color": (ColorValue, "normal", True, False, None),
-    "line-height": (BaseStyleValue, "normal", False, True, None),
-    "marker": (MarkerShorthandValue, "", True, True, None),
-    "marker-end": (URLNoneValue, "none", True, True, None),
-    "marker-mid": (URLNoneValue, "none", True, True, None),
-    "marker-start": (URLNoneValue, "none", True, True, None),
-    # is a shorthand for a lot of mask-related properties which Inkscape doesn't support
-    "mask": (URLNoneValue, "none", True, False, None),
-    "opacity": (AlphaValue, "1", True, False, None),
-    "overflow": (
-        EnumValue,
+    PropertyDescription("cursor", _StyleConverter(), "auto", True, True),
+    PropertyDescription(
+        "direction", _EnumValueConverter(["ltr", "rtl"]), "ltr", True, True
+    ),
+    PropertyDescription(
+        "display",
+        _EnumValueConverter(
+            [
+                "inline",
+                "block",
+                "list-item",
+                "inline-block",
+                "table",
+                "inline-table",
+                "table-row-group",
+                "table-header-group",
+                "table-footer-group",
+                "table-row",
+                "table-column-group",
+                "table-column",
+                "table-cell",
+                "table-caption",
+                "none",
+            ]
+        ),
+        "inline",
+        True,
+        False,
+    ),
+    PropertyDescription(
+        "dominant-baseline",
+        _EnumValueConverter(
+            [
+                "auto",
+                "text-bottom",
+                "alphabetic",
+                "ideographic",
+                "middle",
+                "central",
+                "mathematical",
+                "hanging",
+                "text-top",
+            ]
+        ),
+        "auto",
+        True,
+        True,
+    ),
+    PropertyDescription("fill", _PaintValueConverter(), "black", True, True),
+    PropertyDescription("fill-opacity", _AlphaValueConverter(), "1", True, True),
+    PropertyDescription(
+        "fill-rule", _EnumValueConverter(["nonzero", "evenodd"]), "nonzero", True, True
+    ),
+    PropertyDescription("filter", _FilterListConverter(), "none", True, False),
+    PropertyDescription("flood-color", _PaintValueConverter(), "black", True, False),
+    PropertyDescription("flood-opacity", _AlphaValueConverter(), "1", True, False),
+    PropertyDescription("font-family", _StyleConverter(), "sans-serif", True, True),
+    PropertyDescription("font-size", _FontSizeValueConverter(), "medium", True, True),
+    PropertyDescription("font-size-adjust", _StyleConverter(), "none", True, True),
+    PropertyDescription("font-stretch", _StyleConverter(), "normal", True, True),
+    PropertyDescription(
+        "font-style",
+        _EnumValueConverter(["normal", "italic", "oblique"]),
+        "normal",
+        True,
+        True,
+    ),
+    PropertyDescription(
+        "font-variant",
+        _EnumValueConverter(["normal", "small-caps"]),
+        "normal",
+        True,
+        True,
+    ),
+    PropertyDescription(
+        "font-weight",
+        _EnumValueConverter(
+            ["normal", "bold"] + [str(i) for i in range(100, 901, 100)]
+        ),
+        "normal",
+        True,
+        True,
+    ),
+    PropertyDescription(
+        "glyph-orientation-horizontal", _StyleConverter(), "0deg", True, True
+    ),
+    PropertyDescription(
+        "glyph-orientation-vertical", _StyleConverter(), "auto", True, True
+    ),
+    PropertyDescription("inline-size", _StyleConverter(), "0", False, False),
+    PropertyDescription(
+        "image-rendering",
+        _EnumValueConverter(["auto", "optimizeQuality", "optimizeSpeed"]),
+        "auto",
+        True,
+        True,
+    ),
+    PropertyDescription("letter-spacing", _StyleConverter(), "normal", True, True),
+    PropertyDescription(
+        "lighting-color", _ColorValueConverter(), "normal", True, False
+    ),
+    PropertyDescription("line-height", _StyleConverter(), "normal", False, True),
+    PropertyDescription("marker", _MarkerShorthandValueConverter(), ""),
+    PropertyDescription("marker-end", _URLNoneValueConverter(), "none", True, True),
+    PropertyDescription("marker-mid", _URLNoneValueConverter(), "none", True, True),
+    PropertyDescription("marker-start", _URLNoneValueConverter(), "none", True, True),
+    PropertyDescription("mask", _URLNoneValueConverter(), "none", True, False),
+    PropertyDescription("opacity", _AlphaValueConverter(), "1", True, False),
+    PropertyDescription(
+        "overflow",
+        _EnumValueConverter(["visible", "hidden", "scroll", "auto"]),
         "visible",
         True,
         False,
-        ["visible", "hidden", "scroll", "auto"],
     ),
-    "paint-order": (BaseStyleValue, "normal", True, False, None),
-    "pointer-events": (
-        EnumValue,
+    PropertyDescription("paint-order", _StyleConverter(), "normal", True, False),
+    PropertyDescription(
+        "pointer-events",
+        _EnumValueConverter(
+            [
+                "bounding-box",
+                "visiblePainted",
+                "visibleFill",
+                "visibleStroke",
+                "visible",
+                "painted",
+                "fill",
+                "stroke",
+                "all",
+                "none",
+            ]
+        ),
         "visiblePainted",
         True,
         True,
-        [
-            "bounding-box",
-            "visiblePainted",
-            "visibleFill",
-            "visibleStroke",
-            "visible",
-            "painted",
-            "fill",
-            "stroke",
-            "all",
-            "none",
-        ],
     ),
-    "shape-rendering": (
-        EnumValue,
+    PropertyDescription("shape-inside", _URLNoneValueConverter(), "none", False, False),
+    PropertyDescription(
+        "shape-rendering",
+        _EnumValueConverter(
+            ["auto", "optimizeSpeed", "crispEdges", "geometricPrecision"]
+        ),
         "visiblePainted",
         True,
         True,
-        ["auto", "optimizeSpeed", "crispEdges", "geometricPrecision"],
     ),
-    "stop-color": (ColorValue, "black", True, False, None),
-    "stop-opacity": (AlphaValue, "1", True, False, None),
-    "stroke": (PaintValue, "none", True, True, None),
-    "stroke-dasharray": (StrokeDasharrayValue, "none", True, True, None),
-    "stroke-dashoffset": (BaseStyleValue, "0", True, True, None),
-    "stroke-linecap": (EnumValue, "butt", True, True, ["butt", "round", "square"]),
-    "stroke-linejoin": (
-        EnumValue,
+    PropertyDescription("stop-color", _ColorValueConverter(), "black", True, False),
+    PropertyDescription("stop-opacity", _AlphaValueConverter(), "1", True, False),
+    PropertyDescription("stroke", _PaintValueConverter(), "none", True, True),
+    PropertyDescription(
+        "stroke-dasharray", _StrokeDasharrayValueConverter(), "none", True, True
+    ),
+    PropertyDescription("stroke-dashoffset", _StyleConverter(), "0", True, True),
+    PropertyDescription(
+        "stroke-linecap",
+        _EnumValueConverter(["butt", "round", "square"]),
+        "butt",
+        True,
+        True,
+    ),
+    PropertyDescription(
+        "stroke-linejoin",
+        _EnumValueConverter(["miter", "miter-clip", "round", "bevel", "arcs"]),
         "miter",
         True,
         True,
-        ["miter", "miter-clip", "round", "bevel", "arcs"],
     ),
-    "stroke-miterlimit": (BaseStyleValue, "4", True, True, None),
-    "stroke-opacity": (AlphaValue, "1", True, True, None),
-    "stroke-width": (BaseStyleValue, "1", True, True, None),
-    "text-align": (
-        BaseStyleValue,
+    PropertyDescription("stroke-miterlimit", _StyleConverter(), "4", True, True),
+    PropertyDescription("stroke-opacity", _AlphaValueConverter(), "1", True, True),
+    PropertyDescription("stroke-width", _StyleConverter(), "1", True, True),
+    PropertyDescription("text-align", _StyleConverter(), "start", True, True),
+    PropertyDescription(
+        "text-anchor",
+        _EnumValueConverter(["start", "middle", "end"]),
         "start",
         True,
         True,
-        None,
-    ),  # only HTML property, but used by some unit tests
-    "text-anchor": (EnumValue, "start", True, True, ["start", "middle", "end"]),
-    # shorthand for text-decoration-line, *-style, *-color
-    "text-decoration": (BaseStyleValue, "none", True, True, None),
-    "text-overflow": (EnumValue, "clip", True, False, ["clip", "ellipsis"]),
-    "text-rendering": (
-        EnumValue,
+    ),
+    PropertyDescription(
+        "text-decoration-line", _StyleConverter(), "none", False, False
+    ),
+    PropertyDescription(
+        "text-decoration-style",
+        _EnumValueConverter(["solid", "double", "dotted", "dashed", "wavy"]),
+        "solid",
+        False,
+        False,
+    ),
+    PropertyDescription(
+        "text-decoration-color", _StyleConverter(), "currentcolor", False, False
+    ),
+    PropertyDescription(
+        "text-overflow", _EnumValueConverter(["clip", "ellipsis"]), "clip", True, False
+    ),
+    PropertyDescription(
+        "text-rendering",
+        _EnumValueConverter(
+            ["auto", "optimizeSpeed", "optimizeLegibility", "geometricPrecision"]
+        ),
         "auto",
         True,
         True,
-        ["auto", "optimizeSpeed", "optimizeLegibility", "geometricPrecision"],
     ),
-    "unicode-bidi": (
-        EnumValue,
+    PropertyDescription(
+        "unicode-bidi",
+        _EnumValueConverter(
+            [
+                "normal",
+                "embed",
+                "isolate",
+                "bidi-override",
+                "isolate-override",
+                "plaintext",
+            ]
+        ),
         "normal",
         True,
         False,
-        [
-            "normal",
-            "embed",
-            "isolate",
-            "bidi-override",
-            "isolate-override",
-            "plaintext",
-        ],
     ),
-    "vector-effect": (BaseStyleValue, "none", True, False, None),
-    "vertical-align": (BaseStyleValue, "baseline", False, False, None),
-    "visibility": (EnumValue, "visible", True, True, ["visible", "hidden", "collapse"]),
-    "white-space": (
-        EnumValue,
+    PropertyDescription("vector-effect", _StyleConverter(), "none", True, False),
+    PropertyDescription("vertical-align", _StyleConverter(), "baseline", False, False),
+    PropertyDescription(
+        "visibility",
+        _EnumValueConverter(["visible", "hidden", "collapse"]),
+        "visible",
+        True,
+        True,
+    ),
+    PropertyDescription(
+        "white-space",
+        _EnumValueConverter(
+            ["normal", "pre", "nowrap", "pre-wrap", "break-spaces", "pre-line"]
+        ),
         "normal",
         True,
         True,
-        ["normal", "pre", "nowrap", "pre-wrap", "break-spaces", "pre-line"],
     ),
-    "word-spacing": (BaseStyleValue, "normal", True, True, None),
-    # including obsolete SVG 1.1 values
-    "writing-mode": (
-        EnumValue,
+    PropertyDescription("word-spacing", _StyleConverter(), "normal", True, True),
+    PropertyDescription(
+        "writing-mode",
+        _EnumValueConverter(
+            [
+                "horizontal-tb",
+                "vertical-rl",
+                "vertical-lr",
+                "lr",
+                "lr-tb",
+                "rl",
+                "rl-tb",
+                "tb",
+                "tb-rl",
+            ]
+        ),
         "horizontal-tb",
         True,
         True,
-        [
-            "horizontal-tb",
-            "vertical-rl",
-            "vertical-lr",
-            "lr",
-            "lr-tb",
-            "rl",
-            "rl-tb",
-            "tb",
-            "tb-rl",
-        ],
     ),
-    "-inkscape-font-specification": (BaseStyleValue, "sans-serif", False, True, None),
+    PropertyDescription(
+        "-inkscape-font-specification", _StyleConverter(), "sans-serif", False, True
+    ),
+]
+all_properties = {v.name: v for v in properties_list}
+
+properties_list += [
+    PropertyDescription("font", _FontValueShorthandConverter(), ""),
+    PropertyDescription("text-decoration", _TextDecorationValueConverter(), ""),
+]
+
+all_properties["font"] = properties_list[-2]
+all_properties["text-decoration"] = properties_list[-1]
+
+shorthand_from_value = {
+    item: prop.name
+    for prop in properties_list
+    if isinstance(prop.converter, _ShorthandValueConverter)
+    for item in prop.converter.keys
+}
+
+shorthand_properties = {
+    i.name: i
+    for i in properties_list
+    if isinstance(i.converter, _ShorthandValueConverter)
 }

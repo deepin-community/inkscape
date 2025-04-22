@@ -13,8 +13,8 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef __SVG_H__
-#define __SVG_H__
+#ifndef SEEN_EXTENSION_INTERNAL_SVG_H
+#define SEEN_EXTENSION_INTERNAL_SVG_H
 
 #include "../implementation/implementation.h"
 
@@ -51,13 +51,13 @@ public:
                                SPDocument *doc,
                                gchar const *filename ) override;
     SPDocument *open( Inkscape::Extension::Input *mod,
-                                const gchar *uri ) override;
+                                const gchar *uri,
+                                bool is_importing = false) override;
     static void         init( );
-
 };
 
 } } }  /* namespace Inkscape, Extension, Implementation */
-#endif /* __SVG_H__ */
+#endif // SEEN_EXTENSION_INTERNAL_SVG_H
 
 /*
   Local Variables:

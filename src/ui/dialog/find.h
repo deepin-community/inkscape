@@ -13,25 +13,28 @@
 #ifndef INKSCAPE_UI_DIALOG_FIND_H
 #define INKSCAPE_UI_DIALOG_FIND_H
 
+#include <glibmm/refptr.h>
 #include <gtkmm/box.h>
-#include <gtkmm/buttonbox.h>
 #include <gtkmm/expander.h>
 #include <gtkmm/label.h>
 #include <gtkmm/radiobutton.h>
-#include <gtkmm/sizegroup.h>
 
 #include "ui/dialog/dialog-base.h"
 #include "ui/widget/entry.h"
 #include "ui/widget/frame.h"
 
+namespace Gtk {
+class SizeGroup;
+} // namespace Gtk
+
 class SPItem;
 class SPObject;
 
 namespace Inkscape {
+
 class Selection;
 
-namespace UI {
-namespace Dialog {
+namespace UI::Dialog {
 
 /**
  * The Find class defines the Find and replace dialog.
@@ -47,19 +50,12 @@ class Find : public DialogBase
 {
 public:
     Find();
-    ~Find() override {};
+    ~Find() override;
 
     void desktopReplaced() override;
     void selectionChanged(Selection *selection) override;
-    /**
-     * Helper function which returns a new instance of the dialog.
-     * getInstance is needed by the dialog manager (Inkscape::UI::Dialog::DialogManager).
-     */
-    static Find &getInstance() { return *new Find(); }
 
 protected:
-
-
     /**
      * Callbacks for pressing the dialog buttons.
      */
@@ -198,14 +194,12 @@ protected:
     void        squeeze_window();
 
 private:
-    Find(Find const &d) = delete;
-    Find& operator=(Find const &d) = delete;
-
     /*
      * Find and replace combo box widgets
      */
     UI::Widget::Entry   entry_find;
     UI::Widget::Entry   entry_replace;
+    Glib::RefPtr<Gtk::SizeGroup> label_group;
 
     /**
      * Scope and search in widgets
@@ -290,7 +284,7 @@ private:
     Gtk::Label status;
     Gtk::Button button_find;
     Gtk::Button button_replace;
-    Gtk::ButtonBox box_buttons;
+    Gtk::Box box_buttons;
     Gtk::Box hboxbutton_row;
 
     /**
@@ -298,12 +292,9 @@ private:
      */
     bool _action_replace;
     bool blocked;
-
-    sigc::connection selectChangedConn;
 };
 
-} // namespace Dialog
-} // namespace UI
+} // namespace UI::Dialog
 } // namespace Inkscape
 
 #endif // INKSCAPE_UI_DIALOG_FIND_H

@@ -8,51 +8,39 @@
 
 #include "path.h"
 
+#include <2geom/d2.h>
+#include <2geom/pathvector.h>
+#include <2geom/sbasis-to-bezier.h>
+#include <2geom/svg-path-parser.h>
 #include <glibmm/i18n.h>
 #include <glibmm/utility.h>
-
 #include <gtkmm/button.h>
 #include <gtkmm/label.h>
 
-
-#include <2geom/svg-path-parser.h>
-#include <2geom/sbasis-to-bezier.h>
-#include <2geom/pathvector.h>
-#include <2geom/d2.h>
-
 #include "bad-uri-exception.h"
-
 #include "desktop.h"
-#include "document-undo.h"
 #include "document.h"
+#include "document-undo.h"
 #include "inkscape.h"
-#include "message-stack.h"
 #include "selection.h"
-#include "selection-chemistry.h"
 
 #include "actions/actions-tools.h"
 #include "display/curve.h"
 #include "live_effects/effect.h"
 #include "live_effects/lpeobject.h"
-#include "object/uri.h"
-#include "object/sp-shape.h"
 #include "object/sp-item.h"
+#include "object/sp-shape.h"
 #include "object/sp-text.h"
+#include "object/uri.h"
 #include "svg/svg.h"
-
 #include "ui/clipboard.h" // clipboard support
 #include "ui/icon-loader.h"
-#include "ui/icon-names.h"
-#include "ui/shape-editor.h" // needed for on-canvas editing:
-#include "ui/tools/node-tool.h"
+#include "ui/pack.h"
 #include "ui/tool/multi-path-manipulator.h"
 #include "ui/tool/shape-record.h"
-#include "ui/widget/point.h"
-
-#include "xml/repr.h"
+#include "ui/tools/node-tool.h"
 
 namespace Inkscape {
-
 namespace LivePathEffect {
 
 PathParam::PathParam( const Glib::ustring& label, const Glib::ustring& tip,
@@ -77,44 +65,18 @@ PathParam::PathParam( const Glib::ustring& label, const Glib::ustring& tip,
     ref_changed_connection = ref.changedSignal().connect(sigc::mem_fun(*this, &PathParam::ref_changed));
 }
 
-PathParam::~PathParam()
-{
+PathParam::~PathParam() {
     unlink();
-//TODO: Removed to fix a bug https://bugs.launchpad.net/inkscape/+bug/1716926
-//      Maybe we need to resurrect, not know when this code is added, but seems also not working now in a few test I do.
-//      in the future and do a deeper fix in multi-path-manipulator
-//    using namespace Inkscape::UI;
-//    SPDesktop *desktop = SP_ACTIVE_DESKTOP;
-//    if (desktop) {
-//        Inkscape::UI::Tools::NodeTool *nt = dynamic_cast<Inkscape::UI::Tools::NodeTool*>(desktop->event_context);
-//        if (nt) {
-//            SPItem * item = SP_ACTIVE_DESKTOP->getSelection()->singleItem();
-//            if (item) {
-//                std::set<ShapeRecord> shapes;
-//                ShapeRecord r;
-//                r.item = item;
-//                shapes.insert(r);
-//                nt->_multipath->setItems(shapes);
-//            }
-//        }
-//    }
-    SPDesktop *desktop = SP_ACTIVE_DESKTOP;
-    if (desktop) {
-        if (dynamic_cast<Inkscape::UI::Tools::NodeTool* >(desktop->event_context)) {
-            // Why is this switching tools twice? Probably to reinitialize Node Tool.
-            set_active_tool(desktop, "Select");
-            set_active_tool(desktop, "Node");
-        }
-    }
+    quit_listening();
     g_free(defvalue);
 }
 
 void PathParam::reload() {
     setUpdating(false);
-    start_listening(getObject());
+    start_listening(getItem());
     connect_selection_changed();
     SPItem *item = nullptr;
-    if (( item = dynamic_cast<SPItem *>(getObject()) )) {
+    if ((item = getItem())) {
         item->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
     }
 }
@@ -122,8 +84,7 @@ void PathParam::reload() {
 Geom::Affine 
 PathParam::get_relative_affine() {
     Geom::Affine affine = Geom::identity();
-    SPItem *item = nullptr;
-    if (( item = dynamic_cast<SPItem *>(getObject()) )) {
+    if (auto item = getItem()) {
         std::vector<SPLPEItem *> lpeitems = param_effect->getCurrrentLPEItems();
         if (lpeitems.size() == 1) {
             param_effect->sp_lpe_item = lpeitems[0];
@@ -190,9 +151,10 @@ PathParam::param_readSVGValue(const gchar * strvalue)
             SPObject * old_ref = param_effect->getSPDoc()->getObjectByHref(strvalue);
             Glib::ustring id_tmp;
             if (old_ref) {
-                SPObject * successor = old_ref->_successor;
-                if (successor) {
-                    id_tmp = successor->getId();
+                SPObject * tmpsuccessor = old_ref->_tmpsuccessor;
+                // study add setListener() in LPE that generate items from 0
+                if (tmpsuccessor && tmpsuccessor->getId()) {
+                    id_tmp = tmpsuccessor->getId();
                     id_tmp.insert(id_tmp.begin(), '#');
                     write = true;
                 }
@@ -257,77 +219,76 @@ PathParam::set_buttons(bool edit_button, bool copy_button, bool paste_button, bo
 Gtk::Widget *
 PathParam::param_newWidget()
 {
-    Gtk::Box * _widget = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
+    auto const _widget = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
 
-    Gtk::Label* pLabel = Gtk::manage(new Gtk::Label(param_label));
-    _widget->pack_start(*pLabel, true, true);
+    auto const pLabel = Gtk::make_managed<Gtk::Label>(param_label);
+    UI::pack_start(*_widget, *pLabel, true, true);
     pLabel->set_tooltip_text(param_tooltip);
     Gtk::Image * pIcon = nullptr;
     Gtk::Button * pButton = nullptr;
     if (_edit_button) {
         pIcon = Gtk::manage(sp_get_icon_image("tool-node-editor", Gtk::ICON_SIZE_BUTTON));
-        pButton = Gtk::manage(new Gtk::Button());
+        pButton = Gtk::make_managed<Gtk::Button>();
         pButton->set_relief(Gtk::RELIEF_NONE);
-        pIcon->show();
+        pIcon->set_visible(true);
         pButton->add(*pIcon);
-        pButton->show();
+        pButton->set_visible(true);
         pButton->signal_clicked().connect(sigc::mem_fun(*this, &PathParam::on_edit_button_click));
-        _widget->pack_start(*pButton, true, true);
+        UI::pack_start(*_widget, *pButton, true, true);
         pButton->set_tooltip_text(_("Edit on-canvas"));
     }
 
     if (_copy_button) {
         pIcon = Gtk::manage(sp_get_icon_image("edit-copy", Gtk::ICON_SIZE_BUTTON));
-        pButton = Gtk::manage(new Gtk::Button());
+        pButton = Gtk::make_managed<Gtk::Button>();
         pButton->set_relief(Gtk::RELIEF_NONE);
-        pIcon->show();
+        pIcon->set_visible(true);
         pButton->add(*pIcon);
-        pButton->show();
+        pButton->set_visible(true);
         pButton->signal_clicked().connect(sigc::mem_fun(*this, &PathParam::on_copy_button_click));
-        _widget->pack_start(*pButton, true, true);
+        UI::pack_start(*_widget, *pButton, true, true);
         pButton->set_tooltip_text(_("Copy path"));
     }
 
     if (_paste_button) {
         pIcon = Gtk::manage(sp_get_icon_image("edit-paste", Gtk::ICON_SIZE_BUTTON));
-        pButton = Gtk::manage(new Gtk::Button());
+        pButton = Gtk::make_managed<Gtk::Button>();
         pButton->set_relief(Gtk::RELIEF_NONE);
-        pIcon->show();
+        pIcon->set_visible(true);
         pButton->add(*pIcon);
-        pButton->show();
+        pButton->set_visible(true);
         pButton->signal_clicked().connect(sigc::mem_fun(*this, &PathParam::on_paste_button_click));
-        _widget->pack_start(*pButton, true, true);
+        UI::pack_start(*_widget, *pButton, true, true);
         pButton->set_tooltip_text(_("Paste path"));
     }
     if (_link_button) {
         pIcon = Gtk::manage(sp_get_icon_image("edit-clone", Gtk::ICON_SIZE_BUTTON));
-        pButton = Gtk::manage(new Gtk::Button());
+        pButton = Gtk::make_managed<Gtk::Button>();
         pButton->set_relief(Gtk::RELIEF_NONE);
-        pIcon->show();
+        pIcon->set_visible(true);
         pButton->add(*pIcon);
-        pButton->show();
+        pButton->set_visible(true);
         pButton->signal_clicked().connect(sigc::mem_fun(*this, &PathParam::on_link_button_click));
-        _widget->pack_start(*pButton, true, true);
+        UI::pack_start(*_widget, *pButton, true, true);
         pButton->set_tooltip_text(_("Link to path in clipboard"));
     }
 
     _widget->show_all_children();
 
-    return dynamic_cast<Gtk::Widget *> (_widget);
+    return _widget;
 }
 
 void
 PathParam::param_editOncanvas(SPItem *item, SPDesktop * dt)
 {
     SPDocument *document = dt->getDocument();
-    bool saved = DocumentUndo::getUndoSensitive(document);
-    DocumentUndo::setUndoSensitive(document, false);
+    DocumentUndo::ScopedInsensitive _no_undo(document);
     using namespace Inkscape::UI;
 
-    Inkscape::UI::Tools::NodeTool *nt = dynamic_cast<Inkscape::UI::Tools::NodeTool*>(dt->event_context);
+    auto nt = dynamic_cast<Inkscape::UI::Tools::NodeTool *>(dt->getTool());
     if (!nt) {
         set_active_tool(dt, "Node");
-        nt = dynamic_cast<Inkscape::UI::Tools::NodeTool*>(dt->event_context);
+        nt = dynamic_cast<Inkscape::UI::Tools::NodeTool *>(dt->getTool());
     }
 
     std::set<ShapeRecord> shapes;
@@ -336,7 +297,7 @@ PathParam::param_editOncanvas(SPItem *item, SPDesktop * dt)
     r.role = SHAPE_ROLE_LPE_PARAM;
     r.edit_transform = item->i2dt_affine(); // TODO is it right?
     if (!href) {
-        r.object = dynamic_cast<SPObject *>(param_effect->getLPEObj());
+        r.object = param_effect->getLPEObj();
         r.lpe_key = param_key;
         Geom::PathVector stored_pv =  _pathvector;
         if (_pathvector.empty()) {
@@ -349,7 +310,6 @@ PathParam::param_editOncanvas(SPItem *item, SPDesktop * dt)
     }
     shapes.insert(r);
     nt->_multipath->setItems(shapes);
-    DocumentUndo::setUndoSensitive(document, saved);
 }
 
 void
@@ -383,9 +343,13 @@ void
 PathParam::set_new_value (Geom::Piecewise<Geom::D2<Geom::SBasis> > const & newpath, bool write_to_svg)
 {
     unlink();
+    
     _pathvector = Geom::path_from_piecewise(newpath, LPE_CONVERSION_TOLERANCE);
 
     if (write_to_svg) {
+        if (param_effect->isOnClipboard()) {
+            return;
+        }
         param_write_to_repr(sp_svg_write_path(_pathvector).c_str());
 
         // After the whole "writing to svg avalanche of function calling": force value upon pwd2 and don't recalculate.
@@ -455,10 +419,11 @@ PathParam::start_listening(SPObject * to)
     if ( to == nullptr ) {
         return;
     }
-    linked_delete_connection = to->connectDelete(sigc::mem_fun(*this, &PathParam::linked_delete));
+    quit_listening();
+    linked_deleted_connection = to->connectDelete(sigc::mem_fun(*this, &PathParam::linked_deleted));
     linked_modified_connection = to->connectModified(sigc::mem_fun(*this, &PathParam::linked_modified));
-    if (SP_IS_ITEM(to)) {
-        linked_transformed_connection = SP_ITEM(to)->connectTransformed(sigc::mem_fun(*this, &PathParam::linked_transformed));
+    if (is<SPItem>(to)) {
+        linked_transformed_connection = cast<SPItem>(to)->connectTransformed(sigc::mem_fun(*this, &PathParam::linked_transformed));
     }
     linked_modified(to, SP_OBJECT_MODIFIED_FLAG); // simulate linked_modified signal, so that path data is updated
 }
@@ -467,7 +432,7 @@ void
 PathParam::quit_listening()
 {
     linked_modified_connection.disconnect();
-    linked_delete_connection.disconnect();
+    linked_deleted_connection.disconnect();
     linked_transformed_connection.disconnect();
 }
 
@@ -489,24 +454,27 @@ void PathParam::unlink()
     }
 }
 
+// Why release signal is not fired sometimes and need delete one?
 void
-PathParam::linked_delete(SPObject */*deleted*/)
+PathParam::linked_deleted(SPObject *deleted)
 {
+    Geom::PathVector pv = _pathvector;
     quit_listening();
-    unlink();
-    set_new_value (_pathvector, true);
+    set_new_value (pv, true);
 }
 
 void PathParam::linked_modified(SPObject *linked_obj, guint flags)
 {
-    if (!param_effect->is_load || ownerlocator || !SP_ACTIVE_DESKTOP) {
+    if (flags & (SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_STYLE_MODIFIED_FLAG |
+                 SP_OBJECT_CHILD_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG)) 
+    {
         linked_modified_callback(linked_obj, flags);
     }
 }
 
 void PathParam::linked_transformed(Geom::Affine const *rel_transf, SPItem *moved_item)
 {
-    linked_transformed_callback(rel_transf, moved_item);
+    linked_modified_callback(moved_item, SP_OBJECT_MODIFIED_FLAG);
 }
 
 void
@@ -515,16 +483,16 @@ PathParam::linked_modified_callback(SPObject *linked_obj, guint flags)
     if (!_updating && flags & (SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_STYLE_MODIFIED_FLAG |
                  SP_OBJECT_CHILD_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG)) 
     {
-        std::unique_ptr<SPCurve> curve;
-        if (auto shape = dynamic_cast<SPShape const *>(linked_obj)) {
+        std::optional<SPCurve> curve;
+        if (auto shape = cast<SPShape>(linked_obj)) {
             if (_from_original_d) {
-                curve = SPCurve::copy(shape->curveForEdit());
+                curve = SPCurve::ptr_to_opt(shape->curveForEdit());
             } else {
-                curve = SPCurve::copy(shape->curve());
+                curve = SPCurve::ptr_to_opt(shape->curve());
             }
         }
 
-        SPText *text = dynamic_cast<SPText *>(linked_obj);
+        auto text = cast<SPText>(linked_obj);
         if (text) {
             bool hidden = text->isHidden();
             if (hidden) {
@@ -533,8 +501,8 @@ PathParam::linked_modified_callback(SPObject *linked_obj, guint flags)
                     curve = text->getNormalizedBpath();
                     text->setHidden(true);
                 } else {
-                    if (curve == nullptr) {
-                        curve.reset(new SPCurve());
+                    if (!curve) {
+                        curve.emplace();
                     }
                     curve->set_pathvector(_pathvector);
                 }
@@ -543,7 +511,7 @@ PathParam::linked_modified_callback(SPObject *linked_obj, guint flags)
             }
         }
 
-        if (curve == nullptr) {
+        if (!curve) {
             // curve invalid, set default value
             _pathvector = sp_svg_read_pathv(defvalue);
         } else {
@@ -552,7 +520,9 @@ PathParam::linked_modified_callback(SPObject *linked_obj, guint flags)
 
         must_recalculate_pwd2 = true;
         emit_changed();
-        param_effect->getLPEObj()->requestModified(SP_OBJECT_MODIFIED_FLAG);
+        if (!param_effect->is_load || ownerlocator || (!SP_ACTIVE_DESKTOP && param_effect->isReady())) {
+            param_effect->getLPEObj()->requestModified(SP_OBJECT_MODIFIED_FLAG);
+        }
     }
 }
 
@@ -598,7 +568,7 @@ PathParam::on_paste_button_click()
     Inkscape::UI::ClipboardManager *cm = Inkscape::UI::ClipboardManager::get();
     Glib::ustring svgd = cm->getPathParameter(SP_ACTIVE_DESKTOP);
     paste_param_path(svgd.data());
-    DocumentUndo::done(param_effect->getSPDoc(), _("Paste path parameter"), INKSCAPE_ICON("dialog-path-effects"));
+    param_effect->makeUndoDone(_("Paste path parameter"));
 }
 
 void
@@ -624,9 +594,8 @@ PathParam::linkitem(Glib::ustring pathid)
         // TODO:
         // check if id really exists in document, or only in clipboard document: if only in clipboard then invalid
         // check if linking to object to which LPE is applied (maybe delegated to PathReference
-
         param_write_to_repr(pathid.c_str());
-        DocumentUndo::done(param_effect->getSPDoc(), _("Link path parameter to path"), INKSCAPE_ICON("dialog-path-effects"));
+        param_effect->makeUndoDone(_("Link path parameter to path"));
     }
 }
 
@@ -640,7 +609,6 @@ PathParam::on_link_button_click()
 }
 
 } /* namespace LivePathEffect */
-
 } /* namespace Inkscape */
 
 /*

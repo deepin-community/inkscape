@@ -15,17 +15,17 @@
 #ifdef _WIN32
 
 #include "filedialogimpl-win32.h"
-// General includes
-#include <cairomm/win32_surface.h>
-#include <gdk/gdkwin32.h>
-#include <gdkmm/general.h>
-#include <glibmm/fileutils.h>
-#include <glibmm/i18n.h>
+
 #include <list>
 #include <thread>
 #include <vector>
+#include <glibmm/fileutils.h>
+#include <glibmm/i18n.h>
+#include <cairomm/win32_surface.h>
+#include <gdk/gdkwin32.h>
+#include <gdkmm/general.h>
+#include <gtkmm/window.h>
 
-//Inkscape includes
 #include "display/cairo-utils.h"
 #include "document.h"
 #include "extension/db.h"
@@ -36,27 +36,20 @@
 #include "preferences.h"
 #include "util/units.h"
 
-
 using namespace Glib;
 using namespace Cairo;
 using namespace Gdk::Cairo;
 
-namespace Inkscape
-{
-namespace UI
-{
-namespace Dialog
-{
+namespace Inkscape::UI::Dialog {
 
-const int PREVIEW_WIDENING = 150;
-const int WINDOW_WIDTH_MINIMUM = 32;
-const int WINDOW_WIDTH_FALLBACK = 450;
-const int WINDOW_HEIGHT_MINIMUM = 32;
-const int WINDOW_HEIGHT_FALLBACK = 360;
-const char PreviewWindowClassName[] = "PreviewWnd";
-const unsigned long MaxPreviewFileSize = 10240; // kB
-
-#define IDC_SHOW_PREVIEW    1000
+static constexpr int PREVIEW_WIDENING = 150;
+static constexpr int WINDOW_WIDTH_MINIMUM = 32;
+static constexpr int WINDOW_WIDTH_FALLBACK = 450;
+static constexpr int WINDOW_HEIGHT_MINIMUM = 32;
+static constexpr int WINDOW_HEIGHT_FALLBACK = 360;
+static constexpr char PreviewWindowClassName[] = "PreviewWnd";
+static constexpr unsigned long MaxPreviewFileSize = 10240; // kB
+static constexpr int IDC_SHOW_PREVIEW = 1000;
 
 struct Filter
 {
@@ -121,14 +114,9 @@ FileDialogBaseWin32::~FileDialogBaseWin32()
     g_free(_title);
 }
 
-Inkscape::Extension::Extension *FileDialogBaseWin32::getSelectionType()
+std::string FileDialogBaseWin32::getCurrentDirectory()
 {
-    return _extension;
-}
-
-Glib::ustring FileDialogBaseWin32::getCurrentDirectory()
-{
-    return _current_directory;
+    return _current_directory.raw();
 }
 
 /*#########################################################################
@@ -141,9 +129,9 @@ bool FileOpenDialogImplWin32::_show_preview = true;
  * Constructor.  Not called directly.  Use the factory.
  */
 FileOpenDialogImplWin32::FileOpenDialogImplWin32(Gtk::Window &parent,
-                                       const Glib::ustring &dir,
-                                       FileDialogType fileTypes,
-                                       const gchar *title) :
+                                                 const Glib::ustring &dir,
+                                                 FileDialogType fileTypes,
+                                                 const gchar *title) :
     FileDialogBaseWin32(parent, dir, title, fileTypes, "dialogs.open")
 {
     // Initialize to Autodetect
@@ -184,7 +172,7 @@ FileOpenDialogImplWin32::~FileOpenDialogImplWin32()
         delete[] _extension_map;
 }
 
-void FileOpenDialogImplWin32::addFilterMenu(Glib::ustring name, Glib::ustring pattern)
+void FileOpenDialogImplWin32::addFilterMenu(const Glib::ustring &name, Glib::ustring pattern, Inkscape::Extension::Extension *mod)
 {
     std::list<Filter> filter_list;
 
@@ -472,7 +460,7 @@ void FileOpenDialogImplWin32::GetOpenFileName_thread()
     // Copy the selected file name, converting from UTF-8 to UTF-16
     memset(_path_string, 0, sizeof(_path_string));
     gunichar2* utf16_path_string = g_utf8_to_utf16(
-        myFilename.data(), -1, NULL, NULL, NULL);
+        getFilename().data(), -1, NULL, NULL, NULL);
     wcsncpy(_path_string, (wchar_t*)utf16_path_string, _MAX_PATH);
     g_free(utf16_path_string);
 
@@ -497,7 +485,7 @@ void FileOpenDialogImplWin32::GetOpenFileName_thread()
     _extension = _extension_map[ofn.nFilterIndex - 1];
 
     // Copy the selected file name, converting from UTF-16 to UTF-8
-    myFilename = utf16_to_ustring(_path_string, _MAX_PATH);
+    setCurrentName(utf16_to_ustring(_path_string, _MAX_PATH));
 
     // Tidy up
     g_free(current_directory_string);
@@ -1534,13 +1522,17 @@ FileOpenDialogImplWin32::show()
 /**
  * To Get Multiple filenames selected at-once.
  */
-std::vector<Glib::ustring>FileOpenDialogImplWin32::getFilenames()
+std::vector<Glib::RefPtr<Gio::File>> FileOpenDialogImplWin32::getFiles()
 {
-    std::vector<Glib::ustring> result;
-    result.push_back(getFilename());
+    std::vector<Glib::RefPtr<Gio::File>> result;
+    result.push_back(getFile());
     return result;
 }
 
+Glib::RefPtr<Gio::File> const FileDialogBaseWin32::get_file()
+{
+    return Gio::File::create_for_path(getFilename());
+}
 
 /*#########################################################################
 ### F I L E    S A V E
@@ -1569,7 +1561,7 @@ FileSaveDialogImplWin32::FileSaveDialogImplWin32(Gtk::Window &parent,
         createFilterMenu();
 
     /* The code below sets the default file name */
-        myFilename = "";
+        setCurrentName("");
         if (dir.size() > 0) {
             Glib::ustring udir(dir);
             Glib::ustring::size_type len = udir.length();
@@ -1580,19 +1572,21 @@ FileSaveDialogImplWin32::FileSaveDialogImplWin32(Gtk::Window &parent,
             // Remove the extension: remove everything past the last period found past the last slash
             // (not for CUSTOM_TYPE as we can not automatically add a file extension in that case yet)
             if (dialogType == CUSTOM_TYPE) {
-                myFilename = udir;
+                setCurrentName(udir);
             } else {
                 size_t last_slash_index = udir.find_last_of( '\\' );
                 size_t last_period_index = udir.find_last_of( '.' );
                 if (last_period_index > last_slash_index) {
-                    myFilename = udir.substr(0, last_period_index );
+                    setCurrentName(udir.substr(0, last_period_index ));
                 }
             }
 
             // remove one slash if double
+            auto myFilename = getFilename();
             if (1 + myFilename.find("\\\\",2)) {
                 myFilename.replace(myFilename.find("\\\\",2), 1, "");
             }
+            setCurrentName(myFilename);
         }
 }
 
@@ -1613,11 +1607,15 @@ void FileSaveDialogImplWin32::createFilterMenu()
 
     int filter_count = 0;
     int filter_length = 1;
-    bool is_raster = dialogType == RASTER_TYPES;
 
     for (auto omod : extension_list) {
-        // FIXME: would be nice to grey them out instead of not listing them
-        if (omod->deactivated() || (omod->is_raster() != is_raster))
+        // Windows OFN dialog does not allow disabled entries in the dialog
+        // So we just remove them. This is a regression from the Gtk dialog.
+        if (omod->deactivated())
+            continue;
+
+        // Export types are either exported vector types, or any raster type.
+        if (!omod->is_exported() && omod->is_raster() != (dialogType == EXPORT_TYPES))
             continue;
 
         // This extension is limited to save copy only.
@@ -1757,7 +1755,7 @@ void FileSaveDialogImplWin32::GetSaveFileName_thread()
     // Copy the selected file name, converting from UTF-8 to UTF-16
     memset(_path_string, 0, sizeof(_path_string));
     gunichar2* utf16_path_string = g_utf8_to_utf16(
-        myFilename.data(), -1, NULL, NULL, NULL);
+        getFilename().data(), -1, NULL, NULL, NULL);
     wcsncpy(_path_string, (wchar_t*)utf16_path_string, _MAX_PATH);
     g_free(utf16_path_string);
 
@@ -1784,7 +1782,7 @@ void FileSaveDialogImplWin32::GetSaveFileName_thread()
     _extension = _extension_map[ofn.nFilterIndex - 1];
 
     // Copy the selected file name, converting from UTF-16 to UTF-8
-    myFilename = utf16_to_ustring(_path_string, _MAX_PATH);
+    setCurrentName(utf16_to_ustring(_path_string, _MAX_PATH));
 
     // Tidy up
     g_free(current_directory_string);
@@ -1806,21 +1804,17 @@ FileSaveDialogImplWin32::show()
         std::thread thethread([this] { GetSaveFileName_thread(); });
         g_main_loop_run(_main_loop);
 
-        if(_result && _extension)
-            appendExtension(myFilename, (Inkscape::Extension::Output*)_extension);
+        if(_result && _extension) {
+            Glib::ustring fn = getFilename();
+            appendExtension(fn, (Inkscape::Extension::Output*)_extension);
+            setCurrentName(fn);
+        }
 
         thethread.join();
     }
 
     return _result;
 }
-
-void FileSaveDialogImplWin32::setSelectionType( Inkscape::Extension::Extension * /*key*/ )
-{
-    // If no pointer to extension is passed in, look up based on filename extension.
-
-}
-
 
 UINT_PTR CALLBACK FileSaveDialogImplWin32::GetSaveFileName_hookproc(
     HWND hdlg, UINT uiMsg, WPARAM, LPARAM lParam)
@@ -1913,7 +1907,7 @@ UINT_PTR CALLBACK FileSaveDialogImplWin32::GetSaveFileName_hookproc(
     return 0;
 }
 
-} } } // namespace Dialog, UI, Inkscape
+} // namespace Inkscape::UI::Dialog
 
 #endif // ifdef _WIN32
 

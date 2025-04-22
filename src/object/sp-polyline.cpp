@@ -12,12 +12,18 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "attributes.h"
 #include "sp-polyline.h"
-#include "display/curve.h"
+
 #include <glibmm/i18n.h>
-#include "xml/repr.h"
-#include "document.h"
+
+#include "attributes.h"        // for SPAttr
+#include "object/sp-object.h"  // for SP_OBJECT_WRITE_BUILD
+#include "object/sp-shape.h"   // for SPShape
+#include "sp-polygon.h"        // for sp_poly_parse_curve
+#include "xml/document.h"      // for Document
+#include "xml/node.h"          // for Node
+
+class SPDocument;
 
 SPPolyLine::SPPolyLine() : SPShape() {
 }
@@ -32,68 +38,12 @@ void SPPolyLine::build(SPDocument * document, Inkscape::XML::Node * repr) {
 
 void SPPolyLine::set(SPAttr key, const gchar* value) {
     switch (key) {
-	case SPAttr::POINTS: {
-            const gchar * cptr;
-            char * eptr;
-            gboolean hascpt;
-
-            if (!value) {
-            	break;
+        case SPAttr::POINTS:
+            if (value) {
+                setCurve(sp_poly_parse_curve(value));
             }
-
-            auto curve = std::make_unique<SPCurve>();
-            hascpt = FALSE;
-
-            cptr = value;
-            eptr = nullptr;
-
-            while (TRUE) {
-                gdouble x, y;
-
-                while (*cptr != '\0' && (*cptr == ',' || *cptr == '\x20' || *cptr == '\x9' || *cptr == '\xD' || *cptr == '\xA')) {
-                    cptr++;
-                }
-
-                if (!*cptr) {
-                	break;
-                }
-
-                x = g_ascii_strtod (cptr, &eptr);
-
-                if (eptr == cptr) {
-                	break;
-                }
-
-                cptr = eptr;
-
-                while (*cptr != '\0' && (*cptr == ',' || *cptr == '\x20' || *cptr == '\x9' || *cptr == '\xD' || *cptr == '\xA')) {
-                    cptr++;
-                }
-
-                if (!*cptr) {
-                	break;
-                }
-
-                y = g_ascii_strtod (cptr, &eptr);
-
-                if (eptr == cptr) {
-                	break;
-                }
-
-                cptr = eptr;
-
-                if (hascpt) {
-                    curve->lineto(x, y);
-                } else {
-                    curve->moveto(x, y);
-                    hascpt = TRUE;
-                }
-            }
-		
-            setCurve(std::move(curve));
             break;
-	}
-	default:
+        default:
             SPShape::set(key, value);
             break;
     }

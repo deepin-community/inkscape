@@ -16,20 +16,17 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <cstddef>
-#include <sigc++/sigc++.h>
 
-#include "svg/svg-length.h"
 #include "sp-dimensions.h"
 #include "sp-item.h"
-#include "enums.h"
 
 class SPUseReference;
 
-class SPUse : public SPItem, public SPDimensions {
+class SPUse final : public SPItem, public SPDimensions {
 public:
 	SPUse();
 	~SPUse() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     // item built from the original's repr (the visible clone)
     // relative to the SPUse itself, it is treated as a child, similar to a grouped item relative to its group
@@ -56,6 +53,7 @@ public:
 	void modified(unsigned int flags) override;
 
 	Geom::OptRect bbox(Geom::Affine const &transform, SPItem::BBoxType bboxtype) const override;
+    std::optional<Geom::PathVector> documentExactBounds() const override;
         const char* typeName() const override;
         const char* displayName() const override;
 	char* description() const override;
@@ -68,12 +66,16 @@ public:
 	SPItem const *root() const;
     int cloneDepth() const;
 
-    SPItem *unlink();
+	SPItem *unlink();
     SPItem *get_original() const;
     Geom::Affine get_parent_transform() const;
     Geom::Affine get_root_transform() const;
+    bool has_xy_offset() const;
+    Geom::Translate get_xy_offset() const;
+    SPItem *trueOriginal() const;
     bool anyInChain(bool (*predicate)(SPItem const *)) const;
 
+    void getLinked(std::vector<SPObject *> &objects, LinkedObjectNature direction = LinkedObjectNature::ANY) const override;
 private:
     void href_changed();
     void move_compensate(Geom::Affine const *mp);

@@ -150,13 +150,6 @@ class DeprecatedEffect:
             self._doc_ids = dict.fromkeys(self.svg.get_ids())
         return self._doc_ids
 
-    def getdocids(self):
-        self._deprecated(
-            "getdocids", _("Use `self.svg.get_ids()` instead of {} and `doc_ids`.")
-        )
-        self._doc_ids = None
-        self.svg.ids.clear()
-
     def getselected(self):
         self._deprecated("getselected", _("{} has been removed"))
 
@@ -209,9 +202,7 @@ class DeprecatedEffect:
         )
         return self.svg.namedview.add(Guide().move_to(posX, posY, angle))
 
-    def affect(
-        self, args=sys.argv[1:], output=True
-    ):  # pylint: disable=dangerous-default-value
+    def affect(self, args=sys.argv[1:], output=True):  # pylint: disable=dangerous-default-value
         # We need a list as the default value to preserve backwards compatibility
         self._deprecated(
             "affect", _("{} is now `Effect.run()`. The `output` argument has changed.")

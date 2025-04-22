@@ -11,38 +11,33 @@
 #ifndef INKSCAPE_UI_WIDGET_FONT_VARIANT_H
 #define INKSCAPE_UI_WIDGET_FONT_VARIANT_H
 
-#include <gtkmm/expander.h>
+#include <map>
+#include <string>
+#include <gtkmm/box.h>
 #include <gtkmm/checkbutton.h>
-#include <gtkmm/radiobutton.h>
 #include <gtkmm/entry.h>
+#include <gtkmm/expander.h>
 #include <gtkmm/grid.h>
-#include <gtkmm/hvbox.h>
+#include <gtkmm/radiobutton.h>
 
 class SPDesktop;
 class SPObject;
 class SPStyle;
 class SPCSSAttr;
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 class Feature;
 
 /**
  * A container for selecting font variants (OpenType Features).
  */
-class FontVariants : public Gtk::Box
+class FontVariants final : public Gtk::Box
 {
-
 public:
-
-    /**
-     * Constructor
-     */
     FontVariants();
 
-protected:
+private:
     // Ligatures: To start, use four check buttons.
     Gtk::Expander       _ligatures_frame;
     Gtk::Grid           _ligatures_grid;
@@ -128,7 +123,6 @@ protected:
     Gtk::Label          _feature_list;
     Gtk::Label          _feature_substitutions;
 
-private:
     void ligatures_init();
     void ligatures_callback();
 
@@ -171,7 +165,7 @@ private:
 
     std::map<std::string, Feature*> _features;
 
-    sigc::signal<void> _changed_signal;
+    sigc::signal<void ()> _changed_signal;
 
 public:
 
@@ -199,15 +193,12 @@ public:
      * Let others know that user has changed GUI settings.
      * (Used to enable 'Apply' and 'Default' buttons.)
      */
-    sigc::connection connectChanged(sigc::slot<void> slot) {
+    sigc::connection connectChanged(sigc::slot<void ()> slot) {
         return _changed_signal.connect(slot);
     }
 };
 
- 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 #endif // INKSCAPE_UI_WIDGET_FONT_VARIANT_H
 

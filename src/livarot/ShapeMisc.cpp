@@ -41,6 +41,10 @@
 void
 Shape::ConvertToForme (Path * dest)
 {
+  // this function is quite similar to Shape::GetWindings so please check it out
+  // first to learn the overall technique and I'll make sure to comment the parts
+  // that are different
+
   if (numberOfPoints() <= 1 || numberOfEdges() <= 1)
     return;
   
@@ -70,7 +74,7 @@ Shape::ConvertToForme (Path * dest)
   // suivParc: next in the stack
   for (int i = 0; i < numberOfEdges(); i++)
   {
-    swdData[i].misc = nullptr;
+    swdData[i].misc = 0;
     swdData[i].precParc = swdData[i].suivParc = -1;
   }
   
@@ -87,13 +91,14 @@ Shape::ConvertToForme (Path * dest)
       int fi = 0;
       for (fi = lastPtUsed; fi < numberOfPoints(); fi++)
       {
-        if (getPoint(fi).incidentEdge[FIRST] >= 0 && swdData[getPoint(fi).incidentEdge[FIRST]].misc == nullptr)
+        if (getPoint(fi).incidentEdge[FIRST] >= 0 && swdData[getPoint(fi).incidentEdge[FIRST]].misc == 0)
           break;
       }
       lastPtUsed = fi + 1;
       if (fi < numberOfPoints())
       {
         int bestB = getPoint(fi).incidentEdge[FIRST];
+        // we get the edge that starts at this point since we wanna follow the direction of the edges
         while (bestB >= 0 && getEdge(bestB).st != fi)
           bestB = NextAt (fi, bestB);
         if (bestB >= 0)
@@ -107,21 +112,21 @@ Shape::ConvertToForme (Path * dest)
     if (startBord >= 0)
     {
       // parcours en profondeur pour mettre les leF et riF a leurs valeurs
-      swdData[startBord].misc = (void *) 1;
+      swdData[startBord].misc = 1;
       //                      printf("part de %d\n",startBord);
       int curBord = startBord;
-      bool back = false;
+      bool back = false; // a variable that if true, means we are back tracking
       swdData[curBord].precParc = -1;
       swdData[curBord].suivParc = -1;
       do
 	    {
-	      int cPt = getEdge(curBord).en;
+	      int cPt = getEdge(curBord).en; // get the end point, we want to follow the direction of the edge
 	      int nb = curBord;
         //                              printf("de curBord= %d au point %i  -> ",curBord,cPt);
         // get next edge
 	      do
         {
-          int nnb = CycleNextAt (cPt, nb);
+          int nnb = CycleNextAt (cPt, nb); // get the next (clockwise) edge (I don't see why the comment at the top says anti clockwise edge first)
           if (nnb == nb)
           {
             // cul-de-sac
@@ -129,33 +134,36 @@ Shape::ConvertToForme (Path * dest)
             break;
           }
           nb = nnb;
-          if (nb < 0 || nb == curBord)
+          if (nb < 0 || nb == curBord) // if we got to the same edge, we break, cuz now we need to back track
             break;
         }
-	      while (swdData[nb].misc != nullptr || getEdge(nb).st != cPt);
+          while (swdData[nb].misc != 0 || getEdge(nb).st != cPt); // keep finding a new edge until we find an edge that we haven't seen or an edge
+        // that starts at the point
         
-	      if (nb < 0 || nb == curBord)
+        if (nb < 0 || nb == curBord)
         {
+          // if we are here, means there was no new edge, so we start back tracking
           // no next edge: end of this contour, we get back
           if (back == false)
             dest->Close ();
           back = true;
           // retour en arriere
-          curBord = swdData[curBord].precParc;
+          curBord = swdData[curBord].precParc; // set previous edge to current edge and back is true to indicate we are backtracking
           //                                      printf("retour vers %d\n",curBord);
-          if (curBord < 0)
+          if (curBord < 0) // break if no edge exists before this one
             break;
         }
 	      else
         {
+          // did we get this new edge after we started backtracking? if yes,  we need a moveTo
           // new edge, maybe for a new contour
           if (back)
           {
             // we were backtracking, so if we have a new edge, that means we're creating a new contour
             dest->MoveTo (getPoint(cPt).x);
-            back = false;
+            back = false; // we are no longer backtracking, we will follow this new edge now
           }
-          swdData[nb].misc = (void *) 1;
+          swdData[nb].misc = 1;
           swdData[nb].ind = searchInd++;
           swdData[nb].precParc = curBord;
           swdData[curBord].suivParc = nb;
@@ -163,7 +171,7 @@ Shape::ConvertToForme (Path * dest)
           //                                      printf("suite %d\n",curBord);
           {
             // add that edge
-            dest->LineTo (getPoint(getEdge(nb).en).x);
+            dest->LineTo (getPoint(getEdge(nb).en).x); // add a line segment
           }
         }
 	    }
@@ -181,9 +189,10 @@ Shape::ConvertToForme (Path * dest)
 // same as before, but each time we have a contour, try to reassemble the segments on it to make chunks of
 // the original(s) path(s)
 // originals are in the orig array, whose size is nbP
-void
-Shape::ConvertToForme (Path * dest, int nbP, Path * *orig, bool splitWhenForced)
+void Shape::ConvertToForme(Path *dest, int nbP, Path *const *orig, bool never_split)
 {
+  // the function is similar to the other version of ConvertToForme, I'm adding comments
+  // where there are significant differences to explain
   if (numberOfPoints() <= 1 || numberOfEdges() <= 1)
     return;
 //  if (Eulerian (true) == false)
@@ -215,7 +224,7 @@ Shape::ConvertToForme (Path * dest, int nbP, Path * *orig, bool splitWhenForced)
   
   for (int i = 0; i < numberOfEdges(); i++)
   {
-    swdData[i].misc = nullptr;
+    swdData[i].misc = 0;
     swdData[i].precParc = swdData[i].suivParc = -1;
   }
   
@@ -229,7 +238,7 @@ Shape::ConvertToForme (Path * dest, int nbP, Path * *orig, bool splitWhenForced)
       int fi = 0;
       for (fi = lastPtUsed; fi < numberOfPoints(); fi++)
       {
-        if (getPoint(fi).incidentEdge[FIRST] >= 0 && swdData[getPoint(fi).incidentEdge[FIRST]].misc == nullptr)
+        if (getPoint(fi).incidentEdge[FIRST] >= 0 && swdData[getPoint(fi).incidentEdge[FIRST]].misc == 0)
           break;
       }
       lastPtUsed = fi + 1;
@@ -240,20 +249,20 @@ Shape::ConvertToForme (Path * dest, int nbP, Path * *orig, bool splitWhenForced)
           bestB = NextAt (fi, bestB);
         if (bestB >= 0)
 	      {
-          startBord = bestB;
+          startBord = bestB; // no moveTo here unlike the other ConvertToForme because we want AddContour to do all the contour extraction stuff
 	      }
       }
     }
     if (startBord >= 0)
     {
       // parcours en profondeur pour mettre les leF et riF a leurs valeurs
-      swdData[startBord].misc = (void *) 1;
+      swdData[startBord].misc = 1;
       //printf("part de %d\n",startBord);
       int curBord = startBord;
       bool back = false;
       swdData[curBord].precParc = -1;
       swdData[curBord].suivParc = -1;
-      int curStartPt=getEdge(curBord).st;
+      int curStartPt=getEdge(curBord).st; // we record the start point of the current edge (actually the start edge at the moment)
       do
 	    {
 	      int cPt = getEdge(curBord).en;
@@ -269,50 +278,50 @@ Shape::ConvertToForme (Path * dest, int nbP, Path * *orig, bool splitWhenForced)
             break;
           }
           nb = nnb;
-          if (nb < 0 || nb == curBord)
+          if (nb < 0 || nb == curBord) // if we get the same edge, we break
             break;
         }
-	      while (swdData[nb].misc != nullptr || getEdge(nb).st != cPt);
+          while (swdData[nb].misc != 0 || getEdge(nb).st != cPt);
         
 	      if (nb < 0 || nb == curBord)
-        {
-          if (back == false)
+        { // we are backtracking
+          if (back == false) // if we weren't backtracking
           {
-            if (curBord == startBord || curBord < 0)
+            if (curBord == startBord || curBord < 0) // is the current edge the one we started on?
             {
               // probleme -> on vire le moveto
               //                                                      dest->descr_nb--;
             }
-            else
+            else // if not, we now have a contour to add
             {
               swdData[curBord].suivParc = -1;
-              AddContour (dest, nbP, orig, startBord, curBord,splitWhenForced);
+              AddContour(dest, nbP, orig, startBord, never_split);
             }
             //                                              dest->Close();
           }
-          back = true;
+          back = true; // we are backtracking now
           // retour en arriere
-          curBord = swdData[curBord].precParc;
+          curBord = swdData[curBord].precParc; // get the previous edge
           //printf("retour vers %d\n",curBord);
-          if (curBord < 0)
+          if (curBord < 0) // if no previous edge, we break
             break;
         }
 	      else
         {
           if (back)
-          {
+          { // if we are backtracking, now we go forward (since we have found a new edge to explore)
             back = false;
             startBord = nb;
-            curStartPt=getEdge(nb).st;
+            curStartPt=getEdge(nb).st; // reset curStartPt to this as a new contour is starting here
           } else {
-            if ( getEdge(curBord).en == curStartPt ) {
+            if ( getEdge(curBord).en == curStartPt ) { // if we are going forward and the endpoint of this edge is the actual start point
               //printf("contour %i ",curStartPt);
-              swdData[curBord].suivParc = -1;
-              AddContour (dest, nbP, orig, startBord, curBord,splitWhenForced);
-              startBord=nb;
+              swdData[curBord].suivParc = -1; //  why tho? seems useless since we set it right after this block ends
+              AddContour(dest, nbP, orig, startBord, never_split); // add the contour
+              startBord=nb; // set startBord to this edge
             }
           }
-          swdData[nb].misc = (void *) 1;
+          swdData[nb].misc = 1;
           swdData[nb].ind = searchInd++;
           swdData[nb].precParc = curBord;
           swdData[curBord].suivParc = nb;
@@ -330,8 +339,8 @@ Shape::ConvertToForme (Path * dest, int nbP, Path * *orig, bool splitWhenForced)
   MakeEdgeData (false);
   MakeSweepDestData (false);
 }
-void 
-Shape::ConvertToFormeNested (Path * dest, int nbP, Path * *orig, int /*wildPath*/,int &nbNest,int *&nesting,int *&contStart,bool splitWhenForced)
+
+void Shape::ConvertToFormeNested(Path *dest, int nbP, Path *const *orig, int &nbNest, int *&nesting, int *&contStart, bool never_split)
 {
   nesting=nullptr;
   contStart=nullptr;
@@ -368,7 +377,7 @@ Shape::ConvertToFormeNested (Path * dest, int nbP, Path * *orig, int /*wildPath*
   
   for (int i = 0; i < numberOfEdges(); i++)
   {
-    swdData[i].misc = nullptr;
+    swdData[i].misc = 0;
     swdData[i].precParc = swdData[i].suivParc = -1;
   }
   
@@ -385,7 +394,7 @@ Shape::ConvertToFormeNested (Path * dest, int nbP, Path * *orig, int /*wildPath*
       int fi = 0;
       for (fi = lastPtUsed; fi < numberOfPoints(); fi++)
       {
-        if (getPoint(fi).incidentEdge[FIRST] >= 0 && swdData[getPoint(fi).incidentEdge[FIRST]].misc == nullptr)
+        if (getPoint(fi).incidentEdge[FIRST] >= 0 && swdData[getPoint(fi).incidentEdge[FIRST]].misc == 0)
           break;
       }
       {
@@ -397,7 +406,7 @@ Shape::ConvertToFormeNested (Path * dest, int nbP, Path * *orig, int /*wildPath*
             parentContour=-1;
           } else {
             if (getEdge(askTo).prevS >= 0) {
-                parentContour = GPOINTER_TO_INT(swdData[askTo].misc);
+                parentContour = swdData[askTo].misc;
                 parentContour-=1; // pour compenser le decalage
             }
             childEdge = getPoint(fi).incidentEdge[FIRST];
@@ -419,7 +428,7 @@ Shape::ConvertToFormeNested (Path * dest, int nbP, Path * *orig, int /*wildPath*
     if (startBord >= 0)
     {
       // parcours en profondeur pour mettre les leF et riF a leurs valeurs
-      swdData[startBord].misc = (void *)(intptr_t)(1 + nbNest);
+      swdData[startBord].misc = 1 + nbNest;
       if (startBord == childEdge) {
           foundChild = true;
       }
@@ -447,7 +456,7 @@ Shape::ConvertToFormeNested (Path * dest, int nbP, Path * *orig, int /*wildPath*
           if (nb < 0 || nb == curBord)
             break;
         }
-	      while (swdData[nb].misc != nullptr || getEdge(nb).st != cPt);
+          while (swdData[nb].misc != 0 || getEdge(nb).st != cPt);
         
 	      if (nb < 0 || nb == curBord)
         {
@@ -479,7 +488,7 @@ Shape::ConvertToFormeNested (Path * dest, int nbP, Path * *orig, int /*wildPath*
                 nesting[nbNest++]=-1; // contient des bouts de coupure -> a part
               }
               swdData[curBord].suivParc = -1;
-              AddContour (dest, nbP, orig, startBord, curBord,splitWhenForced);
+              AddContour(dest, nbP, orig, startBord, never_split);
             }
             //                                              dest->Close();
           }
@@ -520,11 +529,11 @@ Shape::ConvertToFormeNested (Path * dest, int nbP, Path * *orig, int /*wildPath*
                 nesting[nbNest++]=-1; // contient des bouts de coupure -> a part
               }
               swdData[curBord].suivParc = -1;
-              AddContour (dest, nbP, orig, startBord, curBord,splitWhenForced);
+              AddContour(dest, nbP, orig, startBord, never_split);
               startBord=nb;
             }
           }
-          swdData[nb].misc = (void *)(intptr_t)(1 + nbNest);
+          swdData[nb].misc = 1 + nbNest;
           swdData[nb].ind = searchInd++;
           swdData[nb].precParc = curBord;
           swdData[curBord].suivParc = nb;
@@ -885,130 +894,103 @@ Shape::MakeOffset (Shape * a, double dec, JoinType join, double miter, bool do_p
   return (done_something? 0 : shape_nothing_to_do);
 }
 
-
-
 // we found a contour, now reassemble the edges on it, instead of dumping them in the Path "dest" as a
 // polyline. since it was a DFS, the precParc and suivParc make a nice doubly-linked list of the edges in
-// the contour. the first and last edges of the contour are startBord and curBord
-void
-Shape::AddContour (Path * dest, int nbP, Path * *orig, int startBord, int curBord, bool splitWhenForced)
+// the contour. the first edge of the contour is start_edge.
+void Shape::AddContour(Path *dest, int num_orig, Path *const *orig, int start_edge, bool never_split)
 {
-  int bord = startBord;
-  
-  {
-    dest->MoveTo (getPoint(getEdge(bord).st).x);
-  }
-  
-  while (bord >= 0)
-  {
-    int nPiece = ebData[bord].pieceID;
-    int nPath = ebData[bord].pathID;
-    
-    if (nPath < 0 || nPath >= nbP || orig[nPath] == nullptr)
-    {
-      // segment batard
-      dest->LineTo (getPoint(getEdge(bord).en).x);
-      bord = swdData[bord].suivParc;
-    }
-    else
-    {
-      Path *from = orig[nPath];
-      if (nPiece < 0 || nPiece >= int(from->descr_cmd.size()))
-	    {
-	      // segment batard
-	      dest->LineTo (getPoint(getEdge(bord).en).x);
-	      bord = swdData[bord].suivParc;
-	    }
-      else
-	    {
-	      int nType = from->descr_cmd[nPiece]->getType();
-	      if (nType == descr_close || nType == descr_moveto
-            || nType == descr_forced)
-        {
-          // devrait pas arriver
-          dest->LineTo (getPoint(getEdge(bord).en).x);
-          bord = swdData[bord].suivParc;
+    int edge = start_edge;
+
+    // Move to the starting point.
+    dest->MoveTo(getPoint(getEdge(edge).st).x);
+
+    while (true) {
+        // Get the piece and path id.
+        int nPiece = ebData[edge].pieceID;
+        int nPath = ebData[edge].pathID;
+
+        // If the path id is invalid in any way, just add the edge as a line segment.
+        if (nPath < 0 || nPath >= num_orig || !orig[nPath]) {
+            dest->LineTo(getPoint(getEdge(edge).en).x);
+            edge = swdData[edge].suivParc;
+            continue;
         }
-	      else if (nType == descr_lineto)
-        {
-          bord = ReFormeLineTo (bord, curBord, dest, from);
+
+        // Get pointer to the path where this edge came from.
+        auto from = orig[nPath];
+
+        // If the piece id is invalid in any way, again just add the edge as a line segment.
+        if (nPiece < 0 || nPiece >= from->descr_cmd.size()) {
+            dest->LineTo(getPoint(getEdge(edge).en).x);
+            edge = swdData[edge].suivParc;
+            continue;
         }
-	      else if (nType == descr_arcto)
-        {
-          bord = ReFormeArcTo (bord, curBord, dest, from);
+
+        // Handle the path command. This consumes multiple edges, and sets edge to the next edge to process.
+        switch (from->descr_cmd[nPiece]->getType()) {
+            case descr_lineto:
+                edge = ReFormeLineTo(edge, dest, never_split);
+                break;
+            case descr_arcto:
+                edge = ReFormeArcTo(edge, dest, from, never_split);
+                break;
+            case descr_cubicto:
+                edge = ReFormeCubicTo(edge, dest, from, never_split);
+                break;
+            default:
+                // Shouldn't happen, but if it does, just add a line segment.
+                dest->LineTo(getPoint(getEdge(edge).en).x);
+                edge = swdData[edge].suivParc;
+                break;
         }
-	      else if (nType == descr_cubicto)
-        {
-          bord = ReFormeCubicTo (bord, curBord, dest, from);
+
+        // No more edges - exit.
+        if (edge < 0) {
+            break;
         }
-	      else if (nType == descr_bezierto)
-        {
-          PathDescrBezierTo* nBData =
-	    dynamic_cast<PathDescrBezierTo *>(from->descr_cmd[nPiece]);
-	  
-          if (nBData->nb == 0)
-          {
-            bord = ReFormeLineTo (bord, curBord, dest, from);
-          }
-          else
-          {
-            bord = ReFormeBezierTo (bord, curBord, dest, from);
-          }
-        }
-	      else if (nType == descr_interm_bezier)
-        {
-          bord = ReFormeBezierTo (bord, curBord, dest, from);
-        }
-	      else
-        {
-          // devrait pas arriver non plus
-          dest->LineTo (getPoint(getEdge(bord).en).x);
-          bord = swdData[bord].suivParc;
-        }
-	      if (bord >= 0 && getPoint(getEdge(bord).st).totalDegree() > 2 ) {
-          dest->ForcePoint ();
-        } else if ( bord >= 0 && getPoint(getEdge(bord).st).oldDegree > 2 && getPoint(getEdge(bord).st).totalDegree() == 2)  {
-          if ( splitWhenForced ) {
-            // pour les coupures
-            dest->ForcePoint ();
-         } else {
-            if ( _has_back_data ) {
-              int   prevEdge=getPoint(getEdge(bord).st).incidentEdge[FIRST];
-              int   nextEdge=getPoint(getEdge(bord).st).incidentEdge[LAST];
-              if ( getEdge(prevEdge).en != getEdge(bord).st ) {
-                int  swai=prevEdge;prevEdge=nextEdge;nextEdge=swai;
-              }
-              if ( ebData[prevEdge].pieceID == ebData[nextEdge].pieceID  && ebData[prevEdge].pathID == ebData[nextEdge].pathID ) {
-                if ( fabs(ebData[prevEdge].tEn-ebData[nextEdge].tSt) < 0.05 ) {
+
+        // Insert forced points.
+        // Although forced points make no difference to the dumped SVG path, they do have some internal use.
+        // For example, some functions like ConvertForcedToMoveTo() pay attention to them.
+        // It's not clear exactly when or why these points are inserted, or when oldDegree and totalDegree() differ
+        if (!never_split) {
+            if (getPoint(getEdge(edge).st).totalDegree() > 2) {
+                dest->ForcePoint();
+            } else if (getPoint(getEdge(edge).st).oldDegree > 2 && getPoint(getEdge(edge).st).totalDegree() == 2)  {
+                if (_has_back_data) {
+                    int prevEdge = getPoint(getEdge(edge).st).incidentEdge[FIRST];
+                    int nextEdge = getPoint(getEdge(edge).st).incidentEdge[LAST];
+                    if (getEdge(prevEdge).en != getEdge(edge).st) {
+                        std::swap(prevEdge, nextEdge);
+                    }
+                    if (ebData[prevEdge].pieceID == ebData[nextEdge].pieceID && ebData[prevEdge].pathID == ebData[nextEdge].pathID) {
+                        if (std::abs(ebData[prevEdge].tEn - ebData[nextEdge].tSt) < 0.05) {
+                        } else {
+                            dest->ForcePoint();
+                        }
+                    } else {
+                        dest->ForcePoint();
+                    }
                 } else {
-                  dest->ForcePoint ();
+                    dest->ForcePoint();
                 }
-              } else {
-                dest->ForcePoint ();
-              }
-            } else {
-              dest->ForcePoint ();
-            }    
-          }
+            }
         }
-      }
     }
-  }
-  dest->Close ();
+
+    dest->Close();
 }
 
-int
-Shape::ReFormeLineTo (int bord, int /*curBord*/, Path * dest, Path * /*orig*/)
+int Shape::ReFormeLineTo(int bord, Path *dest, bool never_split)
 {
   int nPiece = ebData[bord].pieceID;
   int nPath = ebData[bord].pathID;
-  double /*ts=ebData[bord].tSt, */ te = ebData[bord].tEn;
+  double te = ebData[bord].tEn;
   Geom::Point nx = getPoint(getEdge(bord).en).x;
   bord = swdData[bord].suivParc;
   while (bord >= 0)
   {
-    if (getPoint(getEdge(bord).st).totalDegree() > 2
-        || getPoint(getEdge(bord).st).oldDegree > 2)
+    if (!never_split && (getPoint(getEdge(bord).st).totalDegree() > 2 || getPoint(getEdge(bord).st).oldDegree > 2))
     {
       break;
     }
@@ -1031,19 +1013,16 @@ Shape::ReFormeLineTo (int bord, int /*curBord*/, Path * dest, Path * /*orig*/)
   return bord;
 }
 
-int
-Shape::ReFormeArcTo (int bord, int /*curBord*/, Path * dest, Path * from)
+int Shape::ReFormeArcTo(int bord, Path *dest, Path *from, bool never_split)
 {
   int nPiece = ebData[bord].pieceID;
   int nPath = ebData[bord].pathID;
   double ts = ebData[bord].tSt, te = ebData[bord].tEn;
-  //      double  px=pts[getEdge(bord).st].x,py=pts[getEdge(bord).st].y;
   Geom::Point nx = getPoint(getEdge(bord).en).x;
   bord = swdData[bord].suivParc;
   while (bord >= 0)
   {
-    if (getPoint(getEdge(bord).st).totalDegree() > 2
-        || getPoint(getEdge(bord).st).oldDegree > 2)
+    if (!never_split && (getPoint(getEdge(bord).st).totalDegree() > 2 || getPoint(getEdge(bord).st).oldDegree > 2))
     {
       break;
     }
@@ -1062,6 +1041,7 @@ Shape::ReFormeArcTo (int bord, int /*curBord*/, Path * dest, Path * from)
     }
     bord = swdData[bord].suivParc;
   }
+
   double sang, eang;
   PathDescrArcTo* nData = dynamic_cast<PathDescrArcTo *>(from->descr_cmd[nPiece]);
   bool nLarge = nData->large;
@@ -1087,30 +1067,13 @@ Shape::ReFormeArcTo (int bord, int /*curBord*/, Path * dest, Path * from)
     nLarge = true;
   else
     nLarge = false;
-  /*	if ( delta < 0 ) delta=-delta;
-	if ( ndelta < 0 ) ndelta=-ndelta;
-	if ( ( delta < M_PI && ndelta < M_PI ) || ( delta >= M_PI && ndelta >= M_PI ) ) {
-		if ( ts < te ) {
-		} else {
-			nClockwise=!(nClockwise);
-		}
-	} else {
-    //		nLarge=!(nLarge);
-		nLarge=false; // c'est un sous-segment -> l'arc ne peut que etre plus petit
-		if ( ts < te ) {
-		} else {
-			nClockwise=!(nClockwise);
-		}
-	}*/
-  {
-    PathDescrArcTo *nData = dynamic_cast<PathDescrArcTo *>(from->descr_cmd[nPiece]);
-    dest->ArcTo (nx, nData->rx,nData->ry,nData->angle, nLarge, nClockwise);
-  }
+
+  dest->ArcTo (nx, nData->rx,nData->ry,nData->angle, nLarge, nClockwise);
+
   return bord;
 }
 
-int
-Shape::ReFormeCubicTo (int bord, int /*curBord*/, Path * dest, Path * from)
+int Shape::ReFormeCubicTo(int bord, Path *dest, Path *from, bool never_split)
 {
   int nPiece = ebData[bord].pieceID;
   int nPath = ebData[bord].pathID;
@@ -1119,8 +1082,7 @@ Shape::ReFormeCubicTo (int bord, int /*curBord*/, Path * dest, Path * from)
   bord = swdData[bord].suivParc;
   while (bord >= 0)
   {
-    if (getPoint(getEdge(bord).st).totalDegree() > 2
-        || getPoint(getEdge(bord).st).oldDegree > 2)
+    if (!never_split && (getPoint(getEdge(bord).st).totalDegree() > 2 || getPoint(getEdge(bord).st).oldDegree > 2))
     {
       break;
     }
@@ -1153,309 +1115,6 @@ Shape::ReFormeCubicTo (int bord, int /*curBord*/, Path * dest, Path * from)
     dest->CubicTo (nx,sDx,eDx);
   }
   return bord;
-}
-
-int
-Shape::ReFormeBezierTo (int bord, int /*curBord*/, Path * dest, Path * from)
-{
-  int nPiece = ebData[bord].pieceID;
-  int nPath = ebData[bord].pathID;
-  double ts = ebData[bord].tSt, te = ebData[bord].tEn;
-  int ps = nPiece, pe = nPiece;
-  Geom::Point px = getPoint(getEdge(bord).st).x;
-  Geom::Point nx = getPoint(getEdge(bord).en).x;
-  int inBezier = -1, nbInterm = -1;
-  int typ;
-  typ = from->descr_cmd[nPiece]->getType();
-  PathDescrBezierTo *nBData = nullptr;
-  if (typ == descr_bezierto)
-  {
-    nBData = dynamic_cast<PathDescrBezierTo *>(from->descr_cmd[nPiece]);
-    inBezier = nPiece;
-    nbInterm = nBData->nb;
-  }
-  else
-  {
-    int n = nPiece - 1;
-    while (n > 0)
-    {
-      typ = from->descr_cmd[n]->getType();
-      if (typ == descr_bezierto)
-      {
-        inBezier = n;
-        nBData = dynamic_cast<PathDescrBezierTo *>(from->descr_cmd[n]);
-        nbInterm = nBData->nb;
-        break;
-      }
-      n--;
-    }
-    if (inBezier < 0)
-    {
-      bord = swdData[bord].suivParc;
-      dest->LineTo (nx);
-      return bord;
-    }
-  }
-  bord = swdData[bord].suivParc;
-  while (bord >= 0)
-  {
-    if (getPoint(getEdge(bord).st).totalDegree() > 2
-        || getPoint(getEdge(bord).st).oldDegree > 2)
-    {
-      break;
-    }
-    if (ebData[bord].pathID == nPath)
-    {
-      if (ebData[bord].pieceID < inBezier
-          || ebData[bord].pieceID >= inBezier + nbInterm)
-        break;
-      if (ebData[bord].pieceID == pe
-          && fabs (te - ebData[bord].tSt) > 0.0001)
-        break;
-      if (ebData[bord].pieceID != pe
-          && (ebData[bord].tSt > 0.0001 && ebData[bord].tSt < 0.9999))
-        break;
-      if (ebData[bord].pieceID != pe && (te > 0.0001 && te < 0.9999))
-        break;
-      nx = getPoint(getEdge(bord).en).x;
-      te = ebData[bord].tEn;
-      pe = ebData[bord].pieceID;
-    }
-    else
-    {
-      break;
-    }
-    bord = swdData[bord].suivParc;
-  }
-
-  g_return_val_if_fail(nBData != nullptr, 0);
-  
-  if (pe == ps)
-  {
-    ReFormeBezierChunk (px, nx, dest, inBezier, nbInterm, from, ps,
-                        ts, te);
-  }
-  else if (ps < pe)
-  {
-    if (ts < 0.0001)
-    {
-      if (te > 0.9999)
-      {
-        dest->BezierTo (nx);
-        for (int i = ps; i <= pe; i++)
-        {
-          PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[i+1]);
-          dest->IntermBezierTo (nData->p);
-        }
-        dest->EndBezierTo ();
-      }
-      else
-      {
-        Geom::Point tx;
-        {
-          PathDescrIntermBezierTo* psData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[pe]);
-          PathDescrIntermBezierTo* pnData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[pe+1]);
-          tx = (pnData->p + psData->p) / 2;
-        }
-        dest->BezierTo (tx);
-        for (int i = ps; i < pe; i++)
-        {
-          PathDescrIntermBezierTo* nData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[i+1]);
-          dest->IntermBezierTo (nData->p);
-        }
-        dest->EndBezierTo ();
-        ReFormeBezierChunk (tx, nx, dest, inBezier, nbInterm,
-                            from, pe, 0.0, te);
-      }
-    }
-    else
-    {
-      if (te > 0.9999)
-      {
-        Geom::Point tx;
-        {
-          PathDescrIntermBezierTo* psData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[ps+1]);
-          PathDescrIntermBezierTo* pnData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[ps+2]);
-          tx = (psData->p +  pnData->p) / 2;
-        }
-        ReFormeBezierChunk (px, tx, dest, inBezier, nbInterm,
-                            from, ps, ts, 1.0);
-        dest->BezierTo (nx);
-        for (int i = ps + 1; i <= pe; i++)
-        {
-          PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[i+1]);
-          dest->IntermBezierTo (nData->p);
-        }
-        dest->EndBezierTo ();
-      }
-      else
-      {
-        Geom::Point tx;
-        {
-          PathDescrIntermBezierTo* psData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[ps+1]);
-          PathDescrIntermBezierTo* pnData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[ps+2]);
-          tx = (pnData->p + psData->p) / 2;
-        }
-        ReFormeBezierChunk (px, tx, dest, inBezier, nbInterm,
-                            from, ps, ts, 1.0);
-        {
-          PathDescrIntermBezierTo* psData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[pe]);
-          PathDescrIntermBezierTo* pnData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[pe+1]);
-          tx = (pnData->p + psData->p) / 2;
-        }
-         dest->BezierTo (tx);
-        for (int i = ps + 1; i <= pe; i++)
-        {
-          PathDescrIntermBezierTo* nData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[i+1]);
-          dest->IntermBezierTo (nData->p);
-        }
-        dest->EndBezierTo ();
-        ReFormeBezierChunk (tx, nx, dest, inBezier, nbInterm,
-                            from, pe, 0.0, te);
-      }
-    }
-  }
-  else
-  {
-    if (ts > 0.9999)
-    {
-      if (te < 0.0001)
-      {
-        dest->BezierTo (nx);
-        for (int i = ps; i >= pe; i--)
-        {
-          PathDescrIntermBezierTo* nData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[i+1]);
-          dest->IntermBezierTo (nData->p);
-        }
-        dest->EndBezierTo ();
-      }
-      else
-      {
-        Geom::Point tx;
-        {
-          PathDescrIntermBezierTo* psData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[pe+1]);
-          PathDescrIntermBezierTo* pnData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[pe+2]);
-          tx = (pnData->p + psData->p) / 2;
-        }
-        dest->BezierTo (tx);
-        for (int i = ps; i > pe; i--)
-        {
-          PathDescrIntermBezierTo* nData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[i+1]);
-          dest->IntermBezierTo (nData->p);
-        }
-        dest->EndBezierTo ();
-        ReFormeBezierChunk (tx, nx, dest, inBezier, nbInterm,
-                            from, pe, 1.0, te);
-      }
-    }
-    else
-    {
-      if (te < 0.0001)
-      {
-        Geom::Point tx;
-        {
-          PathDescrIntermBezierTo* psData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[ps]);
-          PathDescrIntermBezierTo* pnData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[ps+1]);
-          tx = (pnData->p + psData->p) / 2;
-        }
-         ReFormeBezierChunk (px, tx, dest, inBezier, nbInterm,
-                            from, ps, ts, 0.0);
-        dest->BezierTo (nx);
-        for (int i = ps + 1; i >= pe; i--)
-        {
-          PathDescrIntermBezierTo* nData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[i]);
-          dest->IntermBezierTo (nData->p);
-        }
-        dest->EndBezierTo ();
-      }
-      else
-      {
-        Geom::Point tx;
-        {
-          PathDescrIntermBezierTo* psData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[ps]);
-          PathDescrIntermBezierTo* pnData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[ps+1]);
-          tx = (pnData->p + psData->p) / 2;
-        }
-        ReFormeBezierChunk (px, tx, dest, inBezier, nbInterm,
-                            from, ps, ts, 0.0);
-        {
-          PathDescrIntermBezierTo* psData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[pe+1]);
-          PathDescrIntermBezierTo* pnData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[pe+2]);
-          tx = (pnData->p + psData->p) / 2;
-        }
-        dest->BezierTo (tx);
-        for (int i = ps + 1; i > pe; i--)
-        {
-          PathDescrIntermBezierTo* nData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[i]);
-          dest->IntermBezierTo (nData->p);
-        }
-        dest->EndBezierTo ();
-        ReFormeBezierChunk (tx, nx, dest, inBezier, nbInterm,
-                            from, pe, 1.0, te);
-      }
-    }
-  }
-  return bord;
-}
-
-void
-Shape::ReFormeBezierChunk (Geom::Point px, Geom::Point nx,
-                           Path * dest, int inBezier, int nbInterm,
-                           Path * from, int p, double ts, double te)
-{
-  PathDescrBezierTo* nBData = dynamic_cast<PathDescrBezierTo*>(from->descr_cmd[inBezier]);
-  Geom::Point bstx = from->PrevPoint (inBezier - 1);
-  Geom::Point benx = nBData->p;
-  
-  Geom::Point mx;
-  if (p == inBezier)
-  {
-    // premier bout
-    if (nbInterm <= 1)
-    {
-      // seul bout de la spline
-      PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[inBezier+1]);
-      mx = nData->p;
-    }
-    else
-    {
-      // premier bout d'une spline qui en contient plusieurs
-      PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[inBezier+1]);
-      mx = nData->p;
-      nData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[inBezier+2]);
-      benx = (nData->p + mx) / 2;
-    }
-  }
-  else if (p == inBezier + nbInterm - 1)
-  {
-    // dernier bout
-    // si nbInterm == 1, le cas a deja ete traite
-    // donc dernier bout d'une spline qui en contient plusieurs
-    PathDescrIntermBezierTo* nData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[inBezier+nbInterm]);
-    mx = nData->p;
-    nData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[inBezier+nbInterm-1]);
-    bstx = (nData->p + mx) / 2;
-  }
-  else
-  {
-    // la spline contient forcément plusieurs bouts, et ce n'est ni le premier ni le dernier
-    PathDescrIntermBezierTo *nData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[p+1]);
-    mx = nData->p;
-    nData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[p]);
-    bstx = (nData->p + mx) / 2;
-    nData = dynamic_cast<PathDescrIntermBezierTo*>(from->descr_cmd[p+2]);
-    benx = (nData->p + mx) / 2;
-  }
-  Geom::Point cx;
-  {
-    Path::QuadraticPoint ((ts + te) / 2, cx, bstx, mx, benx);
-  }
-  cx = 2 * cx - (px + nx) / 2;
-  {
-    dest->BezierTo (nx);
-    dest->IntermBezierTo (cx);
-    dest->EndBezierTo ();
-  }
 }
 
 #undef MiscNormalize

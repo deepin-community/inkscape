@@ -1,5 +1,6 @@
 # coding=utf-8
 """Test base inkex module functionality"""
+
 from __future__ import absolute_import, print_function, unicode_literals
 
 import os
@@ -85,6 +86,13 @@ class InkscapeExtensionTest(TestCase):
         options = self.e.arg_parser.parse_args(["--output", "foo.txt", self.empty_svg])
         self.assertEqual(options.input_file, self.empty_svg)
         self.assertEqual(options.output, "foo.txt")
+
+    def test_run_help(self):
+        """Ensure we can run `--help` and output contains '--help'"""
+        with Capture("stdout") as stdout:
+            with self.assertRaises(SystemExit):
+                self.e.run(["--help"])
+            self.assertIn("--help", stdout.getvalue())
 
     def test_get_resource(self):
         """We can get a resource path, based on where the extension is located"""

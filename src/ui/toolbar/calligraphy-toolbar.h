@@ -19,6 +19,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -28,51 +29,70 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <map>
+#include <memory>
+#include <glibmm/refptr.h>
+
 #include "toolbar.h"
-#include <gtkmm/adjustment.h>
 
 class SPDesktop;
 
 namespace Gtk {
+class Builder;
 class ComboBoxText;
-}
+class ToggleButton;
+} // namespace Gtk
 
-namespace Inkscape {
-namespace UI {
+namespace Inkscape::UI {
+
 class SimplePrefPusher;
 
 namespace Widget {
-class SpinButtonToolItem;
+class SpinButton;
 class UnitTracker;
-}
+} // namespace Widget
 
 namespace Toolbar {
-class CalligraphyToolbar : public Toolbar {
+
+class CalligraphyToolbar final : public Toolbar
+{
+public:
+    CalligraphyToolbar(SPDesktop *desktop);
+    ~CalligraphyToolbar() override;
+
 private:
-    UI::Widget::UnitTracker *_tracker;
+    using ValueChangedMemFun = void (CalligraphyToolbar::*)();
+
+    Glib::RefPtr<Gtk::Builder> _builder;
+
+    std::unique_ptr<UI::Widget::UnitTracker> _tracker;
     bool _presets_blocked;
 
-    UI::Widget::SpinButtonToolItem *_angle_item;
-    Gtk::ComboBoxText *_profile_selector_combo;
+    Gtk::ComboBoxText &_profile_selector_combo;
+    UI::Widget::SpinButton &_width_item;
+
+    UI::Widget::SpinButton &_thinning_item;
+    UI::Widget::SpinButton &_mass_item;
+
+    UI::Widget::SpinButton &_angle_item;
+    Gtk::ToggleButton *_usetilt_btn;
+
+    UI::Widget::SpinButton &_flatness_item;
+
+    UI::Widget::SpinButton &_cap_rounding_item;
+
+    UI::Widget::SpinButton &_tremor_item;
+    UI::Widget::SpinButton &_wiggle_item;
 
     std::map<Glib::ustring, GObject *> _widget_map;
 
-    Glib::RefPtr<Gtk::Adjustment> _width_adj;
-    Glib::RefPtr<Gtk::Adjustment> _mass_adj;
-    Glib::RefPtr<Gtk::Adjustment> _wiggle_adj;
-    Glib::RefPtr<Gtk::Adjustment> _angle_adj;
-    Glib::RefPtr<Gtk::Adjustment> _thinning_adj;
-    Glib::RefPtr<Gtk::Adjustment> _tremor_adj;
-    Glib::RefPtr<Gtk::Adjustment> _fixation_adj;
-    Glib::RefPtr<Gtk::Adjustment> _cap_rounding_adj;
-    Gtk::ToggleToolButton *_usepressure;
-    Gtk::ToggleToolButton *_tracebackground;
-    Gtk::ToggleToolButton *_usetilt;
-
+    // TODO: Check if these can be moved to the constructor.
     std::unique_ptr<SimplePrefPusher> _tracebackground_pusher;
     std::unique_ptr<SimplePrefPusher> _usepressure_pusher;
     std::unique_ptr<SimplePrefPusher> _usetilt_pusher;
 
+    void setup_derived_spin_button(UI::Widget::SpinButton &btn, Glib::ustring const &name, double default_value,
+                                   ValueChangedMemFun const value_changed_mem_fun);
     void width_value_changed();
     void velthin_value_changed();
     void angle_value_changed();
@@ -88,18 +108,22 @@ private:
     void update_presets_list();
     void tilt_state_changed();
     void unit_changed(int not_used);
-    void on_pref_toggled(Gtk::ToggleToolButton *item,
-                         const Glib::ustring&   path);
-    
-protected:
-    CalligraphyToolbar(SPDesktop *desktop);
-
-public:
-    static GtkWidget * create(SPDesktop *desktop);
+    void on_pref_toggled(Gtk::ToggleButton *item, Glib::ustring const &path);
 };
 
-}
-}
-}
+} // namespace Inkscape::UI
+
+} // namespace Toolbar
 
 #endif /* !SEEN_CALLIGRAPHY_TOOLBAR_H */
+
+/*
+  Local Variables:
+  mode:c++
+  c-file-style:"stroustrup"
+  c-file-offsets:((innamespace . 0)(inline-open . 0)(case-label . +))
+  indent-tabs-mode:nil
+  fill-column:99
+  End:
+*/
+// vim: filetype=cpp:expandtab:shiftwidth=4:tabstop=8:softtabstop=4:fileencoding=utf-8:textwidth=99 :

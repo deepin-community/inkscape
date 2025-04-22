@@ -1,5 +1,6 @@
 # coding=utf-8
 """Test string uppercase extension"""
+
 import string
 
 from text_uppercase import Uppercase

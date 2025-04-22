@@ -79,14 +79,14 @@ void PngOutput::init()
             "</param>"
             "<param name='png_phys' gui-text='" N_("pHYs DPI") "' type='float' min='0.0' max='100000.0'>0.0</param>"
             "<param name='png_antialias' gui-text='" N_("Antialias") "' type='int' min='0' max='3'>2</param>"
-            "<output raster=\"true\">\n"
+            "<output raster=\"true\" priority=\"1\">\n"
                 "<extension>.png</extension>\n"
                 "<mimetype>image/png</mimetype>\n"
-                "<filetypename>" N_("Portable Network Graphic (*.png)") "</filetypename>\n"
+                "<filetypename>" N_("PNG (*.png)") "</filetypename>\n"
                 "<filetypetooltip>" N_("Default raster graphic export") "</filetypetooltip>\n"
             "</output>\n"
         "</inkscape-extension>",
-        new PngOutput());
+        std::make_unique<PngOutput>());
     // clang-format on
 }
 

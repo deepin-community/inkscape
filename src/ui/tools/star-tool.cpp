@@ -31,15 +31,14 @@
 #include "message-context.h"
 #include "selection.h"
 
-#include "include/macros.h"
-
 #include "object/sp-namedview.h"
 #include "object/sp-star.h"
 
 #include "ui/icon-names.h"
 #include "ui/shape-editor.h"
+#include "ui/widget/events/canvas-event.h"
 
-#include "xml/node-event-vector.h"
+#include "util/units.h"
 
 using Inkscape::DocumentUndo;
 
@@ -49,12 +48,6 @@ namespace Tools {
 
 StarTool::StarTool(SPDesktop *desktop)
     : ToolBase(desktop, "/tools/shapes/star", "star.svg")
-    , star(nullptr)
-    , magnitude(5)
-    , proportion(0.5)
-    , isflatsided(false)
-    , rounded(0)
-    , randomized(0)
 {
     sp_event_context_read(this, "isflatsided");
     sp_event_context_read(this, "magnitude");
@@ -73,7 +66,7 @@ StarTool::StarTool(SPDesktop *desktop)
 
     this->sel_changed_connection.disconnect();
 
-    this->sel_changed_connection = selection->connectChanged(sigc::mem_fun(this, &StarTool::selection_changed));
+    this->sel_changed_connection = selection->connectChanged(sigc::mem_fun(*this, &StarTool::selection_changed));
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     if (prefs->getBool("/tools/shapes/selcue")) {
@@ -132,184 +125,165 @@ void StarTool::set(const Inkscape::Preferences::Entry& val) {
     }
 }
 
-bool StarTool::root_handler(GdkEvent* event) {
-    static bool dragging;
+bool StarTool::root_handler(CanvasEvent const &event)
+{
+    auto selection = _desktop->getSelection();
+    auto prefs = Inkscape::Preferences::get();
 
-    Inkscape::Selection *selection = _desktop->getSelection();
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    tolerance = prefs->getIntLimited("/options/dragtolerance/value", 0, 0, 100);
 
-    this->tolerance = prefs->getIntLimited("/options/dragtolerance/value", 0, 0, 100);
+    bool ret = false;
 
-    gint ret = FALSE;
+    inspect_event(event,
+        [&] (ButtonPressEvent const &event) {
+            if (event.num_press == 1 && event.button == 1) {
+                dragging = true;
 
-    switch (event->type) {
-    case GDK_BUTTON_PRESS:
-        if (event->button.button == 1) {
-            dragging = true;
+                setup_for_drag_start(event);
+                center = _desktop->w2d(event.pos);
 
-            this->center = this->setup_for_drag_start(event);
+                // Snap center.
+                auto &m = _desktop->getNamedView()->snap_manager;
+                m.setup(_desktop);
+                m.freeSnapReturnByRef(center, SNAPSOURCE_NODE_HANDLE);
 
-            /* Snap center */
-            SnapManager &m = _desktop->namedview->snap_manager;
-            m.setup(_desktop, true);
-            m.freeSnapReturnByRef(this->center, Inkscape::SNAPSOURCE_NODE_HANDLE);
-            m.unSetup();
+                grabCanvasEvents();
 
-            grabCanvasEvents();
-            ret = TRUE;
-        }
-        break;
-
-    case GDK_MOTION_NOTIFY:
-        if (dragging && (event->motion.state & GDK_BUTTON1_MASK)) {
-            if ( this->within_tolerance
-                 && ( abs( (gint) event->motion.x - this->xp ) < this->tolerance )
-                 && ( abs( (gint) event->motion.y - this->yp ) < this->tolerance ) ) {
-                break; // do not drag if we're within tolerance from origin
+                ret = true;
+                m.unSetup();
             }
-            // Once the user has moved farther than tolerance from the original location
-            // (indicating they intend to draw, not click), then always process the
-            // motion notify coordinates as given (no snapping back to origin)
-            this->within_tolerance = false;
-
-            Geom::Point const motion_w(event->motion.x, event->motion.y);
-            Geom::Point motion_dt(_desktop->w2d(motion_w));
-
-            this->drag(motion_dt, event->motion.state);
-
-            gobble_motion_events(GDK_BUTTON1_MASK);
-
-            ret = TRUE;
-        } else if (!this->sp_event_context_knot_mouseover()) {
-            SnapManager &m = _desktop->namedview->snap_manager;
-            m.setup(_desktop);
-
-            Geom::Point const motion_w(event->motion.x, event->motion.y);
-            Geom::Point motion_dt(_desktop->w2d(motion_w));
-
-            m.preSnap(Inkscape::SnapCandidatePoint(motion_dt, Inkscape::SNAPSOURCE_NODE_HANDLE));
-            m.unSetup();
-        }
-        break;
-    case GDK_BUTTON_RELEASE:
-        this->xp = this->yp = 0;
-
-        if (event->button.button == 1) {
-            dragging = false;
-
-            this->discard_delayed_snap_event();
-
-            if (!this->within_tolerance) {
-                // we've been dragging, finish the star
-                this->finishItem();
-            } else if (this->item_to_select) {
-                // no dragging, select clicked item if any
-                if (event->button.state & GDK_SHIFT_MASK) {
-                    selection->toggle(this->item_to_select);
-                } else {
-                    selection->set(this->item_to_select);
+        },
+        [&] (MotionEvent const &event) {
+            if (dragging && (event.modifiers & GDK_BUTTON1_MASK)) {
+                if (!checkDragMoved(event.pos)) {
+                    return;
                 }
-            } else {
-                // click in an empty space
-                selection->clear();
+
+                auto const motion_dt = _desktop->w2d(event.pos);
+                drag(motion_dt, event.modifiers);
+
+                gobble_motion_events(GDK_BUTTON1_MASK);
+
+                ret = true;
+            } else if (!sp_event_context_knot_mouseover()) {
+                auto &m = _desktop->getNamedView()->snap_manager;
+                m.setup(_desktop);
+
+                auto const motion_dt = _desktop->w2d(event.pos);
+                m.preSnap(SnapCandidatePoint(motion_dt, SNAPSOURCE_NODE_HANDLE));
+                m.unSetup();
             }
-
-            this->item_to_select = nullptr;
-            ret = TRUE;
-            ungrabCanvasEvents();
-        }
-        break;
-
-    case GDK_KEY_PRESS:
-        switch (get_latin_keyval(&event->key)) {
-        case GDK_KEY_Alt_R:
-        case GDK_KEY_Control_L:
-        case GDK_KEY_Control_R:
-        case GDK_KEY_Shift_L:
-        case GDK_KEY_Shift_R:
-        case GDK_KEY_Meta_L:  // Meta is when you press Shift+Alt (at least on my machine)
-        case GDK_KEY_Meta_R:
-            sp_event_show_modifier_tip(this->defaultMessageContext(), event,
-                                       _("<b>Ctrl</b>: snap angle; keep rays radial"),
-                                       nullptr,
-                                       nullptr);
-            break;
-
-        case GDK_KEY_x:
-        case GDK_KEY_X:
-            if (MOD__ALT_ONLY(event)) {
-                _desktop->setToolboxFocusTo("altx-star");
-                ret = TRUE;
-            }
-            break;
-
-        case GDK_KEY_Escape:
-        	if (dragging) {
-        		dragging = false;
-        		this->discard_delayed_snap_event();
-        		// if drawing, cancel, otherwise pass it up for deselecting
-        		this->cancel();
-        		ret = TRUE;
-        	}
-        	break;
-
-        case GDK_KEY_space:
-            if (dragging) {
-                ungrabCanvasEvents();
-
+        },
+        [&] (ButtonReleaseEvent const &event) {
+            xyp = {};
+            if (dragging && event.button == 1) {
                 dragging = false;
+                discard_delayed_snap_event();
 
-                this->discard_delayed_snap_event();
-
-                if (!this->within_tolerance) {
-                    // we've been dragging, finish the star
-                    this->finishItem();
+                if (star) {
+                    // We've been dragging, finish the star.
+                    finishItem();
+                } else if (item_to_select) {
+                    // No dragging, select clicked item if any.
+                    if (event.modifiers & GDK_SHIFT_MASK) {
+                        selection->toggle(item_to_select);
+                    } else if (!selection->includes(item_to_select)) {
+                        selection->set(item_to_select);
+                    }
+                } else {
+                    // Click in an empty space.
+                    selection->clear();
                 }
-                // do not return true, so that space would work switching to selector
+
+                item_to_select = nullptr;
+                ret = true;
             }
-            break;
+            ungrabCanvasEvents();
+        },
+        [&] (KeyPressEvent const &event) {
+            switch (get_latin_keyval(event)) {
+                case GDK_KEY_Alt_L:
+                case GDK_KEY_Alt_R:
+                case GDK_KEY_Control_L:
+                case GDK_KEY_Control_R:
+                case GDK_KEY_Shift_L:
+                case GDK_KEY_Shift_R:
+                case GDK_KEY_Meta_L:  // Meta is when you press Shift+Alt (at least on my machine)
+                case GDK_KEY_Meta_R:
+                    sp_event_show_modifier_tip(defaultMessageContext(), event,
+                                               _("<b>Ctrl</b>: snap angle; keep rays radial"),
+                                               nullptr,
+                                               nullptr);
+                    break;
 
-        case GDK_KEY_Delete:
-        case GDK_KEY_KP_Delete:
-        case GDK_KEY_BackSpace:
-            ret = this->deleteSelectedDrag(MOD__CTRL_ONLY(event));
-            break;
+                case GDK_KEY_x:
+                case GDK_KEY_X:
+                    if (mod_alt_only(event)) {
+                        _desktop->setToolboxFocusTo("altx-star");
+                        ret = true;
+                    }
+                    break;
 
-        default:
-            break;
-        }
-        break;
+                case GDK_KEY_Escape:
+                    if (dragging) {
+        		dragging = false;
+                        discard_delayed_snap_event();
+                        // If drawing, cancel, otherwise pass it up for deselecting.
+                        cancel();
+                        ret = true;
+                    }
+                    break;
 
-    case GDK_KEY_RELEASE:
-        switch (get_latin_keyval (&event->key)) {
-        case GDK_KEY_Alt_L:
-        case GDK_KEY_Alt_R:
-        case GDK_KEY_Control_L:
-        case GDK_KEY_Control_R:
-        case GDK_KEY_Shift_L:
-        case GDK_KEY_Shift_R:
-        case GDK_KEY_Meta_L:  // Meta is when you press Shift+Alt
-        case GDK_KEY_Meta_R:
-            this->defaultMessageContext()->clear();
-            break;
+                case GDK_KEY_space:
+                    if (dragging) {
+                        ungrabCanvasEvents();
 
-        default:
-            break;
-        }
-        break;
+                        dragging = false;
 
-    default:
-        break;
-    }
+                        discard_delayed_snap_event();
 
-    if (!ret) {
-    	ret = ToolBase::root_handler(event);
-    }
+                        if (!within_tolerance) {
+                            // We've been dragging, finish the star.
+                            finishItem();
+                        }
+                        // Do not return true, so that space would work switching to selector.
+                    }
+                    break;
 
-    return ret;
+                case GDK_KEY_Delete:
+                case GDK_KEY_KP_Delete:
+                case GDK_KEY_BackSpace:
+                    ret = deleteSelectedDrag(mod_ctrl_only(event));
+                    break;
+
+                default:
+                    break;
+            }
+        },
+        [&] (KeyReleaseEvent const &event) {
+            switch (event.keyval) {
+                case GDK_KEY_Alt_L:
+                case GDK_KEY_Alt_R:
+                case GDK_KEY_Control_L:
+                case GDK_KEY_Control_R:
+                case GDK_KEY_Shift_L:
+                case GDK_KEY_Shift_R:
+                case GDK_KEY_Meta_L:  // Meta is when you press Shift+Alt
+                case GDK_KEY_Meta_R:
+                    defaultMessageContext()->clear();
+                    break;
+
+                default:
+                    break;
+            }
+        },
+        [&] (CanvasEvent const &event) {}
+    );
+
+    return ret || ToolBase::root_handler(event);
 }
 
-void StarTool::drag(Geom::Point p, guint state)
+void StarTool::drag(Geom::Point p, unsigned state)
 {
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     int const snaps = prefs->getInt("/options/rotationsnapsperpi/value", 12);
@@ -319,6 +293,8 @@ void StarTool::drag(Geom::Point p, guint state)
             return;
         }
 
+        _tr = currentLayer()->i2doc_affine().inverse();
+
         // Create object
         Inkscape::XML::Document *xml_doc = _desktop->doc()->getReprDoc();
         Inkscape::XML::Node *repr = xml_doc->createElement("svg:path");
@@ -327,23 +303,24 @@ void StarTool::drag(Geom::Point p, guint state)
         // Set style
         sp_desktop_apply_style_tool(_desktop, repr, "/tools/shapes/star", false);
 
-        this->star = SP_STAR(currentLayer()->appendChildRepr(repr));
-
+        this->star = cast<SPStar>(currentLayer()->appendChildRepr(repr));
         Inkscape::GC::release(repr);
-        this->star->transform = currentLayer()->i2doc_affine().inverse();
         this->star->updateRepr();
+
+        // Adjust stroke width to cope with parent's transform
+        this->star->adjust_stroke_width_recursive(_tr.descrim());
     }
 
     /* Snap corner point with no constraints */
-    SnapManager &m = _desktop->namedview->snap_manager;
+    SnapManager &m = _desktop->getNamedView()->snap_manager;
 
-    m.setup(_desktop, true, this->star);
+    m.setup(_desktop, true, star.get());
     Geom::Point pt2g = p;
     m.freeSnapReturnByRef(pt2g, Inkscape::SNAPSOURCE_NODE_HANDLE);
     m.unSetup();
 
-    Geom::Point const p0 = _desktop->dt2doc(this->center);
-    Geom::Point const p1 = _desktop->dt2doc(pt2g);
+    Geom::Point const p0 = _desktop->dt2doc(this->center) * _tr;
+    Geom::Point const p1 = _desktop->dt2doc(pt2g) * _tr;
 
     double const sides = (gdouble) this->magnitude;
     Geom::Point const d = p1 - p0;
@@ -356,12 +333,12 @@ void StarTool::drag(Geom::Point p, guint state)
         arg1 = std::round(arg1/snaps_radian) * snaps_radian;
     }
 
-    sp_star_position_set(this->star, this->magnitude, p0, r1, r1 * this->proportion,
+    sp_star_position_set(star.get(), this->magnitude, p0, r1, r1 * this->proportion,
                          arg1, arg1 + M_PI / sides, this->isflatsided, this->rounded, this->randomized);
 
     /* status text */
     Inkscape::Util::Quantity q = Inkscape::Util::Quantity(r1, "px");
-    Glib::ustring rads = q.string(_desktop->namedview->display_units);
+    Glib::ustring rads = q.string(_desktop->getNamedView()->display_units);
     this->message_context->setF(Inkscape::IMMEDIATE_MESSAGE,
                                ( this->isflatsided?
                                  _("<b>Polygon</b>: radius %s, angle %.2f&#176;; with <b>Ctrl</b> to snap angle") :
@@ -372,7 +349,7 @@ void StarTool::drag(Geom::Point p, guint state)
 void StarTool::finishItem() {
     this->message_context->clear();
 
-    if (this->star != nullptr) {
+    if (star) {
         if (this->star->r[1] == 0) {
         	// Don't allow the creating of zero sized arc, for example
         	// when the start and and point snap to the snap grid point
@@ -380,17 +357,15 @@ void StarTool::finishItem() {
             return;
         }
 
-        // Set transform center, so that odd stars rotate correctly
-        // LP #462157
+        // Set the *transform* center, so select tool rotations work from the star's
+        // center instead of the bbox center for odd spoked stars.
         this->star->setCenter(this->center);
         this->star->set_shape();
         this->star->updateRepr(SP_OBJECT_WRITE_EXT);
-        // compensate stroke scaling couldn't be done in doWriteTransform
-        double const expansion = this->star->transform.descrim();
-        this->star->doWriteTransform(this->star->transform, nullptr, true);
-        this->star->adjust_stroke_width_recursive(expansion);
 
-        _desktop->getSelection()->set(this->star);
+        // update while creating inside a LPE group
+        sp_lpe_item_update_patheffect(this->star.get(), true, true);
+        _desktop->getSelection()->set(star.get());
         DocumentUndo::done(_desktop->getDocument(), _("Create star"), INKSCAPE_ICON("draw-polygon-star"));
 
         this->star = nullptr;
@@ -401,14 +376,12 @@ void StarTool::cancel() {
     _desktop->getSelection()->clear();
     ungrabCanvasEvents();
 
-    if (this->star != nullptr) {
-        this->star->deleteObject();
-        this->star = nullptr;
+    if (star) {
+        star->deleteObject();
     }
 
     this->within_tolerance = false;
-    this->xp = 0;
-    this->yp = 0;
+    this->xyp = {};
     this->item_to_select = nullptr;
 
     DocumentUndo::cancel(_desktop->getDocument());

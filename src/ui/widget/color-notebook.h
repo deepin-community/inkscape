@@ -13,79 +13,87 @@
 #ifndef SEEN_SP_COLOR_NOTEBOOK_H
 #define SEEN_SP_COLOR_NOTEBOOK_H
 
-#ifdef HAVE_CONFIG_H
-# include "config.h"  // only include where actually required!
-#endif
+#include <memory>               // for unique_ptr
+#include <vector>               // for vector
 
-#include <boost/ptr_container/ptr_vector.hpp>
-#include <gtkmm/grid.h>
-#include <gtkmm/stack.h>
-#include <gtkmm/stackswitcher.h>
-#include <glib.h>
+#include <glibmm/ustring.h>     // for ustring
+#include <gtkmm/grid.h>         // for Grid
+#include <gtkmm/widget.h>       // for GtkWidget, Widget (ptr only)
+#include <sigc++/connection.h>  // for connection
 
-#include "color.h"
-#include "color-rgba.h"
-#include "preferences.h"
-#include "ui/selected-color.h"
-#include "ui/widget/icon-combobox.h"
+#include "preferences.h"        // for PrefObserver
+#include "ui/selected-color.h"  // for ColorSelectorFactory, SelectedColor (...
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+class ColorRGBA;
+class SPDocument;
+
+namespace Gtk {
+class Box;
+class Label;
+class Stack;
+class StackSwitcher;
+} // namespace Gtk
+
+namespace Inkscape::UI::Widget {
+
+class IconComboBox;
 
 class ColorNotebook
     : public Gtk::Grid
 {
 public:
-    ColorNotebook(SelectedColor &color);
+    ColorNotebook(SelectedColor &color, bool no_alpha = false);
     ~ColorNotebook() override;
 
     void set_label(const Glib::ustring& label);
 
 protected:
     struct Page {
-        Page(Inkscape::UI::ColorSelectorFactory *selector_factory, const char* icon);
+        Page(std::unique_ptr<Inkscape::UI::ColorSelectorFactory> selector_factory, const char* icon);
 
         std::unique_ptr<Inkscape::UI::ColorSelectorFactory> selector_factory;
         Glib::ustring icon_name;
     };
 
-    virtual void _initUI();
-    void _addPage(Page &page);
+    void _initUI(bool no_alpha);
+    void _addPage(Page &page, bool no_alpha, const Glib::ustring vpath);
+    void setDocument(SPDocument *document);
 
     void _pickColor(ColorRGBA *color);
     static void _onPickerClicked(GtkWidget *widget, ColorNotebook *colorbook);
-    void _onPageSwitched(int page_num);
     virtual void _onSelectedColorChanged();
+    int getPageIndex(const Glib::ustring &name);
+    int getPageIndex(Gtk::Widget *widget);
 
     void _updateICCButtons();
     void _setCurrentPage(int i, bool sync_combo);
 
     Inkscape::UI::SelectedColor &_selected_color;
-    gulong _entryId;
-    Gtk::Stack* _book;
-    Gtk::StackSwitcher* _switcher;
-    Gtk::Box* _buttonbox;
-    Gtk::Label* _label;
-    GtkWidget *_rgbal; /* RGBA entry */
-    GtkWidget *_box_outofgamut, *_box_colormanaged, *_box_toomuchink;
-    GtkWidget *_btn_picker;
-    GtkWidget *_p; /* Color preview */
-    boost::ptr_vector<Page> _available_pages;
+    unsigned long _entryId = 0;
+    Gtk::Stack* _book = nullptr;
+    Gtk::StackSwitcher* _switcher = nullptr;
+    Gtk::Box* _buttonbox = nullptr;
+    Gtk::Label* _label = nullptr;
+    GtkWidget *_rgbal = nullptr; /* RGBA entry */
+    GtkWidget *_box_outofgamut = nullptr;
+    GtkWidget *_box_colormanaged = nullptr;
+    GtkWidget *_box_toomuchink = nullptr;
+    GtkWidget *_btn_picker = nullptr;
+    GtkWidget *_p = nullptr; /* Color preview */
     sigc::connection _onetimepick;
     IconComboBox* _combo = nullptr;
 
 private:
-    // By default, disallow copy constructor and assignment operator
-    ColorNotebook(const ColorNotebook &obj) = delete;
-    ColorNotebook &operator=(const ColorNotebook &obj) = delete;
-
     PrefObserver _observer;
+    std::vector<PrefObserver> _visibility_observers;
+
+    SPDocument *_document = nullptr;
+    sigc::connection _doc_replaced_connection;
+    sigc::connection _icc_changed_connection;
 };
 
-}
-}
-}
+} // namespace Inkscape::UI::Widget
+
 #endif // SEEN_SP_COLOR_NOTEBOOK_H
 /*
   Local Variables:

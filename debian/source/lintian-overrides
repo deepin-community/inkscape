@@ -1,3 +1,1 @@
-# something went wrong with 1.0.2
-source-is-missing *.pyc
 source-contains-prebuilt-python-object

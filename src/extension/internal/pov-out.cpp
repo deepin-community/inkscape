@@ -39,6 +39,7 @@
 #include <cstdarg>
 #include "document.h"
 #include "extension/extension.h"
+#include "util/safe-printf.h"
 
 
 namespace Inkscape
@@ -271,10 +272,10 @@ bool PovOutput::doCurve(SPItem *item, const String &id)
     using Geom::Y;
 
     //### Get the Shape
-    if (!SP_IS_SHAPE(item))//Bulia's suggestion.  Allow all shapes
+    if (!is<SPShape>(item))//Bulia's suggestion.  Allow all shapes
         return true;
 
-    SPShape *shape = SP_SHAPE(item);
+    auto shape = cast<SPShape>(item);
     if (shape->curve()->is_empty()) {
         return true;
     }
@@ -454,34 +455,30 @@ bool PovOutput::doCurve(SPItem *item, const String &id)
  */
 bool PovOutput::doTreeRecursive(SPDocument *doc, SPObject *obj)
 {
-
     String id;
-    if (!obj->getId())
-        {
+    if (!obj->getId()) {
         char buf[16];
-        sprintf(buf, "id%d", idIndex++);
+        safeprintf(buf, "id%d", idIndex++);
         id = buf;
-        }
-    else
-        {
-            id = obj->getId();
-        }
+    }
+    else {
+        id = obj->getId();
+    }
 
-    if (SP_IS_ITEM(obj))
-        {
-        SPItem *item = SP_ITEM(obj);
-        if (!doCurve(item, id))
+    if (is<SPItem>(obj)) {
+        auto item = cast<SPItem>(obj);
+        if (!doCurve(item, id)) {
             return false;
         }
+    }
 
     /**
      * Descend into children
      */
-    for (auto &child: obj->children)
-        {
-            if (!doTreeRecursive(doc, &child))
-                return false;
-        }
+    for (auto &child: obj->children) {
+        if (!doTreeRecursive(doc, &child))
+            return false;
+    }
 
     return true;
 }
@@ -719,7 +716,7 @@ PovOutput::init()
                 "<filetypetooltip>" N_("PovRay Raytracer File") "</filetypetooltip>\n"
             "</output>\n"
         "</inkscape-extension>",
-        new PovOutput());
+        std::make_unique<PovOutput>());
     // clang-format on
 }
 

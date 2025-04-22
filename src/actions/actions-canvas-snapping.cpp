@@ -2,20 +2,21 @@
 /*
  * Gio::Actions for toggling snapping preferences. Not tied to a particular document.
  *
+ * As preferences are stored per document, changes should be propagated to any window with same document.
+ *
  * Copyright (C) 2019 Tavmjong Bah
  *
  * The contents of this file may be used under the GNU General Public License Version 2 or later.
- *
  */
 
-#include <iostream>
-#include <unordered_map>
-#include <vector>
-
-#include <giomm.h>  // Not <gtkmm.h>! To eventually allow a headless version!
-#include <glibmm/i18n.h>
-
 #include "actions-canvas-snapping.h"
+
+#include <unordered_map>
+#include <giomm/actionmap.h>
+#include <glibmm/i18n.h>
+#include <glibmm/ustring.h>
+
+#include "actions-helper.h"
 #include "actions/actions-extra-data.h"
 #include "inkscape-application.h"
 #include "inkscape.h"
@@ -74,8 +75,10 @@ SnapVector snap_all_the_rest = {
     { "snap-path-mask",          SNAPTARGET_PATH_MASK,          true },
     { "snap-path-clip",          SNAPTARGET_PATH_CLIP,          true },
 
-    { "snap-page-border",        SNAPTARGET_PAGE_BORDER,        true },
+    { "snap-page-border",        SNAPTARGET_PAGE_EDGE_BORDER,   true },
+    { "snap-page-margin",        SNAPTARGET_PAGE_MARGIN_BORDER, true },
     { "snap-grid",               SNAPTARGET_GRID,               true },
+    { "snap-grid-line",          SNAPTARGET_GRID_LINE,          true },
     { "snap-guide",              SNAPTARGET_GUIDE,              true },
 };
 
@@ -190,7 +193,7 @@ void set_simple_snap(SimpleSnap option, bool value) {
         vect = &snap_all_the_rest;
         break;
     default:
-        std::cerr << "missing case statement in " << __func__ << std::endl;
+        show_output(Glib::ustring("missing case statement in ") + __func__);
         break;
     }
 
@@ -266,7 +269,9 @@ std::vector<std::vector<Glib::ustring>> raw_data_canvas_snapping =
     {"win.snap-text-baseline",        N_("Snap Text Baselines"),               "Snap",  N_("Toggle snapping to text baseline and text anchors")  },
 
     {"win.snap-page-border",          N_("Snap Page Border"),                  "Snap",  N_("Toggle snapping to page border")                     },
+    {"win.snap-page-margin",          N_("Snap Page Margin"),                  "Snap",  N_("Toggle snapping to page margin")                     },
     {"win.snap-grid",                 N_("Snap Grids"),                        "Snap",  N_("Toggle snapping to grids")                           },
+    {"win.snap-grid-line",            N_("Snap Grid Lines"),                   "Snap",  N_("Toggle snapping to grid lines")                      },
     {"win.snap-guide",                N_("Snap Guide Lines"),                  "Snap",  N_("Toggle snapping to guide lines")                     },
 
     {"win.snap-path-mask",            N_("Snap Mask Paths"),                   "Snap",  N_("Toggle snapping to mask paths")                      },
@@ -300,7 +305,7 @@ void add_actions_canvas_snapping(Gio::ActionMap* map) {
     // Check if there is already an application instance (GUI or non-GUI).
     auto app = InkscapeApplication::instance();
     if (!app) {
-        std::cerr << "add_actions_canvas_snapping: no app!" << std::endl;
+        show_output("add_actions_canvas_snapping: no app!");
         return;
     }
     app->get_action_extra_data().add_data(raw_data_canvas_snapping);
@@ -318,13 +323,13 @@ set_actions_canvas_snapping_helper(Gio::ActionMap& map, Glib::ustring action_nam
     // "set" it! We need to cast to Gio::SimpleAction)
     Glib::RefPtr<Gio::Action> action = map.lookup_action(action_name);
     if (!action) {
-        std::cerr << "set_actions_canvas_snapping_helper: action " << action_name << " missing!" << std::endl;
+        show_output(Glib::ustring("set_actions_canvas_snapping_helper: action ") + action_name.raw() + " missing!");
         return;
     }
 
     auto simple = Glib::RefPtr<Gio::SimpleAction>::cast_dynamic(action);
     if (!simple) {
-        std::cerr << "set_actions_canvas_snapping_helper: action " << action_name << " not SimpleAction!" << std::endl;
+        show_output(Glib::ustring("set_actions_canvas_snapping_helper: action ") + action_name.raw() + " not SimpleAction!");
         return;
     }
 
@@ -340,14 +345,14 @@ void set_actions_canvas_snapping(Gio::ActionMap& map) {
     bool bbox = snapprefs.isTargetSnappable(SNAPTARGET_BBOX_CATEGORY);
     bool node = snapprefs.isTargetSnappable(SNAPTARGET_NODE_CATEGORY);
     bool other = snapprefs.isTargetSnappable(SNAPTARGET_OTHERS_CATEGORY);
+    bool grid = snapprefs.isTargetSnappable(SNAPTARGET_GRID);
 
     struct { const char* action; bool state; bool enabled; } snap_options[] = {
         { "snap-global-toggle", global, true }, // Always enabled
 
         { "snap-alignment", alignment, global },
         { "snap-alignment-self",     snapprefs.isSnapButtonEnabled(SNAPTARGET_ALIGNMENT_HANDLE),   global && alignment },
-
-        { "snap-distribution", distribution, global },
+        { "snap-distribution", distribution, global && alignment},
 
         { "snap-bbox", bbox, global },
         { "snap-bbox-edge",          snapprefs.isSnapButtonEnabled(SNAPTARGET_BBOX_EDGE),          global && bbox },
@@ -369,12 +374,14 @@ void set_actions_canvas_snapping(Gio::ActionMap& map) {
         { "snap-rotation-center",    snapprefs.isSnapButtonEnabled(SNAPTARGET_ROTATION_CENTER),    global && other },
         { "snap-text-baseline",      snapprefs.isSnapButtonEnabled(SNAPTARGET_TEXT_BASELINE),      global && other },
 
-        { "snap-page-border",        snapprefs.isSnapButtonEnabled(SNAPTARGET_PAGE_BORDER),        global },
-        { "snap-grid",               snapprefs.isSnapButtonEnabled(SNAPTARGET_GRID),               global },
-        { "snap-guide",              snapprefs.isSnapButtonEnabled(SNAPTARGET_GUIDE),              global },
+        { "snap-path-clip",          snapprefs.isSnapButtonEnabled(SNAPTARGET_PATH_CLIP),          global && other},
+        { "snap-path-mask",          snapprefs.isSnapButtonEnabled(SNAPTARGET_PATH_MASK),          global && other},
 
-        { "snap-path-clip",          snapprefs.isSnapButtonEnabled(SNAPTARGET_PATH_CLIP),          global },
-        { "snap-path-mask",          snapprefs.isSnapButtonEnabled(SNAPTARGET_PATH_MASK),          global },
+        { "snap-page-border",        snapprefs.isSnapButtonEnabled(SNAPTARGET_PAGE_EDGE_BORDER),   global },
+        { "snap-page-margin",        snapprefs.isSnapButtonEnabled(SNAPTARGET_PAGE_MARGIN_BORDER), global },
+        { "snap-grid",               snapprefs.isSnapButtonEnabled(SNAPTARGET_GRID),               global },
+        { "snap-grid-line",          snapprefs.isSnapButtonEnabled(SNAPTARGET_GRID_LINE),          global && grid},
+        { "snap-guide",              snapprefs.isSnapButtonEnabled(SNAPTARGET_GUIDE),              global },
 
         { "simple-snap-bbox", bbox, global },
         { "simple-snap-nodes", node, global },
@@ -398,7 +405,6 @@ void transition_to_simple_snapping() {
         }
     }
 }
-
 
 /*
   Local Variables:

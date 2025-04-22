@@ -18,9 +18,9 @@
 #
 
 """
-Hershey Text 3.0.6, 2022-07-21
+Hershey Text 3.0.8, 2023-10-22
 
-Copyright 2022, Windell H. Oskay, www.evilmadscientist.com
+Copyright 2023, Windell H. Oskay, www.evilmadscientist.com
 
 Major revisions in Hershey Text 3.0:
 
@@ -78,7 +78,6 @@ from inkex import (
 
 
 class Hershey(inkex.Effect):
-
     """
     An extension for use with Inkscape 1.0
     """
@@ -615,7 +614,6 @@ Evil Mad Scientist Laboratories
                 # Note: case of no horiz_adv_x value is not handled.
 
                 for element in node:
-
                     if isinstance(element, Glyph):
                         # First, because it is the most common element
                         try:
@@ -978,7 +976,6 @@ Evil Mad Scientist Laboratories
         """
 
         if self.font_dict[fontname] is None:
-
             # If we were not able to load the requested font::
             fontname = self.options.fontface  # Fallback
             if fontname not in self.font_dict:
@@ -1118,7 +1115,6 @@ Evil Mad Scientist Laboratories
         return offset + float(adv_x) * font_scale  # new horizontal offset value
 
     def recursive_get_encl_transform(self, node):
-
         """
         Determine the cumulative transform which node inherits from
         its chain of ancestors.
@@ -1133,7 +1129,7 @@ Evil Mad Scientist Laboratories
 
             if parent_transform is None:
                 return trans
-            return Transform(parent_transform) * Transform(trans)
+            return Transform(parent_transform) @ Transform(trans)
         return self.doc_transform
 
     def recursively_parse_flowroot(self, node_list, parent_info):
@@ -1322,7 +1318,6 @@ Evil Mad Scientist Laboratories
         """
 
         for node in anode_list:
-
             # Ignore invisible nodes
             vis = node.get("visibility", parent_visibility)
             if vis == "inherit":
@@ -1335,7 +1330,6 @@ Evil Mad Scientist Laboratories
             mat_new = Transform(mat_current) @ Transform(_matrix)
 
             if isinstance(node, Group):
-
                 recurse_group = True
                 ink_label = node.get("inkscape:label")
 
@@ -1373,7 +1367,7 @@ Evil Mad Scientist Laboratories
                 # Note: the transform has already been applied
                 if (x != 0) or (y != 0):
                     _trans_string = "translate({0:.6E}, {1:.6E})".format(x, y)
-                    ref_transform = Transform(_matrix) * Transform(_trans_string)
+                    ref_transform = Transform(_matrix) @ Transform(_trans_string)
                 else:
                     ref_transform = local_transform
 
@@ -1403,7 +1397,6 @@ Evil Mad Scientist Laboratories
                     self.nodes_to_delete.append(node)
 
             elif isinstance(node, (TextElement, FlowRoot)):
-
                 # Flag for when we start a new line of text, for use with indents:
                 self.new_line = True
 
@@ -1494,9 +1487,7 @@ Evil Mad Scientist Laboratories
 
                 # Initialize text attribute lists for each top-level text object:
                 self.text_string = ""
-                self.text_families = (
-                    []
-                )  # Lis of font family for characters in the string
+                self.text_families = []  # Lis of font family for characters in the string
                 self.text_heights = []  # List of font heights
                 self.text_spacings = []  # List of vertical line heights
                 self.text_aligns = []  # List of horizontal alignment values
@@ -1533,7 +1524,6 @@ Evil Mad Scientist Laboratories
                 """
 
                 if isinstance(node, FlowRoot):
-
                     try:
                         text_align = node_style["text-align"]
                         # Use text-align, not text-anchor, in flowroot
@@ -1640,7 +1630,6 @@ Evil Mad Scientist Laboratories
                     nbsp = "\xa0"  # Unicode non-breaking space character
 
                     for line_number, text_line in enumerate(text_lines):
-
                         line_length = len(text_line)
                         extd_line_length = len(extd_text_lines[line_number])
 
@@ -1659,7 +1648,6 @@ Evil Mad Scientist Laboratories
                             v = v + char_v_spacing
                         else:
                             while i < line_length:
-
                                 word_start = (
                                     i  # Value of i at beginning of the current word.
                                 )
@@ -1856,7 +1844,6 @@ Evil Mad Scientist Laboratories
 
                     i = 0
                     while i < str_len:  # Loop through the entire text of the string.
-
                         try:
                             x_start_line = float(self.text_x[i])  # Start new line here.
                         except ValueError:
@@ -1988,7 +1975,6 @@ Evil Mad Scientist Laboratories
         if self.options.mode == "help":
             inkex.errormsg(self.help_text)
         elif self.options.mode == "utilities":
-
             if self.options.util_mode == "sample":
                 self.font_table()
             else:
@@ -2021,7 +2007,7 @@ Evil Mad Scientist Laboratories
             inkex.errormsg(
                 _(
                     "Warning: unable to render text.\n"
-                    + "Please use Text > Remove Manual Kerns to convert it prior to use ."
+                    + "Please use Text > Remove Manual Kerns to remove kerning prior to using this extension."
                 )
             )
 

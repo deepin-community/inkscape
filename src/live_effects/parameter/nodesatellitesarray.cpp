@@ -9,19 +9,27 @@
 
 #include "nodesatellitesarray.h"
 
-#include "helper/geom.h"
+#include <glibmm/i18n.h>
+
+#include <2geom/path-intersection.h>
+
+#include "display/control/canvas-item-enums.h"
 #include "inkscape.h"
+#include "preferences.h"
+
+#include "display/control/canvas-item-ctrl.h"
+#include "helper/geom.h"
 #include "live_effects/effect.h"
 #include "live_effects/lpe-fillet-chamfer.h"
-#include "preferences.h"
+#include "object/sp-lpe-item.h"
 #include "ui/dialog/lpe-fillet-chamfer-properties.h"
 #include "ui/knot/knot-holder.h"
 #include "ui/shape-editor.h"
 #include "ui/tools/node-tool.h"
 
+
 // TODO due to internal breakage in glibmm headers,
 // this has to be included last.
-#include <glibmm/i18n.h>
 
 namespace Inkscape {
 
@@ -31,16 +39,13 @@ NodeSatelliteArrayParam::NodeSatelliteArrayParam(const Glib::ustring &label, con
                                                  const Glib::ustring &key, Inkscape::UI::Widget::Registry *wr,
                                                  Effect *effect)
     : ArrayParam<std::vector<NodeSatellite>>(label, tip, key, wr, effect, 0)
-    , _knoth(nullptr)
 {
     param_widget_is_visible(false);
 }
 
-void NodeSatelliteArrayParam::set_oncanvas_looks(Inkscape::CanvasItemCtrlShape shape, Inkscape::CanvasItemCtrlMode mode,
-                                                 guint32 color)
+void NodeSatelliteArrayParam::set_oncanvas_looks(CanvasItemCtrlShape shape, uint32_t color)
 {
     _knot_shape = shape;
-    _knot_mode = mode;
     _knot_color = color;
 }
 
@@ -58,14 +63,15 @@ void NodeSatelliteArrayParam::setPathVectorNodeSatellites(PathVectorNodeSatellit
 void NodeSatelliteArrayParam::reloadKnots()
 {
     SPDesktop *desktop = SP_ACTIVE_DESKTOP;
-    if (desktop) {
-        Inkscape::UI::Tools::NodeTool *nt = dynamic_cast<Inkscape::UI::Tools::NodeTool *>(desktop->event_context);
+    if (desktop && !_global_knot_hide) {
+        Inkscape::UI::Tools::NodeTool *nt = dynamic_cast<Inkscape::UI::Tools::NodeTool *>(desktop->getTool());
         if (nt) {
             for (auto &_shape_editor : nt->_shape_editors) {
                 Inkscape::UI::ShapeEditor *shape_editor = _shape_editor.second.get();
                 if (shape_editor && shape_editor->lpeknotholder) {
-                    SPItem *item = shape_editor->knotholder->item;
-                    shape_editor->unset_item(true);
+                    SPItem *item = shape_editor->lpeknotholder->item;
+                    delete shape_editor->lpeknotholder;
+                    shape_editor->lpeknotholder = nullptr;
                     shape_editor->set_item(item);
                 }
             }
@@ -94,7 +100,7 @@ void NodeSatelliteArrayParam::setEffectType(EffectType et)
 
 void NodeSatelliteArrayParam::updateCanvasIndicators(bool mirror)
 {
-    if (!_last_pathvector_nodesatellites) {
+    if (!_last_pathvector_nodesatellites || _global_knot_hide) {
         return;
     }
 
@@ -221,7 +227,7 @@ void NodeSatelliteArrayParam::addKnotHolderEntities(KnotHolder *knotholder, SPIt
                 }
                 FilletChamferKnotHolderEntity *e = new FilletChamferKnotHolderEntity(this, index);
                 e->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:Chamfer",
-                          _(tip), _knot_color);
+                          tip, _knot_color);
                 knotholder->add(e);
             }
             index++;
@@ -251,7 +257,6 @@ void NodeSatelliteArrayParam::updateAmmount(double amount)
 
 void NodeSatelliteArrayParam::addKnotHolderEntities(KnotHolder *knotholder, SPItem *item)
 {
-    _knoth = knotholder;
     addKnotHolderEntities(knotholder, item, true);
 }
 
@@ -264,7 +269,7 @@ void FilletChamferKnotHolderEntity::knot_set(Geom::Point const &p,
         Geom::Point const &/*origin*/,
         guint state)
 {
-    if (!_pparam->_last_pathvector_nodesatellites) {
+    if (!_pparam->_last_pathvector_nodesatellites || _pparam->_global_knot_hide) {
         return;
     }
     size_t total_nodesatellites = _pparam->_last_pathvector_nodesatellites->getTotalNodeSatellites();
@@ -277,8 +282,7 @@ void FilletChamferKnotHolderEntity::knot_set(Geom::Point const &p,
     std::pair<size_t, size_t> index_data = _pparam->_last_pathvector_nodesatellites->getIndexData(index);
     size_t satelite_index = index_data.first;
     size_t subsatelite_index = index_data.second;
-    
-    Geom::Point s = snap_knot_position(p, state);
+    Geom::Point s = p;
     if (!valid_index(satelite_index, subsatelite_index)) {
         return;
     }
@@ -306,7 +310,10 @@ void FilletChamferKnotHolderEntity::knot_set(Geom::Point const &p,
     Geom::Point normal = pathv[satelite_index][subsatelite_index].pointAt(normal_time);
     double distance_mirror = Geom::distance(mirror,s);
     double distance_normal = Geom::distance(normal,s);
-    if (Geom::are_near(s, pathv[satelite_index][subsatelite_index].initialPoint(), 1.5 / _pparam->_current_zoom)) {
+    if ((normal_time == 0 && !is_mirror) ||
+        (mirror_time == 1 && is_mirror) || 
+        Geom::are_near(s, pathv[satelite_index][subsatelite_index].initialPoint(), 1.5 / _pparam->_current_zoom)) 
+    {
         nodesatellite.amount = 0;
     } else if (distance_mirror < distance_normal) {
         double time_start = 0;
@@ -320,6 +327,9 @@ void FilletChamferKnotHolderEntity::knot_set(Geom::Point const &p,
         if (nodesatellite.is_time) {
             amount = timeAtArcLength(amount, pathv[satelite_index][subsatelite_index]);
         }
+        if (_set_circle && time_start < 0.1001) {
+            return;
+        }
         nodesatellite.amount = amount;
     } else {
         nodesatellite.setPosition(s, pathv[satelite_index][subsatelite_index]);
@@ -328,18 +338,29 @@ void FilletChamferKnotHolderEntity::knot_set(Geom::Point const &p,
     filletchamfer->helperpath = true;
     _pparam->updateAmmount(nodesatellite.amount);
     _pparam->_vector[satelite_index][subsatelite_index] = nodesatellite;
-    sp_lpe_item_update_patheffect(SP_LPE_ITEM(item), false, false);
+    if (!_updating) {
+        Geom::Point b = knot_get();
+        Geom::Point a = snap_knot_position(b, state);
+        if (!Geom::are_near(b,a,0.001)) {
+            _updating = true;
+            knot_set(a, Geom::Point(), state);
+            knot_get();
+            _updating = false;
+        }
+    }
+    sp_lpe_item_update_patheffect(cast<SPLPEItem>(item), false, false);
 }
 
 void
 FilletChamferKnotHolderEntity::knot_ungrabbed(Geom::Point const &p, Geom::Point const &origin, guint state)
 {
+    if (!_pparam->_last_pathvector_nodesatellites || _pparam->_global_knot_hide) {
+        return;
+    }
     Inkscape::LivePathEffect::LPEFilletChamfer *filletchamfer = dynamic_cast<Inkscape::LivePathEffect::LPEFilletChamfer *>(_pparam->param_effect);
     if (filletchamfer) {
-        filletchamfer->refresh_widgets = true;
         filletchamfer->helperpath = false;
-        filletchamfer->writeParamsToSVG();
-        sp_lpe_item_update_patheffect(SP_LPE_ITEM(item), false, false);
+        filletchamfer->makeUndoDone(_("Move handle"));
     }
 }
 
@@ -371,36 +392,103 @@ Geom::Point FilletChamferKnotHolderEntity::knot_get() const
     {
         return Geom::Point(Geom::infinity(), Geom::infinity());
     }
-    this->knot->show();
-    if (is_mirror) {
-        gint previous_index = subsatelite_index - 1;
-        if (subsatelite_index == 0 && pathv[satelite_index].closed()) {
-            previous_index = count_path_nodes(pathv[satelite_index]) - 1;
-        }
-        if ( previous_index < 0 ) {
-            return Geom::Point(Geom::infinity(), Geom::infinity());
-        }
-        Geom::Curve const &curve_in = pathv[satelite_index][previous_index];
-        double s = nodesatellite.arcDistance(pathv[satelite_index][subsatelite_index]);
-        double t = nodesatellite.time(s, true, curve_in);
-        if (t > 1) {
-            t = 1;
-        }
-        if (t < 0) {
-            t = 0;
-        }
-        double time_start = 0;
-        time_start = _pparam->_last_pathvector_nodesatellites->getNodeSatellites()[satelite_index][previous_index].time(
-            curve_in);
-        if (time_start > t) {
-            t = time_start;
-        }
-        tmp_point = (curve_in).pointAt(t);
-    } else {
-        tmp_point = nodesatellite.getPosition(pathv[satelite_index][subsatelite_index]);
+    Geom::Point contracted = Geom::Point();
+    bool pathdir = Geom::path_direction(pathv[satelite_index]);
+    gint previous_index = subsatelite_index - 1;
+    if (subsatelite_index == 0 && pathv[satelite_index].closed()) {
+        previous_index = count_path_nodes(pathv[satelite_index]) - 1;
     }
-    Geom::Point const canvas_point = tmp_point;
-    return canvas_point;
+    if (previous_index < 0 || subsatelite_index > pathv[satelite_index].size_open()) {
+        return Geom::Point(Geom::infinity(), Geom::infinity());
+    }
+    auto const &ssat_path = pathv[satelite_index][subsatelite_index];
+    auto const &prev_path = pathv[satelite_index][previous_index   ];
+    Geom::Curve const &curve_in = pathv[satelite_index][previous_index];
+    double s = nodesatellite.arcDistance(ssat_path);
+    if (Geom::are_near(ssat_path.length(),0, 0.5) || 
+        Geom::are_near(prev_path.length(), 0, 0.5)) 
+    {
+        return Geom::Point(Geom::infinity(), Geom::infinity());
+    }
+    double t = nodesatellite.time(s, true, curve_in);
+    if (t > 1) {
+        t = 1;
+    }
+    if (t < 0) {
+        t = 0;
+    }
+    double time_start = 0;
+    time_start = _pparam->_last_pathvector_nodesatellites->getNodeSatellites()[satelite_index][previous_index].time(
+        curve_in);
+    if (time_start > t) {
+        t = time_start;
+    }
+    tmp_point = (curve_in).pointAt(t);
+    Geom::Affine itemtransform = cast<SPLPEItem>(item)->i2doc_affine();
+    Geom::Path segment(curve_in.initialPoint());
+    segment.append(curve_in);
+    segment = segment.portion(0,t);
+    segment *= itemtransform;
+    Geom::CubicBezier const *cubic = dynamic_cast<Geom::CubicBezier const *>(&segment[0]);
+    Geom::Ray ray(segment.finalPoint(), segment.initialPoint());
+    if (cubic) {
+        ray.setPoints(segment.finalPoint(), (*cubic)[2]);
+    }
+    double angle = ray.angle();
+    Geom::Point other = tmp_point;
+    tmp_point = nodesatellite.getPosition(ssat_path);
+    segment.clear();
+    segment.append(ssat_path);
+    segment = segment.portion(Geom::nearest_time(tmp_point,segment), 1);
+    segment *= itemtransform;
+    Geom::CubicBezier const *cubic2 = dynamic_cast<Geom::CubicBezier const *>(&segment[0]);
+    Geom::Ray ray2(segment.initialPoint(), segment.finalPoint());
+    if (cubic2) {
+        ray2.setPoints(segment.initialPoint(), (*cubic2)[1]);
+    }
+    bool ccw_toggle = Geom::cross(curve_in.finalPoint() - other, tmp_point - other) < 0;
+    double angle_between = Geom::angle_between(ray, ray2, ccw_toggle);
+    
+    if (!is_mirror) {
+        angle = ray2.angle() + Geom::rad_from_deg(180);
+        contracted = ssat_path.pointAt(0.1);
+    }
+    if (is_mirror) {
+        tmp_point = other;
+    }
+    knot->show();
+    if (pathdir) {
+        angle -= Geom::rad_from_deg(180);
+    }
+    if (Geom::deg_from_rad(angle_between) > 180) {
+        angle += Geom::rad_from_deg(180);
+    }
+    /* if (itemtransform.flips()) {
+        angle += Geom::rad_from_deg(180);
+    } */
+    
+    knot->setAngle(angle + Geom::rad_from_deg(90));
+    knot->setSize(Inkscape::HandleSize::NORMAL);
+    knot->ctrl->set_type(CANVAS_ITEM_CTRL_TYPE_POINTER);
+    if (nodesatellite.amount == 0) {
+        if (is_mirror) {
+            knot->hide();
+        } else {
+            tmp_point = contracted;
+            _set_circle = true;
+            knot->ctrl->set_type(CANVAS_ITEM_CTRL_TYPE_MOVE);
+            knot->setSize(Inkscape::HandleSize::TINY);
+        }
+    }
+    
+    if (_pparam->_current_zoom && 
+        (Geom::are_near(ssat_path.pointAt(0), ssat_path.pointAt(0.1), 0.5 / _pparam->_current_zoom) ||
+         Geom::are_near(prev_path.pointAt(0), prev_path.pointAt(0.1), 0.5 / _pparam->_current_zoom)))
+    {
+        knot->hide();
+    }
+    knot->updateCtrl();
+    return tmp_point;
 }
 
 void FilletChamferKnotHolderEntity::knot_click(guint state)
@@ -432,7 +520,7 @@ void FilletChamferKnotHolderEntity::knot_click(guint state)
     if (state & GDK_CONTROL_MASK) {
         if (state & GDK_MOD1_MASK) {
             _pparam->_vector[satelite_index][subsatelite_index].amount = 0.0;
-            sp_lpe_item_update_patheffect(SP_LPE_ITEM(item), false, false);
+            sp_lpe_item_update_patheffect(cast<SPLPEItem>(item), false, false);
         } else {
             using namespace Geom;
             NodeSatelliteType type = _pparam->_vector[satelite_index][subsatelite_index].nodesatellite_type;
@@ -451,7 +539,7 @@ void FilletChamferKnotHolderEntity::knot_click(guint state)
                 break;
             }
             _pparam->_vector[satelite_index][subsatelite_index].nodesatellite_type = type;
-            sp_lpe_item_update_patheffect(SP_LPE_ITEM(item), false, false);
+            sp_lpe_item_update_patheffect(cast<SPLPEItem>(item), false, false);
             const gchar *tip;
             if (type == CHAMFER) {
                 tip = _("<b>Chamfer</b>: <b>Ctrl+Click</b> toggles type, "
@@ -470,7 +558,7 @@ void FilletChamferKnotHolderEntity::knot_click(guint state)
                         "<b>Shift+Click</b> open dialog, "
                         "<b>Ctrl+Alt+Click</b> resets");
             }
-            this->knot->tip = g_strdup(tip);
+            this->knot->setTip(tip);
             this->knot->show();
         }
     } else if (state & GDK_SHIFT_MASK) {
@@ -495,7 +583,7 @@ void FilletChamferKnotHolderEntity::knot_click(guint state)
                 !_pparam->_use_distance
                 ? true
                 : false;
-        Inkscape::UI::Dialogs::FilletChamferPropertiesDialog::showDialog(
+        Inkscape::UI::Dialog::FilletChamferPropertiesDialog::showDialog(
             this->desktop, amount, this, _pparam->_use_distance, aprox,
             _pparam->_vector[satelite_index][subsatelite_index]);
     }
@@ -503,7 +591,7 @@ void FilletChamferKnotHolderEntity::knot_click(guint state)
 
 void FilletChamferKnotHolderEntity::knot_set_offset(NodeSatellite nodesatellite)
 {
-    if (!_pparam->_last_pathvector_nodesatellites) {
+    if (!_pparam->_last_pathvector_nodesatellites || _pparam->_global_knot_hide) {
         return;
     }
     size_t total_nodesatellites = _pparam->_last_pathvector_nodesatellites->getTotalNodeSatellites();
@@ -547,10 +635,7 @@ void FilletChamferKnotHolderEntity::knot_set_offset(NodeSatellite nodesatellite)
     nodesatellite.amount = amount;
     _pparam->_vector[satelite_index][subsatelite_index] = nodesatellite;
     this->parent_holder->knot_ungrabbed_handler(this->knot, 0);
-    SPLPEItem *splpeitem = dynamic_cast<SPLPEItem *>(item);
-    if (splpeitem) {
-        sp_lpe_item_update_patheffect(splpeitem, false, false);
-    }
+    _pparam->write_to_SVG();
 }
 
 } /* namespace LivePathEffect */

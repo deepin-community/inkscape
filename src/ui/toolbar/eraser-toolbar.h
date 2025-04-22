@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef SEEN_ERASOR_TOOLBAR_H
-#define SEEN_ERASOR_TOOLBAR_H
-
 /**
  * @file
- * Erasor aux toolbar
+ * Eraser toolbar
  */
 /* Authors:
  *   MenTaLguY <mental@rydia.net>
@@ -19,6 +16,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -28,15 +26,19 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#ifndef SEEN_INKCAPE_UI_ERASERTOOLBAR_H
+#define SEEN_INKCAPE_UI_ERASERTOOLBAR_H
+
+#include <glibmm/refptr.h>
+
 #include "toolbar.h"
 
-#include <gtkmm/adjustment.h>
+namespace Gtk {
+class Builder;
+class ToggleButton;
+} // namespace Gtk
 
 class SPDesktop;
-
-namespace Gtk {
-class SeparatorToolItem;
-}
 
 namespace Inkscape {
 namespace UI {
@@ -44,40 +46,41 @@ class SimplePrefPusher;
 
 namespace Tools {
 enum class EraserToolMode;
-extern EraserToolMode const DEFAULT_ERASER_MODE;
 } // namespace Tools
 
 namespace Widget {
-class SpinButtonToolItem;
+class SpinButton;
 } // namespace Widget
 
 namespace Toolbar {
-class EraserToolbar : public Toolbar {
+
+class EraserToolbar final : public Toolbar
+{
+public:
+    EraserToolbar(SPDesktop *desktop);
+    ~EraserToolbar() override;
+
 private:
-    UI::Widget::SpinButtonToolItem *_width;
-    UI::Widget::SpinButtonToolItem *_mass;
-    UI::Widget::SpinButtonToolItem *_thinning;
-    UI::Widget::SpinButtonToolItem *_cap_rounding;
-    UI::Widget::SpinButtonToolItem *_tremor;
+    using ValueChangedMemFun = void (EraserToolbar::*)();
 
-    Gtk::ToggleToolButton *_usepressure;
-    Gtk::ToggleToolButton *_split;
-
-    Glib::RefPtr<Gtk::Adjustment> _width_adj;
-    Glib::RefPtr<Gtk::Adjustment> _mass_adj;
-    Glib::RefPtr<Gtk::Adjustment> _thinning_adj;
-    Glib::RefPtr<Gtk::Adjustment> _cap_rounding_adj;
-    Glib::RefPtr<Gtk::Adjustment> _tremor_adj;
+    Glib::RefPtr<Gtk::Builder> _builder;
+    UI::Widget::SpinButton &_width_item;
+    UI::Widget::SpinButton &_thinning_item;
+    UI::Widget::SpinButton &_cap_rounding_item;
+    UI::Widget::SpinButton &_tremor_item;
+    UI::Widget::SpinButton &_mass_item;
+    Gtk::ToggleButton *_usepressure_btn = nullptr;
+    Gtk::ToggleButton &_split_btn;
 
     std::unique_ptr<SimplePrefPusher> _pressure_pusher;
 
-    std::vector<Gtk::SeparatorToolItem *> _separators;
+    bool _freeze = false;
 
-    bool _freeze;
-
-    static guint _modeAsInt(Inkscape::UI::Tools::EraserToolMode mode);
+    void setup_derived_spin_button(UI::Widget::SpinButton &btn, Glib::ustring const &name, double default_value,
+                                   ValueChangedMemFun value_changed_mem_fun);
+    static unsigned _modeAsInt(Tools::EraserToolMode mode);
     void mode_changed(int mode);
-    void set_eraser_mode_visibility(const guint eraser_mode);
+    void set_eraser_mode_visibility(unsigned eraser_mode);
     void width_value_changed();
     void mass_value_changed();
     void velthin_value_changed();
@@ -86,16 +89,21 @@ private:
     static void update_presets_list(gpointer data);
     void toggle_break_apart();
     void usepressure_toggled();
-
-protected:
-    EraserToolbar(SPDesktop *desktop);
-
-public:
-    static GtkWidget * create(SPDesktop *desktop);
 };
 
-}
-}
-}
+} // namespace Toolbar
+} // namespace UI
+} // namespace Inkscape
 
-#endif /* !SEEN_ERASOR_TOOLBAR_H */
+#endif // SEEN_INKCAPE_UI_ERASERTOOLBAR_H
+
+/*
+  Local Variables:
+  mode:c++
+  c-file-style:"stroustrup"
+  c-file-offsets:((innamespace . 0)(inline-open . 0)(case-label . +))
+  indent-tabs-mode:nil
+  fill-column:99
+  End:
+*/
+// vim: filetype=cpp:expandtab:shiftwidth=4:tabstop=8:softtabstop=4:fileencoding=utf-8:textwidth=99 :

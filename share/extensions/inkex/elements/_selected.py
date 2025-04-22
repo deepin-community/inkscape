@@ -59,7 +59,6 @@ class ElementList(OrderedDict):
         return super().__contains__(self._to_key(key))
 
     def __setitem__(self, orig_key, elem):
-
         if orig_key != elem and orig_key != elem.get("id"):
             raise ValueError(f"Refusing to set bad key in ElementList {orig_key}")
         if isinstance(elem, str):
@@ -79,12 +78,10 @@ class ElementList(OrderedDict):
             raise ValueError(f"Unknown element type: {kind}")
 
     @overload
-    def _to_key(self, key: None, default: Any) -> Any:
-        ...
+    def _to_key(self, key: None, default: Any) -> Any: ...
 
     @overload
-    def _to_key(self, key: Union[int, IBaseElement, str], default: Any) -> str:
-        ...
+    def _to_key(self, key: Union[int, IBaseElement, str], default: Any) -> str: ...
 
     def _to_key(self, key, default=None) -> str:
         """Takes a key (id, element, etc) and returns an xml_path key"""

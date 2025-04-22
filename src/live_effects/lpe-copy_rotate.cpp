@@ -12,27 +12,31 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "live_effects/lpe-copy_rotate.h"
+#include "lpe-copy_rotate.h"
+
+#include <gdk/gdk.h>
+#include <gtkmm/widget.h>
+#include <gtkmm/box.h>
 
 #include <2geom/intersection-graph.h>
 #include <2geom/path-intersection.h>
 #include <2geom/sbasis-to-bezier.h>
-#include <gdk/gdk.h>
-#include <gtkmm.h>
 
+#include "inkscape.h"
+#include "style.h"
 #include "display/curve.h"
 #include "helper/geom.h"
 #include "live_effects/lpeobject.h"
 #include "live_effects/parameter/satellite-reference.h"
+#include "object/sp-item-group.h"
 #include "object/sp-object.h"
 #include "object/sp-path.h"
 #include "object/sp-shape.h"
 #include "object/sp-text.h"
-#include "path-chemistry.h"
 #include "path/path-boolop.h"
-#include "style.h"
 #include "svg/path-string.h"
 #include "svg/svg.h"
+#include "ui/pack.h"
 #include "xml/sp-css-attr.h"
 
 // TODO due to internal breakage in glibmm headers, this must be last:
@@ -101,11 +105,7 @@ LPECopyRotate::LPECopyRotate(LivePathEffectObject *lpeobject) :
     reset = link_styles;
 }
 
-LPECopyRotate::~LPECopyRotate()
-{
-    keep_paths = false;
-    doOnRemove(nullptr);
-};
+LPECopyRotate::~LPECopyRotate() = default;
 
 bool LPECopyRotate::doOnOpen(SPLPEItem const *lpeitem)
 {
@@ -173,7 +173,7 @@ LPECopyRotate::doAfterEffect (SPLPEItem const* lpeitem, SPCurve *curve)
             size_t pos = 0;
             for (auto lpereference : lpesatellites.data()) {
                 if (lpereference && lpereference->isAttached()) {
-                    SPItem *copies = dynamic_cast<SPItem *>(lpereference->getObject());
+                    auto copies = cast<SPItem>(lpereference->getObject());
                     if (copies) {
                         if (pos > num_copies - 2) {
                             copies->setHidden(true);
@@ -216,7 +216,11 @@ LPECopyRotate::doAfterEffect (SPLPEItem const* lpeitem, SPCurve *curve)
         if (forcewrite || !connected) {
             lpesatellites.write_to_SVG();
             lpesatellites.start_listening();
-            lpesatellites.update_satellites(!connected);
+            if (!connected) {
+                sp_lpe_item_update_patheffect(sp_lpe_item, false, false, true);
+            } else {
+                lpesatellites.update_satellites();
+            }
         }
         reset = link_styles;
     }
@@ -243,13 +247,14 @@ void LPECopyRotate::cloneStyle(SPObject *orig, SPObject *dest)
     }
 }
 
-void LPECopyRotate::cloneD(SPObject *orig, SPObject *dest, Geom::Affine transform)
+void LPECopyRotate::cloneD(SPObject *orig, SPObject *dest)
 {
     SPDocument *document = getSPDoc();
     if (!document) {
         return;
     }
-    if ( SP_IS_GROUP(orig) && SP_IS_GROUP(dest) && SP_GROUP(orig)->getItemCount() == SP_GROUP(dest)->getItemCount() ) {
+    dest->setAttribute("transform", orig->getAttribute("transform"));
+    if (is<SPGroup>(orig) && is<SPGroup>(dest) && cast_unsafe<SPGroup>(orig)->getItemCount() == cast_unsafe<SPGroup>(dest)->getItemCount()) {
         if (reset) {
             cloneStyle(orig, dest);
         }
@@ -257,29 +262,29 @@ void LPECopyRotate::cloneD(SPObject *orig, SPObject *dest, Geom::Affine transfor
         size_t index = 0;
         for (auto & child : childs) {
             SPObject *dest_child = dest->nthChild(index);
-            cloneD(child, dest_child, transform);
+            cloneD(child, dest_child);
             index++;
         }
         return;
-    } else if( SP_IS_GROUP(orig) && SP_IS_GROUP(dest) && SP_GROUP(orig)->getItemCount() != SP_GROUP(dest)->getItemCount()) {
+    } else if( is<SPGroup>(orig) && is<SPGroup>(dest) && cast<SPGroup>(orig)->getItemCount() != cast<SPGroup>(dest)->getItemCount()) {
         split_items.param_setValue(false);
         return;
     }
 
-    if ( SP_IS_TEXT(orig) && SP_IS_TEXT(dest) && SP_TEXT(orig)->children.size() == SP_TEXT(dest)->children.size()) {
+    if ( is<SPText>(orig) && is<SPText>(dest) && cast<SPText>(orig)->children.size() == cast<SPText>(dest)->children.size()) {
         if (reset) {
             cloneStyle(orig, dest);
         }
         size_t index = 0;
-        for (auto & child : SP_TEXT(orig)->children) {
+        for (auto & child : cast<SPText>(orig)->children) {
             SPObject *dest_child = dest->nthChild(index);
-            cloneD(&child, dest_child, transform);
+            cloneD(&child, dest_child);
             index++;
         }
     }
     
-    SPShape * shape =  SP_SHAPE(orig);
-    SPPath * path =  SP_PATH(dest);
+    auto shape = cast<SPShape>(orig);
+    auto path = cast<SPPath>(dest);
     if (shape) {
         SPCurve const *c = shape->curve();
         if (c) {
@@ -292,7 +297,7 @@ void LPECopyRotate::cloneD(SPObject *orig, SPObject *dest, Geom::Affine transfor
                 dest_node->setAttribute("id", id);
                 dest_node->setAttribute("style", style);
                 dest->updateRepr(xml_doc, dest_node, SP_OBJECT_WRITE_ALL);
-                path =  SP_PATH(dest);
+                path =  cast<SPPath>(dest);
             }
             path->setAttribute("d", str);
         } else {
@@ -313,7 +318,7 @@ LPECopyRotate::createPathBase(SPObject *elemref) {
     }
     Inkscape::XML::Document *xml_doc = document->getReprDoc();
     Inkscape::XML::Node *prev = elemref->getRepr();
-    SPGroup *group = dynamic_cast<SPGroup *>(elemref);
+    auto group = cast<SPGroup>(elemref);
     if (group) {
         Inkscape::XML::Node *container = xml_doc->createElement("svg:g");
         container->setAttribute("transform", prev->attribute("transform"));
@@ -321,7 +326,7 @@ LPECopyRotate::createPathBase(SPObject *elemref) {
         container->setAttribute("clip-path", prev->attribute("clip-path"));
         container->setAttribute("class", prev->attribute("class"));
         container->setAttribute("style", prev->attribute("style"));
-        std::vector<SPItem*> const item_list = sp_item_group_item_list(group);
+        std::vector<SPItem*> const item_list = group->item_list();
         Inkscape::XML::Node *previous = nullptr;
         for (auto sub_item : item_list) {
             Inkscape::XML::Node *resultnode = createPathBase(sub_item);
@@ -369,7 +374,7 @@ LPECopyRotate::toItem(Geom::Affine transform, size_t i, bool reset, bool &write)
 
         Inkscape::GC::release(phantom);
     }
-    cloneD(sp_lpe_item, elemref, transform);
+    cloneD(sp_lpe_item, elemref);
     elemref->setAttributeOrRemoveIfEmpty("transform", sp_svg_transform_write(transform));
     reset = link_styles;
     // allow use on clones even in different parent
@@ -393,21 +398,20 @@ Gtk::Widget * LPECopyRotate::newWidget()
 {
     // use manage here, because after deletion of Effect object, others might
     // still be pointing to this widget.
-    Gtk::Box *vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
+    auto const vbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL, 2);
+    vbox->property_margin().set_value(5);
 
-    vbox->set_border_width(5);
-    vbox->set_homogeneous(false);
-    vbox->set_spacing(2);
     std::vector<Parameter *>::iterator it = param_vector.begin();
     while (it != param_vector.end()) {
         if ((*it)->widget_is_visible) {
             Parameter *param = *it;
-            Gtk::Widget *widg = dynamic_cast<Gtk::Widget *>(param->param_newWidget());
-            Glib::ustring *tip = param->param_getTooltip();
+            auto const widg = param->param_newWidget();
+
             if (widg) {
-                vbox->pack_start(*widg, true, true, 2);
-                if (tip) {
-                    widg->set_tooltip_text(*tip);
+                UI::pack_start(*vbox, *widg, true, true, 2);
+
+                if (auto const tip = param->param_getTooltip()) {
+                    widg->set_tooltip_markup(*tip);
                 } else {
                     widg->set_tooltip_text("");
                     widg->set_has_tooltip(false);
@@ -417,10 +421,8 @@ Gtk::Widget * LPECopyRotate::newWidget()
 
         ++it;
     }
-    if(Gtk::Widget* widg = defaultParamSet()) {
-        vbox->pack_start(*widg, true, true, 2);
-    }
-    return dynamic_cast<Gtk::Widget *>(vbox);
+
+    return vbox;
 }
 
 
@@ -486,6 +488,7 @@ LPECopyRotate::doBeforeEffect (SPLPEItem const* lpeitem)
         if (lpeitem->document->isSensitive()) {
             starting_angle.param_set_value(deg_from_rad(-angle_between(dir, starting_point - origin)));
         }
+        // FIXME: This will always be true! Did we mean to check if some state contains Shift flag?
         if (GDK_SHIFT_MASK) {
             dist_angle_handle = L2(B - A);
         } else {
@@ -720,7 +723,7 @@ void
 LPECopyRotate::resetDefaults(SPItem const* item)
 {
     Effect::resetDefaults(item);
-    original_bbox(SP_LPE_ITEM(item), false, true);
+    original_bbox(cast<SPLPEItem>(item), false, true);
 }
 
 void

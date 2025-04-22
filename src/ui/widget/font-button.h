@@ -11,9 +11,11 @@
 
 #include "labelled.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Gtk {
+class FontButton;
+} // namespace Gtk
+
+namespace Inkscape::UI::Widget {
 
 /**
  * A labelled font button for entering font values
@@ -24,30 +26,32 @@ public:
     /**
      * Construct a FontButton Widget.
      *
-     * @param label     Label.
-     * @param suffix    Suffix, placed after the widget (defaults to "").
-     * @param icon      Icon filename, placed before the label (defaults to "").
+     * @param label     Label, as per the Labelled base class.
+     * @param tooltip   Tooltip, as per the Labelled base class.
+     * @param icon      Icon name, placed before the label (defaults to empty).
      * @param mnemonic  Mnemonic toggle; if true, an underscore (_) in the label
      *                  indicates the next character should be used for the
      *                  mnemonic accelerator key (defaults to false).
      */
-    FontButton( Glib::ustring const &label,
-           Glib::ustring const &tooltip,
-           Glib::ustring const &suffix = "",
-           Glib::ustring const &icon = "",
-           bool mnemonic = true);
+    FontButton(Glib::ustring const &label,
+               Glib::ustring const &tooltip,
+               Glib::ustring const &icon = {},
+               bool mnemonic = true);
 
     Glib::ustring getValue() const;
-    void setValue (Glib::ustring fontspec);
+    void setValue(Glib::ustring const &fontspec);
+
     /**
     * Signal raised when the font button's value changes.
     */
-    Glib::SignalProxy0<void> signal_font_value_changed();
+    Glib::SignalProxy<void> signal_font_value_changed();
+
+private:
+    [[nodiscard]] Gtk::FontButton const &getFontButton() const;
+    [[nodiscard]] Gtk::FontButton       &getFontButton()      ;
 };
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 #endif // INKSCAPE_UI_WIDGET_RANDOM_H
 

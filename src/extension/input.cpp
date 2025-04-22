@@ -14,9 +14,8 @@
 
 #include "implementation/implementation.h"
 
-#include "prefdialog/prefdialog.h"
-
-#include "xml/repr.h"
+#include "xml/attribute-record.h"
+#include "xml/node.h"
 
 
 /* Inkscape::Extension::Input */
@@ -25,12 +24,11 @@ namespace Inkscape {
 namespace Extension {
 
 /**
-    \return   None
-    \brief    Builds a SPModuleInput object from a XML description
-    \param    module  The module to be initialized
-    \param    repr    The XML description in a Inkscape::XML::Node tree
+    \brief    Builds an Input object from a XML description
+    \param    in_repr The XML description in a Inkscape::XML::Node tree
+    \param    implementation The module to be initialized.
 
-    Okay, so you want to build a SPModuleInput object.
+    Okay, so you want to build an Input object.
 
     This function first takes and does the build of the parent class,
     which is SPModule.  Then, it looks for the <input> section of the
@@ -40,8 +38,8 @@ namespace Extension {
     Overall, there are many levels of indentation, just to handle the
     levels of indentation in the XML file.
 */
-Input::Input (Inkscape::XML::Node *in_repr, Implementation::Implementation *in_imp, std::string *base_directory)
-    : Extension(in_repr, in_imp, base_directory)
+Input::Input (Inkscape::XML::Node *in_repr, ImplementationHolder implementation, std::string *base_directory)
+    : Extension(in_repr, std::move(implementation), base_directory)
 {
     mimetype = nullptr;
     extension = nullptr;
@@ -55,6 +53,14 @@ Input::Input (Inkscape::XML::Node *in_repr, Implementation::Implementation *in_i
 
         while (child_repr != nullptr) {
             if (!strcmp(child_repr->name(), INKSCAPE_EXTENSION_NS "input")) {
+                // Input tag attributes
+                for (const auto &iter : child_repr->attributeList()) {
+                    std::string name = g_quark_to_string(iter.key);
+                    std::string value = std::string(iter.value);
+                    if (name == "priority")
+                        set_sort_priority(strtol(value.c_str(), nullptr, 0));
+                }
+
                 child_repr = child_repr->firstChild();
                 while (child_repr != nullptr) {
                     char const * chname = child_repr->name();
@@ -130,6 +136,7 @@ Input::check ()
     \return  A new document
     \brief   This function creates a document from a file
     \param   uri  The filename to create the document from
+    \param   is_importing True if the opened file is being imported
 
     This function acts as the first step in creating a new document
     from a file.  The first thing that this does is make sure that the
@@ -137,7 +144,7 @@ Input::check ()
     file exits, then it is opened using the implementation of this extension.
 */
 SPDocument *
-Input::open (const gchar *uri)
+Input::open (const gchar *uri, bool is_importing)
 {
     if (!loaded()) {
         set_state(Extension::STATE_LOADED);
@@ -147,7 +154,7 @@ Input::open (const gchar *uri)
     }
     timer->touch();
 
-    SPDocument *const doc = imp->open(this, uri);
+    SPDocument *const doc = imp->open(this, uri, is_importing);
 
     return doc;
 }
@@ -156,8 +163,8 @@ Input::open (const gchar *uri)
     \return  IETF mime-type for the extension
     \brief   Get the mime-type that describes this extension
 */
-gchar *
-Input::get_mimetype()
+gchar const *
+Input::get_mimetype() const
 {
     return mimetype;
 }
@@ -166,10 +173,25 @@ Input::get_mimetype()
     \return  Filename extension for the extension
     \brief   Get the filename extension for this extension
 */
-gchar *
-Input::get_extension()
+gchar const *
+Input::get_extension() const
 {
     return extension;
+}
+
+/**
+    \return  True if the filename matches
+    \brief   Match filename to extension that can open it.
+*/
+bool
+Input::can_open_filename(gchar const *filename) const
+{
+    gchar *filenamelower = g_utf8_strdown(filename, -1);
+    gchar *extensionlower = g_utf8_strdown(extension, -1);
+    bool result = g_str_has_suffix(filenamelower, extensionlower);
+    g_free(filenamelower);
+    g_free(extensionlower);
+    return result;
 }
 
 /**
@@ -177,7 +199,7 @@ Input::get_extension()
     \brief   Get the name of the filetype supported
 */
 const char *
-Input::get_filetypename(bool translated)
+Input::get_filetypename(bool translated) const
 {
     const char *name;
 
@@ -198,46 +220,13 @@ Input::get_filetypename(bool translated)
     \brief   Get the tooltip for more information on the filetype
 */
 const char *
-Input::get_filetypetooltip(bool translated)
+Input::get_filetypetooltip(bool translated) const
 {
     if (filetypetooltip && translated) {
         return get_translation(filetypetooltip);
     } else {
         return filetypetooltip;
     }
-}
-
-/**
-    \return  A dialog to get settings for this extension
-    \brief   Create a dialog for preference for this extension
-
-    Calls the implementation to get the preferences.
-*/
-bool
-Input::prefs (const gchar *uri)
-{
-    if (!loaded()) {
-        set_state(Extension::STATE_LOADED);
-    }
-    if (!loaded()) {
-        return false;
-    }
-
-    Gtk::Widget * controls;
-    controls = imp->prefs_input(this, uri);
-    if (controls == nullptr) {
-        // std::cout << "No preferences for Input" << std::endl;
-        return true;
-    }
-
-    Glib::ustring name = this->get_name();
-    PrefDialog *dialog = new PrefDialog(name, controls);
-    int response = dialog->run();
-    dialog->hide();
-
-    delete dialog;
-
-    return (response == Gtk::RESPONSE_OK);
 }
 
 } }  /* namespace Inkscape, Extension */

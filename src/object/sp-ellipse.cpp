@@ -15,27 +15,21 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <glibmm.h>
 #include <glibmm/i18n.h>
-
-#include "live_effects/effect.h"
-#include "live_effects/lpeobject.h"
-#include "live_effects/lpeobject-reference.h"
 
 #include <2geom/angle.h>
 #include <2geom/circle.h>
-#include <2geom/ellipse.h>
 #include <2geom/path-sink.h>
 
 #include "attributes.h"
-#include "display/curve.h"
-#include "document.h"
 #include "preferences.h"
 #include "snap-candidate.h"
+#include "snap-preferences.h"   // for SnapPreferences
 #include "sp-ellipse.h"
 #include "style.h"
+
+#include "display/curve.h"
 #include "svg/svg.h"
-#include "svg/path-string.h"
 
 #define SP_2PI (2 * M_PI)
 
@@ -52,7 +46,7 @@ SPGenericEllipse::~SPGenericEllipse()
 = default;
 
 /*
- * Ellipse is the only SP object who's repr element tag name changes
+ * Ellipse and rect is the only SP object who's repr element tag name changes
  * during it's lifetime. During undo and redo these changes can cause
  * the SP object to become unstuck from the repr's true state.
  */
@@ -184,6 +178,9 @@ void SPGenericEllipse::set(SPAttr key, gchar const *value)
     case SPAttr::SODIPODI_OPEN:
         // This is for reading in old files.
         if ((!value) || strcmp(value,"true")) {
+            // We rely on this to reset arc_type when changing an arc to
+            // an ellipse/circle, so it is drawn as a closed path.
+            // A clone will not even change it's this->type
             this->arc_type = SP_GENERIC_ELLIPSE_ARC_TYPE_SLICE;
         } else {
             this->arc_type = SP_GENERIC_ELLIPSE_ARC_TYPE_ARC;
@@ -243,7 +240,7 @@ Inkscape::XML::Node *SPGenericEllipse::write(Inkscape::XML::Document *xml_doc, I
     //           << ")" << std::endl;
 
     GenericEllipseType new_type = SP_GENERIC_ELLIPSE_UNDEFINED;
-    if (_isSlice() || hasPathEffect() ) {
+    if (_isSlice() || hasPathEffectOnClipOrMaskRecursive(this) ) {
         new_type = SP_GENERIC_ELLIPSE_ARC;
     } else if ( rx.computed == ry.computed ) {
         new_type = SP_GENERIC_ELLIPSE_CIRCLE;
@@ -473,13 +470,13 @@ void SPGenericEllipse::set_shape()
         pb.lineTo(Geom::Point(0, 0));
     }
 
-    if ((this->arc_type != SP_GENERIC_ELLIPSE_ARC_TYPE_ARC) || (this->type != SP_GENERIC_ELLIPSE_ARC)) {
+    if (this->arc_type != SP_GENERIC_ELLIPSE_ARC_TYPE_ARC) {
         pb.closePath();
     } else {
         pb.flush();
     }
 
-    auto c = std::make_unique<SPCurve>(pb.peek());
+    auto c = SPCurve(pb.peek());
 
     // gchar *str = sp_svg_write_path(curve->get_pathvector());
     // std::cout << "  path: " << str << std::endl;
@@ -487,13 +484,8 @@ void SPGenericEllipse::set_shape()
 
     // Stretching / moving the calculated shape to fit the actual dimensions.
     Geom::Affine aff = Geom::Scale(rx.computed, ry.computed) * Geom::Translate(cx.computed, cy.computed);
-    c->transform(aff);
-    // this is a memory leak? is done this way in al object/shapes
-    if (prepareShapeForLPE(c.get())) {
-        return;
-    }
-    // This happends on undo, fix bug:#1791784
-    setCurveInsync(std::move(c));
+    c.transform(aff);
+    prepareShapeForLPE(&c);
 }
 
 Geom::Affine SPGenericEllipse::set_transform(Geom::Affine const &xform)
@@ -695,63 +687,46 @@ bool SPGenericEllipse::_isSlice() const
     return !(Geom::are_near(a.extent(), 0) || Geom::are_near(a.extent(), SP_2PI));
 }
 
-/**
-Returns the ratio in which the vector from p0 to p1 is stretched by transform
- */
-gdouble SPGenericEllipse::vectorStretch(Geom::Point p0, Geom::Point p1, Geom::Affine xform) {
-    if (p0 == p1) {
-        return 0;
-    }
-
-    return (Geom::distance(p0 * xform, p1 * xform) / Geom::distance(p0, p1));
+/// Returns the ratio in which a unit vector n is stretched by transform.
+static double vectorStretch(Geom::Point const &n, Geom::Affine const &trans)
+{
+    return (n * trans.withoutTranslation()).length();
 }
 
-void SPGenericEllipse::setVisibleRx(gdouble rx) {
-    if (rx == 0) {
-        this->rx.unset();
+void SPGenericEllipse::setVisibleRx(double rx_)
+{
+    if (rx_ == 0) {
+        rx.unset();
     } else {
-        this->rx = rx / SPGenericEllipse::vectorStretch(
-            Geom::Point(this->cx.computed + 1, this->cy.computed),
-            Geom::Point(this->cx.computed, this->cy.computed),
-            this->i2doc_affine());
+        rx = rx_ / vectorStretch({1, 0}, i2doc_affine());
     }
-
-    this->updateRepr();
+    updateRepr();
 }
 
-void SPGenericEllipse::setVisibleRy(gdouble ry) {
-    if (ry == 0) {
-        this->ry.unset();
+void SPGenericEllipse::setVisibleRy(double ry_)
+{
+    if (ry_ == 0) {
+        ry.unset();
     } else {
-        this->ry = ry / SPGenericEllipse::vectorStretch(
-            Geom::Point(this->cx.computed, this->cy.computed + 1),
-            Geom::Point(this->cx.computed, this->cy.computed),
-            this->i2doc_affine());
+        ry = ry_ / vectorStretch({0, 1}, i2doc_affine());
     }
-
-    this->updateRepr();
+    updateRepr();
 }
 
-gdouble SPGenericEllipse::getVisibleRx() const {
-    if (!this->rx._set) {
+double SPGenericEllipse::getVisibleRx() const
+{
+    if (!rx._set) {
         return 0;
     }
-
-    return this->rx.computed * SPGenericEllipse::vectorStretch(
-        Geom::Point(this->cx.computed + 1, this->cy.computed),
-        Geom::Point(this->cx.computed, this->cy.computed),
-        this->i2doc_affine());
+    return rx.computed * vectorStretch({1, 0}, i2doc_affine());
 }
 
-gdouble SPGenericEllipse::getVisibleRy() const {
-    if (!this->ry._set) {
+double SPGenericEllipse::getVisibleRy() const
+{
+    if (!ry._set) {
         return 0;
     }
-
-    return this->ry.computed * SPGenericEllipse::vectorStretch(
-        Geom::Point(this->cx.computed, this->cy.computed + 1),
-        Geom::Point(this->cx.computed, this->cy.computed),
-        this->i2doc_affine());
+    return ry.computed * vectorStretch({0, 1}, i2doc_affine());
 }
 
 /*

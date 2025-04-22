@@ -12,14 +12,14 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "sp-line.h"
+
+#include <glibmm/i18n.h>
+
 #include "attributes.h"
 #include "style.h"
-#include "sp-line.h"
 #include "sp-guide.h"
 #include "display/curve.h"
-#include <glibmm/i18n.h>
-#include "document.h"
-#include "inkscape.h"
 
 SPLine::SPLine() : SPShape() {
     this->x1.unset();
@@ -149,10 +149,10 @@ Geom::Affine SPLine::set_transform(Geom::Affine const &transform) {
 }
 
 void SPLine::set_shape() {
-    auto c = std::make_unique<SPCurve>();
+    SPCurve c;
 
-    c->moveto(this->x1.computed, this->y1.computed);
-    c->lineto(this->x2.computed, this->y2.computed);
+    c.moveto(this->x1.computed, this->y1.computed);
+    c.lineto(this->x2.computed, this->y2.computed);
 
     // *_insync does not call update, avoiding infinite recursion when set_shape is called by update
     setCurveInsync(std::move(c));

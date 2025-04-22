@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-/** @file
- * @brief  Dialog for renaming layers
+/**
+ * @file
+ * Dialog for editing power strokes.
  */
 /* Author:
  *   Bryce W. Harrington <bryce@bryceharrington.com>
+ *   Andrius R. <knutux@gmail.com>
+ *   Abhishek Sharma
  *
  * Copyright (C) 2004 Bryce Harrington
+ * Copyright (C) 2006 Andrius R.
  *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
@@ -14,26 +18,32 @@
 #define INKSCAPE_DIALOG_POWERSTROKE_PROPERTIES_H
 
 #include <2geom/point.h>
-#include <gtkmm.h>
+#include <gtkmm/button.h>
+#include <gtkmm/dialog.h>
+#include <gtkmm/grid.h>
+#include <gtkmm/label.h>
+#include <gtkmm/radiobutton.h>
+#include <gtkmm/spinbutton.h>
+#include <gtkmm/treemodel.h>
+
 #include "live_effects/parameter/powerstrokepointarray.h"
 
 class SPDesktop;
 
-namespace Inkscape {
-namespace UI {
-namespace Dialogs {
+namespace Inkscape::UI::Dialog {
 
 class PowerstrokePropertiesDialog : public Gtk::Dialog {
- public:
-	PowerstrokePropertiesDialog();
-    ~PowerstrokePropertiesDialog() override;
+public:
+    PowerstrokePropertiesDialog();
+
+    PowerstrokePropertiesDialog(PowerstrokePropertiesDialog const &) = delete;
+    PowerstrokePropertiesDialog &operator=(PowerstrokePropertiesDialog const &) = delete;
 
     Glib::ustring     getName() const { return "LayerPropertiesDialog"; }
 
     static void showDialog(SPDesktop *desktop, Geom::Point knotpoint, const Inkscape::LivePathEffect::PowerStrokePointArrayParamKnotHolderEntity *pt);
 
 protected:
-
     Inkscape::LivePathEffect::PowerStrokePointArrayParamKnotHolderEntity *_knotpoint;
 
     Gtk::Label        _powerstroke_position_label;
@@ -45,8 +55,6 @@ protected:
 
     Gtk::Button       _close_button;
     Gtk::Button       _apply_button;
-
-    sigc::connection    _destroy_connection;
 
     static PowerstrokePropertiesDialog &_instance() {
         static PowerstrokePropertiesDialog instance;
@@ -61,20 +69,10 @@ protected:
     void _setKnotPoint(Geom::Point knotpoint);
     void _prepareLabelRenderer(Gtk::TreeModel::const_iterator const &row);
 
-    bool _handleKeyEvent(GdkEventKey *event);
-    void _handleButtonEvent(GdkEventButton* event);
-
     friend class Inkscape::LivePathEffect::PowerStrokePointArrayParamKnotHolderEntity;
-
-private:
-    PowerstrokePropertiesDialog(PowerstrokePropertiesDialog const &); // no copy
-    PowerstrokePropertiesDialog &operator=(PowerstrokePropertiesDialog const &); // no assign
 };
 
-} // namespace
-} // namespace
-} // namespace
-
+} // namespace Inkscape::UI::Dialog
 
 #endif //INKSCAPE_DIALOG_LAYER_PROPERTIES_H
 

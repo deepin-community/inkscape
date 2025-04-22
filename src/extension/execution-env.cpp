@@ -9,22 +9,19 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "execution-env.h"
+
 #include <gtkmm/dialog.h>
 #include <gtkmm/messagedialog.h>
 
-#include "execution-env.h"
-#include "prefdialog/prefdialog.h"
-#include "implementation/implementation.h"
-
-#include "selection.h"
-#include "effect.h"
-#include "document.h"
 #include "desktop.h"
-#include "inkscape.h"
 #include "document-undo.h"
-#include "desktop.h"
-#include "object/sp-namedview.h"
+#include "effect.h"
+#include "inkscape.h"
+#include "selection.h"
 
+#include "implementation/implementation.h"
+#include "prefdialog/prefdialog.h"
 #include "ui/widget/canvas.h"  // To get window (perverse!)
 
 namespace Inkscape {
@@ -33,7 +30,7 @@ namespace Extension {
 /** \brief  Create an execution environment that will allow the effect
             to execute independently.
     \param effect  The effect that we should execute
-    \param doc     The Document to execute on
+    \param desktop     The Desktop with the document to work on
     \param docCache  The cache created for that document
     \param show_working  Show the working dialog
     \param show_error    Show the error dialog (not working)
@@ -41,30 +38,26 @@ namespace Extension {
     Grabs the selection of the current document so that it can get
     restored.  Will generate a document cache if one isn't provided.
 */
-ExecutionEnv::ExecutionEnv (Effect * effect, Inkscape::UI::View::View * doc, Implementation::ImplementationDocumentCache * docCache, bool show_working, bool show_errors) :
+ExecutionEnv::ExecutionEnv (Effect * effect, SPDesktop *desktop, Implementation::ImplementationDocumentCache * docCache, bool show_working, bool show_errors) :
     _state(ExecutionEnv::INIT),
-    _visibleDialog(nullptr),
-    _mainloop(nullptr),
-    _doc(doc),
+    _desktop(desktop),
     _docCache(docCache),
     _effect(effect),
     _show_working(show_working)
 {
-    SPDesktop *desktop = (SPDesktop *)_doc;
-    SPDocument *document = _doc->doc();
-    if (document && desktop) {
+    if (_desktop) {
+        _document = desktop->doc();
+    }
+    if (_document) {
         // Temporarily prevent undo in this scope
-        Inkscape::DocumentUndo::ScopedInsensitive pauseUndo(document);
+        Inkscape::DocumentUndo::ScopedInsensitive pauseUndo(_document);
         Inkscape::Selection *selection = desktop->getSelection();
         if (selection) {
             // Make sure all selected objects have an ID attribute
             selection->enforceIds();
         }
+        genDocCache();
     }
-
-    genDocCache();
-
-    return;
 }
 
 /** \brief  Destroy an execution environment
@@ -73,7 +66,7 @@ ExecutionEnv::ExecutionEnv (Effect * effect, Inkscape::UI::View::View * doc, Imp
 */
 ExecutionEnv::~ExecutionEnv () {
     if (_visibleDialog != nullptr) {
-        _visibleDialog->hide();
+        _visibleDialog->set_visible(false);
         delete _visibleDialog;
         _visibleDialog = nullptr;
     }
@@ -88,9 +81,9 @@ ExecutionEnv::~ExecutionEnv () {
 */
 void
 ExecutionEnv::genDocCache () {
-    if (_docCache == nullptr) {
+    if (_docCache == nullptr && _desktop) {
         // printf("Gen Doc Cache\n");
-        _docCache = _effect->get_imp()->newDocCache(_effect, _doc);
+        _docCache = _effect->get_imp()->newDocCache(_effect, _desktop);
     }
     return;
 }
@@ -116,27 +109,29 @@ ExecutionEnv::killDocCache () {
 */
 void
 ExecutionEnv::createWorkingDialog () {
+    if (!_desktop)
+        return;
+
     if (_visibleDialog != nullptr) {
-        _visibleDialog->hide();
+        _visibleDialog->set_visible(false);
         delete _visibleDialog;
         _visibleDialog = nullptr;
     }
 
-    SPDesktop *desktop = (SPDesktop *)_doc;
-    Gtk::Widget *toplevel = desktop->getCanvas()->get_toplevel();
+    Gtk::Widget *toplevel = _desktop->getCanvas()->get_toplevel();
     Gtk::Window *window = dynamic_cast<Gtk::Window *>(toplevel);
     if (!window) {
         return;
     }
 
-    gchar * dlgmessage = g_strdup_printf(_("'%s' working, please wait..."), _effect->get_name());
+    gchar * dlgmessage = g_strdup_printf(_("'%s' complete, loading result..."), _effect->get_name());
     _visibleDialog = new Gtk::MessageDialog(*window,
                                dlgmessage,
                                false, // use markup
                                Gtk::MESSAGE_INFO,
                                Gtk::BUTTONS_CANCEL,
                                true); // modal
-    _visibleDialog->signal_response().connect(sigc::mem_fun(this, &ExecutionEnv::workingCanceled));
+    _visibleDialog->signal_response().connect(sigc::mem_fun(*this, &ExecutionEnv::workingCanceled));
     g_free(dlgmessage);
 
     Gtk::Dialog *dlg = _effect->get_pref_dialog();
@@ -161,21 +156,20 @@ ExecutionEnv::workingCanceled( const int /*resp*/) {
 
 void
 ExecutionEnv::cancel () {
-    SPDesktop *desktop = (SPDesktop *)_doc;
-    desktop->clearWaitingCursor();
+    _desktop->clearWaitingCursor();
     _effect->get_imp()->cancelProcessing();
     return;
 }
 
 void
 ExecutionEnv::undo () {
-    DocumentUndo::cancel(_doc->doc());
+    DocumentUndo::cancel(_document);
     return;
 }
 
 void
 ExecutionEnv::commit () {
-    DocumentUndo::done(_doc->doc(), _effect->get_name(), "");
+    DocumentUndo::done(_document, _effect->get_name(), "");
     Effect::set_last_effect(_effect);
     _effect->get_imp()->commitDocument();
     killDocCache();
@@ -184,9 +178,8 @@ ExecutionEnv::commit () {
 
 void
 ExecutionEnv::reselect () {
-    SPDesktop *desktop = SP_ACTIVE_DESKTOP;
-    if(desktop) {
-        Inkscape::Selection *selection = desktop->getSelection();
+    if(_desktop) {
+        Inkscape::Selection *selection = _desktop->getSelection();
         if (selection) {
             selection->restoreBackup();
         }
@@ -197,17 +190,24 @@ ExecutionEnv::reselect () {
 void
 ExecutionEnv::run () {
     _state = ExecutionEnv::RUNNING;
-    if (_show_working) {
-        createWorkingDialog();
+    Inkscape::Selection *selection = nullptr;
+
+    if (_desktop) {
+        if (_show_working) {
+            createWorkingDialog();
+        }
+        selection = _desktop->getSelection();
+        selection->setBackup();
+        _desktop->setWaitingCursor();
+
+        _effect->get_imp()->effect(_effect, _desktop, _docCache);
+
+        _desktop->clearWaitingCursor();
+        selection->restoreBackup();
+    } else {
+        _effect->get_imp()->effect(_effect, _document);
     }
-    SPDesktop *desktop = (SPDesktop *)_doc;
-    Inkscape::Selection *selection = desktop->getSelection();
-    selection->setBackup();
-    desktop->setWaitingCursor();
-    _effect->get_imp()->effect(_effect, _doc, _docCache);
-    desktop->clearWaitingCursor();
     _state = ExecutionEnv::COMPLETE;
-    selection->restoreBackup();
     // _runComplete.signal();
     return;
 }
@@ -224,7 +224,7 @@ ExecutionEnv::wait () {
             _mainloop = Glib::MainLoop::create(false);
         }
 
-        sigc::connection conn = _runComplete.connect(sigc::mem_fun(this, &ExecutionEnv::runComplete));
+        sigc::connection conn = _runComplete.connect(sigc::mem_fun(*this, &ExecutionEnv::runComplete));
         _mainloop->run();
 
         conn.disconnect();

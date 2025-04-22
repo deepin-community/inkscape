@@ -8,7 +8,8 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef __GRID_H
+#ifndef SEEN_PLUGINS_GRID_H
+#define SEEN_PLUGINS_GRID_H
 
 #include "extension/implementation/implementation.h"
 
@@ -34,8 +35,8 @@ class Grid : public Inkscape::Extension::Implementation::Implementation {
 
 public:
     bool load(Inkscape::Extension::Extension *module) override;
-    void effect(Inkscape::Extension::Effect *module, Inkscape::UI::View::View *document, Inkscape::Extension::Implementation::ImplementationDocumentCache * docCache) override;
-    Gtk::Widget * prefs_effect(Inkscape::Extension::Effect *module, Inkscape::UI::View::View * view, sigc::signal<void> * changeSignal, Inkscape::Extension::Implementation::ImplementationDocumentCache * docCache) override;
+    void effect(Inkscape::Extension::Effect *module, SPDesktop *desktop, Inkscape::Extension::Implementation::ImplementationDocumentCache * docCache) override;
+    Gtk::Widget * prefs_effect(Inkscape::Extension::Effect *module, SPDesktop *desktop, sigc::signal<void ()> * changeSignal, Inkscape::Extension::Implementation::ImplementationDocumentCache * docCache) override;
 
 };
 

@@ -18,9 +18,9 @@
 #include <vector>
 
 #include <glibmm/ustring.h>
-#include "cms-color-types.h"
 
 #include "sp-object.h"
+#include "color/cms-color-types.h"
 
 struct SPColor;
 
@@ -41,43 +41,26 @@ class ColorProfileImpl;
 /**
  * Color Profile.
  */
-class ColorProfile : public SPObject {
+class ColorProfile final : public SPObject {
 public:
     ColorProfile();
     ~ColorProfile() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     bool operator<(ColorProfile const &other) const;
 
-    friend cmsHPROFILE colorprofile_get_handle( SPDocument*, unsigned int*, char const* );
-    friend class CMSSystem;
-
-    class FilePlusHome {
-    public:
-        FilePlusHome(Glib::ustring filename, bool isInHome);
-        FilePlusHome(const FilePlusHome &filePlusHome);
-        bool operator<(FilePlusHome const &other) const;
-        Glib::ustring filename;
-        bool isInHome;
-    };
-    class FilePlusHomeAndName: public FilePlusHome {
-    public:
-        FilePlusHomeAndName(FilePlusHome filePlusHome, Glib::ustring name);
-        bool operator<(FilePlusHomeAndName const &other) const;
-        Glib::ustring name;
-    };
-
-    static std::set<FilePlusHome> getBaseProfileDirs();
-    static std::set<FilePlusHome> getProfileFiles();
-    static std::set<FilePlusHomeAndName> getProfileFilesWithNames();
-    //icColorSpaceSignature getColorSpace() const;
     ColorSpaceSig getColorSpace() const;
-    //icProfileClassSignature getProfileClass() const;
     ColorProfileClassSig getProfileClass() const;
     cmsHTRANSFORM getTransfToSRGB8();
     cmsHTRANSFORM getTransfFromSRGB8();
     cmsHTRANSFORM getTransfGamutCheck();
     bool GamutCheck(SPColor color);
+    int getChannelCount() const;
+    bool isPrintColorSpace();
+    cmsHPROFILE getHandle();
 
+
+    // TODO: Make private
     char* href;
     char* local;
     char* name;
@@ -96,8 +79,6 @@ protected:
 };
 
 } // namespace Inkscape
-
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(IS_COLORPROFILE, Inkscape::ColorProfile)
 
 #endif // !SEEN_COLOR_PROFILE_H
 

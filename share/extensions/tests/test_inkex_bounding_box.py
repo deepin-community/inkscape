@@ -1,5 +1,6 @@
 # coding=utf-8
 """Test inkex `.bounding_box()` method functionality"""
+
 from copy import deepcopy
 import os
 import subprocess
@@ -20,6 +21,7 @@ from inkex.tester import TestCase
 from tempfile import TemporaryDirectory
 from inkex.command import is_inkscape_available
 from inkex.tester.decorators import requires_inkscape
+from inkex.tester.svg import svg_file
 
 try:
     from typing import Optional, Tuple
@@ -44,6 +46,11 @@ class BoundingBoxTest(TestCase):
     """Test BoundingBox functionality"""
 
     atol = 3e-3
+    source_file = "bounding_box.svg"
+
+    def setUp(self):
+        super().setUp()
+        self.svg = svg_file(self.data_file("svg", self.source_file))
 
     def assert_bounding_box_is_equal(
         self, obj, xscale, yscale, disable_inkscape_check=DISABLE_INKSCAPE_QUERY_CHECK
@@ -73,17 +80,24 @@ class BoundingBoxTest(TestCase):
                 )
 
         if not disable_inkscape_check:
-            inkscape_array = self.get_inkscape_bounding_box(obj)
+            clip_paths = []
+            if obj.clip is not None:
+                clip_paths.append(obj.clip)
+            for child in obj:
+                if child.clip is not None:
+                    clip_paths.append(child.clip)
+            inkscape_array = self.get_inkscape_bounding_box(obj, clip_paths)
 
             if None not in inkscape_array:
                 cmp(expected_array, inkscape_array, "expected != inkscape calculation")
 
         cmp(box_array, expected_array, "inkex.bounding_box != expected")
 
-    def get_inkscape_bounding_box(self, obj):
+    def get_inkscape_bounding_box(self, obj, clip_paths=[]):
         """
 
         :param (ShapeElement) obj:
+        :param (list[ClipPath]) clip_paths: a list of clip objects
         :return: (xmin, xmax, ymin, ymax) parsed from `inkscape --query` output
         """
         svg = SvgDocumentElement()
@@ -92,8 +106,10 @@ class BoundingBoxTest(TestCase):
         obj.set("id", obj_id)
         root = deepcopy(obj.getroottree().getroot())
         svg.add(root)
+        for clip in clip_paths:
+            clip = deepcopy(clip)
+            svg.defs.add(clip)
         with TemporaryDirectory() as tmp:
-
             temp_svg = os.path.join(tmp, "tmp.svg")
 
             with open(temp_svg, "wb") as out:
@@ -228,7 +244,6 @@ class BoundingBoxTest(TestCase):
         self.assert_bounding_box_is_equal(rect, (0, 0), (0, 0))
 
     def test_rectangle_without_dimensions(self):
-
         x, y = 10, 15
         w, h = 0, 0
 
@@ -237,7 +252,6 @@ class BoundingBoxTest(TestCase):
         self.assert_bounding_box_is_equal(rect, (x, x + w), (y, y + h))
 
     def test_rectangle_without_coordinates(self):
-
         x, y = 0, 0
         w, h = 7, 20
 
@@ -246,7 +260,6 @@ class BoundingBoxTest(TestCase):
         self.assert_bounding_box_is_equal(rect, (x, x + w), (y, y + h))
 
     def test_regular_rectangle(self):
-
         x, y = 10, 20
         w, h = 7, 20
 
@@ -255,7 +268,6 @@ class BoundingBoxTest(TestCase):
         self.assert_bounding_box_is_equal(rect, (x, x + w), (y, y + h))
 
     def test_regular_rectangle_scaled(self):
-
         x, y = 10, 20
         w, h = 7, 20
 
@@ -272,7 +284,6 @@ class BoundingBoxTest(TestCase):
 
     @skip_stroke_tests
     def test_regular_rectangle_with_stroke(self):
-
         x, y = 10, 20
         w, h = 7, 20
         stroke_half_width = 1
@@ -289,7 +300,6 @@ class BoundingBoxTest(TestCase):
 
     @skip_stroke_tests
     def test_regular_rectangle_with_stroke_scaled(self):
-
         x, y = 10, 20
         w, h = 7, 20
         stroke_half_width = 1
@@ -312,6 +322,14 @@ class BoundingBoxTest(TestCase):
         path = PathElement()
 
         self.assert_bounding_box_is_equal(path, None, None)
+
+    def test_invisible_path(self):
+        path = PathElement()
+
+        path.set_path("M 0 0 " "L 10 10 " "L 10 0")
+        path.style["display"] = "none"
+
+        self.assert_bounding_box_is_equal(path, (0, 10), (0, 10))
 
     def test_path_with_move_commands_only(self):
         path = PathElement()
@@ -400,6 +418,20 @@ class BoundingBoxTest(TestCase):
         group = Group()
         self.assert_bounding_box_is_equal(group, None, None)
 
+    def test_group_with_visible_and_invisible_path(self):
+        group = Group()
+
+        visible_path = PathElement()
+        visible_path.set_path("M 0 0 " "L 10 10 " "L 10 0")
+        group.add(visible_path)
+
+        invisible_path = PathElement()
+        invisible_path.set_path("M 0 0 " "L -10 -10 " "L -10 0")
+        invisible_path.style["display"] = "none"
+        group.add(invisible_path)
+
+        self.assert_bounding_box_is_equal(group, (0, 10), (0, 10))
+
     def test_empty_group_with_translation(self):
         group = Group()
         group.transform = Transform(translate=(10, 15))
@@ -417,7 +449,6 @@ class BoundingBoxTest(TestCase):
         self.assert_bounding_box_is_equal(group, (x, x + w), (y, y + h))
 
     def test_group_with_number_of_rects(self):
-
         group = Group()
 
         xmin, ymin = 1000, 1000
@@ -442,7 +473,6 @@ class BoundingBoxTest(TestCase):
         self.assert_bounding_box_is_equal(group, (xmin, xmax), (ymin, ymax))
 
     def test_group_with_number_of_rects_scaled(self):
-
         group = Group()
 
         scale_x, scale_y = 5, 10
@@ -471,7 +501,6 @@ class BoundingBoxTest(TestCase):
         )
 
     def test_group_with_number_of_rects_translated(self):
-
         group = Group()
 
         dx, dy = 5, 10
@@ -522,6 +551,37 @@ class BoundingBoxTest(TestCase):
         self.assert_bounding_box_is_equal(
             group, (scale * x, scale * (x + w)), (scale * y, scale * (y + h))
         )
+
+    def test_clipped(self):
+        clipped_rect = self.svg.getElementById("clipped_rect1")
+        self.assert_bounding_box_is_equal(clipped_rect, (300, 400), (100, 200))
+
+    def test_group_with_clipped_child(self):
+        group_with_clipped_child = self.svg.getElementById("group_with_clipped_child")
+        self.assert_bounding_box_is_equal(
+            group_with_clipped_child, (100, 400), (300, 400)
+        )
+
+    def test_group_with_invisible_clipped_child(self):
+        group_with_invisible_clipped_child = self.svg.getElementById(
+            "group_with_invisible_clipped_child"
+        )
+        self.assert_bounding_box_is_equal(
+            group_with_invisible_clipped_child, (100, 200), (500, 600)
+        )
+
+    def test_clipped_group(self):
+        clipped_group = self.svg.getElementById("clipped_group")
+        self.assert_bounding_box_is_equal(clipped_group, (100, 200), (700, 800))
+
+    def test_unrooted_group_with_invisible_parent(self):
+        outer_group = Group()
+        inner_group = Group()
+        element = Rectangle(width=str(10), height=str(10), x=str(0), y=str(0))
+        inner_group.add(element)
+        outer_group.add(inner_group)
+        outer_group.style["display"] = "none"
+        self.assert_bounding_box_is_equal(inner_group, None, None)
 
     def test_path_Arc_long_sweep_off(self):
         path = Path("M 10 20 A 10 20 0 1 0 20 15")

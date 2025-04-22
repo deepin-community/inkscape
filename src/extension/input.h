@@ -41,17 +41,17 @@ public:
         const char *what() const noexcept override { return "Open was cancelled"; }
     };
 
-    Input(Inkscape::XML::Node *in_repr, Implementation::Implementation *in_imp, std::string *base_directory);
+    Input(Inkscape::XML::Node *in_repr, ImplementationHolder implementation, std::string *base_directory);
     ~Input() override;
 
     bool check() override;
 
-    SPDocument *  open                 (gchar const *uri);
-    gchar *       get_mimetype         ();
-    gchar *       get_extension        ();
-    const char *  get_filetypename     (bool translated=false);
-    const char *  get_filetypetooltip  (bool translated=false);
-    bool          prefs                (gchar const *uri);
+    SPDocument *  open                 (gchar const *uri, bool is_importing = false);
+    gchar const * get_mimetype         () const;
+    gchar const * get_extension        () const;
+    const char *  get_filetypename     (bool translated=false) const;
+    const char *  get_filetypetooltip  (bool translated=false) const;
+    bool          can_open_filename    (gchar const *filename) const;
 };
 
 } }  /* namespace Inkscape, Extension */

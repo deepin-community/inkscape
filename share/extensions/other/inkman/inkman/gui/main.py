@@ -16,16 +16,14 @@
 #
 """Gtk 3+ Inkscape 1.0 Extensions Manager GUI."""
 
-import os
-import sys
 import webbrowser
 
-from inkex.gui import Window, ChildWindow, TreeView, asyncme
+from inkex.gui import Window, TreeView, asyncme
 from inkex.gui.pixmap import PixmapManager
 from inkex.gui.app import Gtk
 
-from ..utils import DATA_DIR, INKSCAPE_PROFILE
-from ..remote import RemoteArchive, SearchError
+from ..utils import DATA_DIR
+from ..remote import SearchError
 from .. import __state__
 
 
@@ -62,7 +60,9 @@ class LocalTreeView(TreeView):
 
         col = self.create_column("Extensions Package", expand=True)
 
-        img = col.add_image_renderer(self.get_icon, pad=0, pixmaps=self._pixmaps)
+        img = col.add_image_renderer(
+            self.get_icon, pad=0, pixmaps=self._pixmaps
+        )
         img.set_property("ypad", 2)
 
         txt = col.add_text_renderer(self.get_name)
@@ -84,7 +84,9 @@ class LocalTreeView(TreeView):
             txt = col.add_text_renderer("target")
             txt.set_property("foreground-rgba", self._fg_color)
 
-        self.create_sort(data=lambda item: item.name, ascending=True, contains="name")
+        self.create_sort(
+            data=lambda item: item.name, ascending=True, contains="name"
+        )
 
         super().setup(*args, **kwargs)
 
@@ -119,7 +121,9 @@ class RemoteTreeView(LocalTreeView):
         super().setup(*args, **kwargs)
 
         col = self.create_column("Stars", expand=True)
-        img = col.add_image_renderer(get_star, pad=0, size=16, pixmaps=self._pixmaps)
+        img = col.add_image_renderer(
+            get_star, pad=0, size=16, pixmaps=self._pixmaps
+        )
         img.set_property("ypad", 2)
         txt = col.add_text_renderer("stars")
         txt.set_property("foreground-rgba", self._fg_color)
@@ -135,7 +139,8 @@ class RemoteTreeView(LocalTreeView):
         elif self._version not in item.targets:
             targets = item.targets or ["No Inkscape Versions"]
             summary = (
-                "".join([tag(t, "#00CB00", "white") for t in targets]) + summary.strip()
+                "".join([tag(t, "#00CB00", "white") for t in targets])
+                + summary.strip()
             )
         else:
             summary = (
@@ -193,7 +198,9 @@ class ExtensionManagerWindow(Window):
         self.widget("remote_install").set_sensitive(False)
         self.widget("remote_info").set_sensitive(False)
         self.widget("local_install").set_sensitive(True)
-        self.window.set_title(self.target.label + f" ({self._version}) - {__state__}")
+        self.window.set_title(
+            f"{self.target.label} ({self._version}) - {__state__}"
+        )
 
         if not self.target.is_search:
             self.widget("remote_getlist").show()
@@ -216,7 +223,6 @@ class ExtensionManagerWindow(Window):
         self.widget("local_uninstall").set_sensitive(False)
         self.widget("local_information").set_sensitive(False)
 
-        all_packages = []
         for item in self.target.list_installed(cached=False):
             self.local.add_item(item)
         self.widget("loading").stop()
@@ -229,7 +235,9 @@ class ExtensionManagerWindow(Window):
     def local_information(self, widget):
         """Show the more information window"""
         if self.local.selected:
-            self.load_window("info", pixmaps=self.pixmaps, item=self.local.selected)
+            self.load_window(
+                "info", pixmaps=self.pixmaps, item=self.local.selected
+            )
 
     def local_uninstall(self, widget):
         """Uninstall selected extection package"""

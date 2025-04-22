@@ -11,12 +11,17 @@
 
 #include <gtest/gtest.h>
 
-#include <src/extension/db.h>
-#include <src/extension/input.h>
-#include <src/extension/internal/svg.h>
-#include <src/inkscape.h>
-
 #include <glib/gstdio.h>
+
+#include "document.h"
+#include "inkscape.h"
+
+#include "actions/actions-svg-processing.h"
+#include "extension/db.h"
+#include "extension/input.h"
+#include "extension/internal/svg.h"
+#include "object/sp-text.h"
+#include "object/sp-tspan.h"
 
 using namespace Inkscape;
 using namespace Inkscape::Extension;
@@ -72,9 +77,56 @@ TEST_F(SvgExtensionTest, openingAsLinkInImageASizelessSvgFileReturnsNull)
     Input *svg_input_extension(dynamic_cast<Input *>(db.get(SP_MODULE_KEY_INPUT_SVG))); 
     
     Preferences *prefs = Preferences::get();
-    prefs->setBool("/options/onimport", true);
     prefs->setBool("/dialogs/import/ask_svg", false);
     prefs->setString("/dialogs/import/import_mode_svg", "link");
 
-    ASSERT_EQ(svg_input_extension->open(sizeless_svg_file.c_str()), nullptr);
+    ASSERT_EQ(svg_input_extension->open(sizeless_svg_file.c_str(), true), nullptr);
+}
+
+TEST_F(SvgExtensionTest, hiddenSvg2TextIsSaved)
+{
+    char const *docString = R"""(
+<svg width="100" height="200">
+  <defs>
+    <rect id="rect1" x="0" y="0"   width="100" height="100" />
+    <rect id="rect2" x="0" y="100" width="100" height="100" />
+  </defs>
+  <g>
+    <text id="text1" style="shape-inside:url(#rect1);display:inline;">
+      <tspan id="tspan1" x="0" y="0">foo</tspan>
+    </text>
+    <text id="text2" style="shape-inside:url(#rect2);display:none;"  >
+      <tspan id="tspan2" x="0" y="0">bar</tspan>
+    </text>
+  </g>
+</svg>
+)""";
+    SPDocument *doc = SPDocument::createNewDocFromMem(docString, static_cast<int>(strlen(docString)), false);
+    ASSERT_TRUE(doc);
+
+    std::map<std::string,std::string> textMap;
+    textMap["text1"] = "foo";
+    textMap["text2"] = "bar";
+
+    // otherwise the layout reports a size of 0
+    for (const auto& kv : textMap) {
+        auto textElement = cast<SPText>(doc->getObjectById(kv.first));
+        ASSERT_TRUE(textElement);
+        textElement->rebuildLayout();
+    }
+
+    Inkscape::XML::Document *rdoc = doc->getReprDoc();
+    ASSERT_TRUE(rdoc);
+
+    insert_text_fallback(rdoc->root(), doc);
+
+    for(const auto& kv : textMap) {
+        auto textElement = doc->getObjectById(kv.first);
+        ASSERT_TRUE(textElement);
+        auto tspanElement = textElement->firstChild();
+        ASSERT_TRUE(tspanElement);
+        auto stringElement = cast<SPString>(tspanElement->firstChild());
+        ASSERT_TRUE(stringElement);
+        ASSERT_EQ(kv.second, stringElement->string);
+    }
 }

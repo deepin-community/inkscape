@@ -2,6 +2,7 @@
 """
 Test Inkex tester functionality
 """
+
 from inkex.tester import TestCase
 from inkex.tester.xmldiff import xmldiff
 

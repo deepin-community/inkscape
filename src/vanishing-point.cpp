@@ -37,20 +37,11 @@ using Inkscape::DocumentUndo;
 
 namespace Box3D {
 
-#define VP_KNOT_COLOR_NORMAL 0xffffff00
-#define VP_KNOT_COLOR_SELECTED 0x0000ff00
-
 // screen pixels between knots when they snap:
 #define SNAP_DIST 5
 
 // absolute distance between gradient points for them to become a single dragger when the drag is created:
 #define MERGE_DIST 0.1
-
-// knot shapes corresponding to GrPointType enum
-Inkscape::CanvasItemCtrlShape vp_knot_shapes[] = {
-    Inkscape::CANVAS_ITEM_CTRL_SHAPE_SQUARE, // VP_FINITE
-    Inkscape::CANVAS_ITEM_CTRL_SHAPE_CIRCLE  // VP_INFINITE
-};
 
 static void vp_drag_sel_changed(Inkscape::Selection * /*selection*/, gpointer data)
 {
@@ -181,7 +172,7 @@ static void vp_knot_moved_handler(SPKnot *knot, Geom::Point const &ppointer, gui
     // shift key
     // has a different purpose in this context (see above)
     SPDesktop *desktop = SP_ACTIVE_DESKTOP;
-    SnapManager &m = desktop->namedview->snap_manager;
+    auto &m = desktop->getNamedView()->snap_manager;
     m.setup(desktop);
     Inkscape::SnappedPoint s = m.freeSnap(Inkscape::SnapCandidatePoint(p, Inkscape::SNAPSOURCE_OTHER_HANDLE));
     m.unSetup();
@@ -253,7 +244,7 @@ std::list<SPBox3D *> VanishingPoint::selectedBoxes(Inkscape::Selection *sel)
     auto itemlist = sel->items();
     for (auto i = itemlist.begin(); i != itemlist.end(); ++i) {
         SPItem *item = *i;
-        SPBox3D *box = dynamic_cast<SPBox3D *>(item);
+        auto box = cast<SPBox3D>(item);
         if (box && this->hasBox(box)) {
             sel_boxes.push_back(box);
         }
@@ -272,8 +263,6 @@ VPDragger::VPDragger(VPDrag *parent, Geom::Point p, VanishingPoint &vp)
     if (vp.is_finite()) {
         // create the knot
         this->knot = new SPKnot(SP_ACTIVE_DESKTOP, "", Inkscape::CANVAS_ITEM_CTRL_TYPE_ANCHOR, "CanvasItemCtrl:VPDragger");
-        this->knot->setFill(VP_KNOT_COLOR_NORMAL, VP_KNOT_COLOR_NORMAL, VP_KNOT_COLOR_NORMAL, VP_KNOT_COLOR_NORMAL);
-        this->knot->setStroke(0x000000ff, 0x000000ff, 0x000000ff, 0x000000ff);
         this->knot->updateCtrl();
 
         // move knot to the given point
@@ -300,8 +289,8 @@ VPDragger::~VPDragger()
     this->_grabbed_connection.disconnect();
     this->_ungrabbed_connection.disconnect();
 
-    /* unref should call destroy */
-    knot_unref(this->knot);
+    // unref should call destroy
+    SPKnot::unref(knot);
 }
 
 /**
@@ -309,28 +298,25 @@ Updates the statusbar tip of the dragger knot, based on its draggables
  */
 void VPDragger::updateTip()
 {
-    if (this->knot && this->knot->tip) {
-        g_free(this->knot->tip);
-        this->knot->tip = nullptr;
-    }
+    char *tip = nullptr;
 
     guint num = this->numberOfBoxes();
     if (this->vps.size() == 1) {
         if (this->vps.front().is_finite()) {
-            this->knot->tip = g_strdup_printf(ngettext("<b>Finite</b> vanishing point shared by <b>%d</b> box",
-                                                       "<b>Finite</b> vanishing point shared by <b>%d</b> boxes; drag "
-                                                       "with <b>Shift</b> to separate selected box(es)",
-                                                       num),
-                                              num);
+            tip = g_strdup_printf(ngettext("<b>Finite</b> vanishing point shared by the box",
+                                           "<b>Finite</b> vanishing point shared by <b>%d</b> boxes; drag "
+                                           "with <b>Shift</b> to separate selected box(es)",
+                                           num),
+                                  num);
         }
         else {
             // This won't make sense any more when infinite VPs are not shown on the canvas,
             // but currently we update the status message anyway
-            this->knot->tip = g_strdup_printf(ngettext("<b>Infinite</b> vanishing point shared by the box",
-                                                       "<b>Infinite</b> vanishing point shared by <b>%d</b> boxes; "
-                                                       "drag with <b>Shift</b> to separate selected box(es)",
-                                                       num),
-                                              num);
+            tip = g_strdup_printf(ngettext("<b>Infinite</b> vanishing point shared by the box",
+                                           "<b>Infinite</b> vanishing point shared by <b>%d</b> boxes; "
+                                           "drag with <b>Shift</b> to separate selected box(es)",
+                                           num),
+                                  num);
         }
     }
     else {
@@ -340,8 +326,11 @@ void VPDragger::updateTip()
                                     "Collection of <b>%d</b> vanishing points shared by <b>%d</b> boxes; "
                                     "drag with <b>Shift</b> to separate",
                                     num);
-        this->knot->tip = g_strdup_printf(tmpl, length, num);
+        tip = g_strdup_printf(tmpl, length, num);
     }
+
+    knot->setTip(tip);
+    g_free(tip);
 }
 
 /**
@@ -391,7 +380,7 @@ std::set<VanishingPoint *> VPDragger::VPsOfSelectedBoxes()
     auto itemlist = sel->items();
     for (auto i = itemlist.begin(); i != itemlist.end(); ++i) {
         SPItem *item = *i;
-        SPBox3D *box = dynamic_cast<SPBox3D *>(item);
+        auto box = cast<SPBox3D>(item);
         if (box) {
             vp = this->findVPWithBox(box);
             if (vp) {
@@ -504,9 +493,6 @@ VPDrag::~VPDrag()
     }
     this->draggers.clear();
 
-    for (auto item_curve : item_curves) {
-        delete item_curve;
-    }
     item_curves.clear();
 }
 
@@ -554,7 +540,7 @@ void VPDrag::updateDraggers()
     auto itemlist = this->selection->items();
     for (auto i = itemlist.begin(); i != itemlist.end(); ++i) {
         SPItem *item = *i;
-        SPBox3D *box = dynamic_cast<SPBox3D *>(item);
+        auto box = cast<SPBox3D>(item);
         if (box) {
             VanishingPoint vp;
             for (int i = 0; i < 3; ++i) {
@@ -572,9 +558,6 @@ of a dragger, so that lines are always in sync with the actual perspective
 void VPDrag::updateLines()
 {
     // Delete old lines
-    for (auto curve : item_curves) {
-        delete curve;
-    }
     item_curves.clear();
 
     // do nothing if perspective lines are currently disabled
@@ -586,7 +569,7 @@ void VPDrag::updateLines()
     auto itemlist = this->selection->items();
     for (auto i = itemlist.begin(); i != itemlist.end(); ++i) {
         SPItem *item = *i;
-        SPBox3D *box = dynamic_cast<SPBox3D *>(item);
+        auto box = cast<SPBox3D>(item);
         if (box) {
             this->drawLinesForFace(box, Proj::X);
             this->drawLinesForFace(box, Proj::Y);
@@ -609,10 +592,10 @@ void VPDrag::updateBoxHandles()
         return;
     }
 
-    Inkscape::UI::Tools::ToolBase *ec = SP_ACTIVE_DESKTOP->getEventContext();
-    g_assert(ec != nullptr);
-    if (ec->shape_editor != nullptr) {
-        ec->shape_editor->update_knotholder();
+    auto const tool = SP_ACTIVE_DESKTOP->getTool();
+    g_assert(tool != nullptr);
+    if (tool->shape_editor != nullptr) {
+        tool->shape_editor->update_knotholder();
     }
 }
 
@@ -746,7 +729,7 @@ void VPDrag::addCurve(Geom::Point const &p1, Geom::Point const &p2, Inkscape::Ca
     auto item_curve = new Inkscape::CanvasItemCurve(SP_ACTIVE_DESKTOP->getCanvasControls(), p1, p2);
     item_curve->set_name("3DBoxCurve");
     item_curve->set_stroke(color);
-    item_curves.push_back(item_curve);
+    item_curves.emplace_back(item_curve);
 }
 
 } // namespace Box3D

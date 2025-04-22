@@ -202,7 +202,7 @@ bool Unit::compatibleWith(Unit const *u) const
 }
 bool Unit::compatibleWith(Glib::ustring const &u) const
 {
-    return compatibleWith(unit_table.getUnit(u));
+    return compatibleWith(UnitTable::get().getUnit(u));
 }
 
 bool Unit::operator==(Unit const &other) const
@@ -239,11 +239,11 @@ double Unit::convert(double from_dist, Unit const *to) const
 }
 double Unit::convert(double from_dist, Glib::ustring const &to) const
 {
-    return convert(from_dist, unit_table.getUnit(to));
+    return convert(from_dist, UnitTable::get().getUnit(to));
 } 
 double Unit::convert(double from_dist, char const *to) const
 {
-    return convert(from_dist, unit_table.getUnit(to));
+    return convert(from_dist, UnitTable::get().getUnit(to));
 }
 
 
@@ -253,8 +253,7 @@ Unit UnitTable::_empty_unit;
 UnitTable::UnitTable()
 {
     using namespace Inkscape::IO::Resource;
-    auto filename = get_path_string(SYSTEM, UIS, "units.xml");
-    load(filename);
+    load(get_filename(UIS, "units.xml", false, true));
 }
 
 UnitTable::~UnitTable()
@@ -407,6 +406,12 @@ bool UnitTable::load(std::string const &filename) {
     return true;
 }
 
+UnitTable &UnitTable::get()
+{
+    static UnitTable instance;
+    return instance;
+}
+
 /*
 bool UnitTable::save(std::string const &filename) {
     g_warning("UnitTable::save(): not implemented");
@@ -414,8 +419,6 @@ bool UnitTable::save(std::string const &filename) {
     return false;
 }
 */
-
-Inkscape::Util::UnitTable unit_table;
 
 void UnitParser::on_start_element(Ctx &/*ctx*/, Glib::ustring const &name, AttrMap const &attrs)
 {
@@ -472,12 +475,12 @@ Quantity::Quantity(double q, Unit const *u)
 {
 }
 Quantity::Quantity(double q, Glib::ustring const &u)
-  : unit(unit_table.getUnit(u.c_str()))
+  : unit(UnitTable::get().getUnit(u.c_str()))
   , quantity(q)
 {
 }
 Quantity::Quantity(double q, char const *u)
-  : unit(unit_table.getUnit(u))
+  : unit(UnitTable::get().getUnit(u))
   , quantity(q)
 {
 }
@@ -492,7 +495,7 @@ bool Quantity::compatibleWith(Glib::ustring const &u) const
 }
 bool Quantity::compatibleWith(char const *u) const
 {
-    return compatibleWith(unit_table.getUnit(u));
+    return compatibleWith(UnitTable::get().getUnit(u));
 }
 
 double Quantity::value(Unit const *u) const
@@ -505,14 +508,14 @@ double Quantity::value(Glib::ustring const &u) const
 }
 double Quantity::value(char const *u) const
 {
-    return value(unit_table.getUnit(u));
+    return value(UnitTable::get().getUnit(u));
 }
 
 Glib::ustring Quantity::string(Unit const *u) const {
     return Glib::ustring::format(std::fixed, std::setprecision(2), value(u)) + " " + u->abbr;
 }
 Glib::ustring Quantity::string(Glib::ustring const &u) const {
-    return string(unit_table.getUnit(u.c_str()));
+    return string(UnitTable::get().getUnit(u.c_str()));
 }
 Glib::ustring Quantity::string() const {
     return string(unit);
@@ -524,19 +527,19 @@ double Quantity::convert(double from_dist, Unit const *from, Unit const *to)
 }
 double Quantity::convert(double from_dist, Glib::ustring const &from, Unit const *to)
 {
-    return convert(from_dist, unit_table.getUnit(from.c_str()), to);
+    return convert(from_dist, UnitTable::get().getUnit(from.c_str()), to);
 }
 double Quantity::convert(double from_dist, Unit const *from, Glib::ustring const &to)
 {
-    return convert(from_dist, from, unit_table.getUnit(to.c_str()));
+    return convert(from_dist, from, UnitTable::get().getUnit(to.c_str()));
 }
 double Quantity::convert(double from_dist, Glib::ustring const &from, Glib::ustring const &to)
 {
-    return convert(from_dist, unit_table.getUnit(from.c_str()), unit_table.getUnit(to.c_str()));
+    return convert(from_dist, UnitTable::get().getUnit(from.c_str()), UnitTable::get().getUnit(to.c_str()));
 }
 double Quantity::convert(double from_dist, char const *from, char const *to)
 {
-    return convert(from_dist, unit_table.getUnit(from), unit_table.getUnit(to));
+    return convert(from_dist, UnitTable::get().getUnit(from), UnitTable::get().getUnit(to));
 }
 
 bool Quantity::operator<(Quantity const &rhs) const

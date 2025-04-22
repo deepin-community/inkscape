@@ -19,6 +19,7 @@
 """
 Deprecated module for running SVG-generating commands in Inkscape extensions
 """
+
 import os
 import sys
 import tempfile

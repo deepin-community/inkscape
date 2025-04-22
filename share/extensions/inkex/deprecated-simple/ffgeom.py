@@ -41,12 +41,12 @@ class Point(namedtuple("Point", "x y")):
 class Segment(NewSeg):
     @deprecate
     def __init__(self, e0, e1):
-        """inkex.transforms.Segment(((x1, y1), (x2, y2)))"""
+        """inkex.transforms.DirectedLineSegment((x1, y1), (x2, y2))"""
         if isinstance(e0, dict):
             e0 = (e0["x"], e0["y"])
         if isinstance(e1, dict):
             e1 = (e1["x"], e1["y"])
-        super(Segment, self).__init__((e0, e1))
+        super(Segment, self).__init__(e0, e1)
 
     def __getitem__(self, key):
         if key:

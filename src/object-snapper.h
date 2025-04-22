@@ -44,7 +44,7 @@ public:
      */
     Geom::Coord getSnapperTolerance() const override; //returns the tolerance of the snapper in screen pixels (i.e. independent of zoom)
 
-    bool getSnapperAlwaysSnap() const override; //if true, then the snapper will always snap, regardless of its tolerance
+    bool getSnapperAlwaysSnap(SnapSourceType const &source) const override; //if true, then the snapper will always snap, regardless of its tolerance
 
     void freeSnap(IntermSnapResults &isr,
                   Inkscape::SnapCandidatePoint const &p,
@@ -105,8 +105,8 @@ private:
                       bool const &first_point) const;
 
     void _clear_paths() const;
-    Geom::PathVector* _getBorderPathv() const;
-    Geom::PathVector* _getPathvFromRect(Geom::Rect const rect) const;
+    Geom::PathVector _getBorderPathv() const;
+    Geom::PathVector _getPathvFromRect(Geom::Rect const rect) const;
     bool _allowSourceToSnapToTarget(SnapSourceType source, SnapTargetType target, bool strict_snapping) const;
 
 }; // end of ObjectSnapper class

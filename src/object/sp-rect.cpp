@@ -12,28 +12,46 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "display/curve.h"
-
-#include "inkscape.h"
-#include "document.h"
-#include "attributes.h"
-#include "style.h"
 #include "sp-rect.h"
-#include "sp-guide.h"
+
+#include <glibmm/i18n.h>
+
+#include "attributes.h"
+#include "document.h"
 #include "preferences.h"
-#include "svg/svg.h"
 #include "snap-candidate.h"
 #include "snap-preferences.h"
-#include <glibmm/i18n.h>
+#include "sp-guide.h"
+#include "style.h"
+
+#include "display/curve.h"
+#include "svg/svg.h"
 
 #define noRECT_VERBOSE
 
 //#define OBJECT_TRACE
 
-SPRect::SPRect() : SPShape() {
+SPRect::SPRect() : SPShape()
+    ,type(SP_GENERIC_RECT_UNDEFINED) 
+{
 }
 
 SPRect::~SPRect() = default;
+
+/*
+* Ellipse and rects are the only SP object who's repr element tag name changes
+* during it's lifetime. During undo and redo these changes can cause
+* the SP object to become unstuck from the repr's true state.
+*/
+void SPRect::tag_name_changed(gchar const* oldname, gchar const* newname)
+{
+    const std::string typeString = newname;
+    if (typeString == "svg:rect") {
+        type = SP_GENERIC_RECT;
+    } else if (typeString == "svg:path") {
+        type = SP_GENERIC_PATH;
+    }
+}
 
 void SPRect::build(SPDocument* doc, Inkscape::XML::Node* repr) {
 #ifdef OBJECT_TRACE
@@ -160,13 +178,37 @@ Inkscape::XML::Node * SPRect::write(Inkscape::XML::Document *xml_doc, Inkscape::
 #ifdef OBJECT_TRACE
     objectTrace( "SPRect::write", true, flags );
 #endif
-
-    if ((flags & SP_OBJECT_WRITE_BUILD) && !repr) {
-        repr = xml_doc->createElement("svg:rect");
+    GenericRectType new_type = SP_GENERIC_RECT;
+    if (hasPathEffectOnClipOrMaskRecursive(this)) {
+        new_type = SP_GENERIC_PATH;
     }
-    if (this->hasPathEffectOnClipOrMaskRecursive(this) && repr && strcmp(repr->name(), "svg:rect") == 0) {
-        repr->setCodeUnsafe(g_quark_from_string("svg:path"));
-        repr->setAttribute("sodipodi:type", "rect");
+    if ((flags & SP_OBJECT_WRITE_BUILD) && !repr) {
+
+        switch ( new_type ) {
+
+            case SP_GENERIC_RECT:
+                repr = xml_doc->createElement("svg:rect");
+                break;
+            case SP_GENERIC_PATH:
+                repr = xml_doc->createElement("svg:path");
+                break;
+            default:
+                std::cerr << "SPGenericRect::write(): unknown type." << std::endl;
+        }
+    }
+    if (type != new_type) {
+        switch (new_type) {
+            case SP_GENERIC_RECT:
+                repr->setCodeUnsafe(g_quark_from_string("svg:rect"));
+                break;
+            case SP_GENERIC_PATH:
+                repr->setCodeUnsafe(g_quark_from_string("svg:path"));
+                repr->setAttribute("sodipodi:type", "rect");
+                break;
+            default:
+                std::cerr << "SPGenericRect::write(): unknown type." << std::endl;
+        }
+        type = new_type;
     }
     repr->setAttributeSvgLength("width", this->width);
     repr->setAttributeSvgLength("height", this->height);
@@ -182,7 +224,7 @@ Inkscape::XML::Node * SPRect::write(Inkscape::XML::Document *xml_doc, Inkscape::
     repr->setAttributeSvgLength("x", this->x);
     repr->setAttributeSvgLength("y", this->y);
     // write d=
-    if (strcmp(repr->name(), "svg:rect") != 0) {
+    if (type == SP_GENERIC_PATH) {
         set_rect_path_attribute(repr); // include set_shape()
     } else {
         this->set_shape(); // evaluate SPCurve
@@ -216,7 +258,7 @@ void SPRect::set_shape() {
         return;
     }
 
-    auto c = std::make_unique<SPCurve>();
+    SPCurve c;
 
     double const x = this->x.computed;
     double const y = this->y.computed;
@@ -245,46 +287,41 @@ void SPRect::set_shape() {
      * arc fairly well.
      */
     if ((rx > 1e-18) && (ry > 1e-18)) {
-        c->moveto(x + rx, y);
+        c.moveto(x + rx, y);
 
         if (rx < w2) {
-        	c->lineto(x + w - rx, y);
+            c.lineto(x + w - rx, y);
         }
 
-        c->curveto(x + w - rx * (1 - C1), y, x + w, y + ry * (1 - C1), x + w, y + ry);
+        c.curveto(x + w - rx * (1 - C1), y, x + w, y + ry * (1 - C1), x + w, y + ry);
 
         if (ry < h2) {
-        	c->lineto(x + w, y + h - ry);
+            c.lineto(x + w, y + h - ry);
         }
 
-        c->curveto(x + w, y + h - ry * (1 - C1), x + w - rx * (1 - C1), y + h, x + w - rx, y + h);
+        c.curveto(x + w, y + h - ry * (1 - C1), x + w - rx * (1 - C1), y + h, x + w - rx, y + h);
 
         if (rx < w2) {
-        	c->lineto(x + rx, y + h);
+            c.lineto(x + rx, y + h);
         }
 
-        c->curveto(x + rx * (1 - C1), y + h, x, y + h - ry * (1 - C1), x, y + h - ry);
+        c.curveto(x + rx * (1 - C1), y + h, x, y + h - ry * (1 - C1), x, y + h - ry);
 
         if (ry < h2) {
-        	c->lineto(x, y + ry);
+            c.lineto(x, y + ry);
         }
 
-        c->curveto(x, y + ry * (1 - C1), x + rx * (1 - C1), y, x + rx, y);
+        c.curveto(x, y + ry * (1 - C1), x + rx * (1 - C1), y, x + rx, y);
     } else {
-        c->moveto(x + 0.0, y + 0.0);
-        c->lineto(x + w, y + 0.0);
-        c->lineto(x + w, y + h);
-        c->lineto(x + 0.0, y + h);
+        c.moveto(x + 0.0, y + 0.0);
+        c.lineto(x + w, y + 0.0);
+        c.lineto(x + w, y + h);
+        c.lineto(x + 0.0, y + h);
     }
 
-    c->closepath();
+    c.closepath();
 
-    if (prepareShapeForLPE(c.get())) {
-        return;
-    }
-
-    // This happends on undo, fix bug:#1791784
-    setCurveInsync(std::move(c));
+    prepareShapeForLPE(&c);
 }
 
 bool SPRect::set_rect_path_attribute(Inkscape::XML::Node *repr)
@@ -342,6 +379,9 @@ void SPRect::setRy(bool set, gdouble value) {
 }
 
 void SPRect::update_patheffect(bool write) {
+    if (type != SP_GENERIC_PATH && !cloned && hasPathEffectOnClipOrMaskRecursive(this)) {
+        SPRect::write(document->getReprDoc(), getRepr(), SP_OBJECT_MODIFIED_FLAG);
+    }
     SPShape::update_patheffect(write);
 }
 

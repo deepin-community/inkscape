@@ -16,6 +16,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -28,30 +29,42 @@
 #include "paintbucket-toolbar.h"
 
 #include <glibmm/i18n.h>
-
-#include <gtkmm/separatortoolitem.h>
+#include <gtkmm/adjustment.h>
+#include <gtkmm/box.h>
+#include <gtkmm/button.h>
+#include <gtkmm/liststore.h>
+#include <gtkmm/treemodel.h>
 
 #include "desktop.h"
-
-#include "ui/icon-names.h"
+#include "preferences.h"
+#include "ui/builder-utils.h"
 #include "ui/tools/flood-tool.h"
 #include "ui/widget/canvas.h"
 #include "ui/widget/combo-tool-item.h"
 #include "ui/widget/spinbutton.h"
-#include "ui/widget/spin-button-tool-item.h"
+#include "ui/widget/toolbar-menu-button.h"
 #include "ui/widget/unit-tracker.h"
 
-using Inkscape::UI::Widget::UnitTracker;
-using Inkscape::Util::unit_table;
+namespace Inkscape::UI::Toolbar {
 
-namespace Inkscape {
-namespace UI {
-namespace Toolbar {
 PaintbucketToolbar::PaintbucketToolbar(SPDesktop *desktop)
-    : Toolbar(desktop),
-      _tracker(new UnitTracker(Inkscape::Util::UNIT_TYPE_LINEAR))
+    : Toolbar(desktop)
+    , _tracker{std::make_unique<UI::Widget::UnitTracker>(Inkscape::Util::UNIT_TYPE_LINEAR)}
+    , _builder(create_builder("toolbar-paintbucket.ui"))
+    , _threshold_item(get_derived_widget<UI::Widget::SpinButton>(_builder, "_threshold_item"))
+    , _offset_item(get_derived_widget<UI::Widget::SpinButton>(_builder, "_offset_item"))
 {
-    auto prefs = Inkscape::Preferences::get();
+    auto *prefs = Inkscape::Preferences::get();
+
+    _toolbar = &get_widget<Gtk::Box>(_builder, "paintbucket-toolbar");
+
+    // Setup the spin buttons.
+    setup_derived_spin_button(_threshold_item, "threshold", 5, &PaintbucketToolbar::threshold_changed);
+    setup_derived_spin_button(_offset_item, "offset", 0, &PaintbucketToolbar::offset_changed);
+
+    // Values auto-calculated.
+    _threshold_item.set_custom_numeric_menu_data({ });
+    _offset_item.set_custom_numeric_menu_data({ });
 
     // Channel
     {
@@ -61,7 +74,7 @@ PaintbucketToolbar::PaintbucketToolbar(SPDesktop *desktop)
 
         for (auto item: Inkscape::UI::Tools::FloodTool::channel_list) {
             Gtk::TreeModel::Row row = *(store->append());
-            row[columns.col_label    ] = _(item.c_str());
+            row[columns.col_label    ] = _(item);
             row[columns.col_sensitive] = true;
         }
 
@@ -72,50 +85,17 @@ PaintbucketToolbar::PaintbucketToolbar(SPDesktop *desktop)
         _channels_item->set_active(channels);
 
         _channels_item->signal_changed().connect(sigc::mem_fun(*this, &PaintbucketToolbar::channels_changed));
-        add(*_channels_item);
+        get_widget<Gtk::Box>(_builder, "channels_box").add(*_channels_item);
+
+        // Create the units menu.
+        Glib::ustring stored_unit = prefs->getString("/tools/paintbucket/offsetunits");
+        if (!stored_unit.empty()) {
+            Unit const *u = Util::UnitTable::get().getUnit(stored_unit);
+            _tracker->setActiveUnit(u);
+        }
     }
 
-    // Spacing spinbox
-    {
-        auto threshold_val = prefs->getDouble("/tools/paintbucket/threshold", 5);
-        _threshold_adj = Gtk::Adjustment::create(threshold_val, 0, 100.0, 1.0, 10.0);
-        auto threshold_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("inkscape:paintbucket-threshold", _("Threshold:"), _threshold_adj, 1, 0));
-        threshold_item->set_tooltip_text(_("The maximum allowed difference between the clicked pixel and the neighboring pixels to be counted in the fill"));
-        threshold_item->set_focus_widget(desktop->canvas);
-        _threshold_adj->signal_value_changed().connect(sigc::mem_fun(*this, &PaintbucketToolbar::threshold_changed));
-        add(*threshold_item);
-    }
-
-    add(* Gtk::manage(new Gtk::SeparatorToolItem()));
-
-    // Create the units menu.
-    Glib::ustring stored_unit = prefs->getString("/tools/paintbucket/offsetunits");
-    if (!stored_unit.empty()) {
-        Unit const *u = unit_table.getUnit(stored_unit);
-        _tracker->setActiveUnit(u);
-    }
-
-    // Offset spinbox
-    {
-        auto offset_val = prefs->getDouble("/tools/paintbucket/offset", 0);
-        _offset_adj = Gtk::Adjustment::create(offset_val, -1e4, 1e4, 0.1, 0.5);
-        auto offset_item = Gtk::manage(new UI::Widget::SpinButtonToolItem("inkscape:paintbucket-offset", _("Grow/shrink by:"), _offset_adj, 1, 2));
-        offset_item->set_tooltip_text(_("The amount to grow (positive) or shrink (negative) the created fill path"));
-        _tracker->addAdjustment(_offset_adj->gobj());
-        offset_item->get_spin_button()->addUnitTracker(_tracker);
-        offset_item->set_focus_widget(desktop->canvas);
-        _offset_adj->signal_value_changed().connect(sigc::mem_fun(*this, &PaintbucketToolbar::offset_changed));
-        add(*offset_item);
-    }
-
-    {
-        auto unit_menu = _tracker->create_tool_item(_("Units"), (""));
-        add(*unit_menu);
-    }
-
-    add(* Gtk::manage(new Gtk::SeparatorToolItem()));
-
-    /* Auto Gap */
+    // Auto Gap
     {
         UI::Widget::ComboToolItemColumns columns;
 
@@ -123,7 +103,7 @@ PaintbucketToolbar::PaintbucketToolbar(SPDesktop *desktop)
 
         for (auto item: Inkscape::UI::Tools::FloodTool::gap_list) {
             Gtk::TreeModel::Row row = *(store->append());
-            row[columns.col_label    ] = item;
+            row[columns.col_label    ] = g_dpgettext2(nullptr, "Flood autogap", item);
             row[columns.col_sensitive] = true;
         }
 
@@ -134,79 +114,95 @@ PaintbucketToolbar::PaintbucketToolbar(SPDesktop *desktop)
         _autogap_item->set_active(autogap);
 
         _autogap_item->signal_changed().connect(sigc::mem_fun(*this, &PaintbucketToolbar::autogap_changed));
-        add(*_autogap_item);
+        get_widget<Gtk::Box>(_builder, "autogap_box").add(*_autogap_item);
+
+        auto units_menu = _tracker->create_tool_item(_("Units"), (""));
+        get_widget<Gtk::Box>(_builder, "unit_menu_box").add(*units_menu);
     }
 
-    add(* Gtk::manage(new Gtk::SeparatorToolItem()));
+    // Fetch all the ToolbarMenuButtons at once from the UI file
+    // Menu Button #1
+    auto popover_box1 = &get_widget<Gtk::Box>(_builder, "popover_box1");
+    auto menu_btn1 = &get_derived_widget<UI::Widget::ToolbarMenuButton>(_builder, "menu_btn1");
 
-    /* Reset */
-    {
-        auto reset_button = Gtk::manage(new Gtk::ToolButton(_("Defaults")));
-        reset_button->set_tooltip_text(_("Reset paint bucket parameters to defaults (use Inkscape Preferences > Tools to change defaults)"));
-        reset_button->set_icon_name(INKSCAPE_ICON("edit-clear"));
-        reset_button->signal_clicked().connect(sigc::mem_fun(*this, &PaintbucketToolbar::defaults));
-        add(*reset_button);
-        reset_button->set_sensitive(true);
-    }
+    // Initialize all the ToolbarMenuButtons only after all the children of the
+    // toolbar have been fetched. Otherwise, the children to be moved in the
+    // popover will get mapped to a different position and it will probably
+    // cause segfault.
+    auto children = _toolbar->get_children();
+
+    menu_btn1->init(1, "tag1", popover_box1, children);
+    addCollapsibleButton(menu_btn1);
+
+    add(*_toolbar);
+
+    // Signals.
+    get_widget<Gtk::Button>(_builder, "reset_btn")
+        .signal_clicked()
+        .connect(sigc::mem_fun(*this, &PaintbucketToolbar::defaults));
 
     show_all();
 }
 
-GtkWidget *
-PaintbucketToolbar::create(SPDesktop *desktop)
+PaintbucketToolbar::~PaintbucketToolbar() = default;
+
+void PaintbucketToolbar::setup_derived_spin_button(UI::Widget::SpinButton &btn, Glib::ustring const &name,
+                                                   double default_value, ValueChangedMemFun const value_changed_mem_fun)
 {
-    auto toolbar = new PaintbucketToolbar(desktop);
-    return GTK_WIDGET(toolbar->gobj());
+    const Glib::ustring path = "/tools/painbucket/" + name;
+    auto const val = Preferences::get()->getDouble(path, default_value);
+
+    auto adj = btn.get_adjustment();
+    adj->set_value(val);
+    adj->signal_value_changed().connect(sigc::mem_fun(*this, value_changed_mem_fun));
+
+    if (name == "offset") {
+        _tracker->addAdjustment(adj->gobj());
+        btn.addUnitTracker(_tracker.get());
+    }
+
+    btn.set_defocus_widget(_desktop->getCanvas());
 }
 
-void
-PaintbucketToolbar::channels_changed(int channels)
+void PaintbucketToolbar::channels_changed(int channels)
 {
     Inkscape::UI::Tools::FloodTool::set_channels(channels);
 }
 
-void
-PaintbucketToolbar::threshold_changed()
+void PaintbucketToolbar::threshold_changed()
 {
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    prefs->setInt("/tools/paintbucket/threshold", (gint)_threshold_adj->get_value());
+    Preferences::get()->setInt("/tools/paintbucket/threshold", (gint)_threshold_item.get_adjustment()->get_value());
 }
 
-void
-PaintbucketToolbar::offset_changed()
+void PaintbucketToolbar::offset_changed()
 {
     Unit const *unit = _tracker->getActiveUnit();
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    auto *prefs = Inkscape::Preferences::get();
 
     // Don't adjust the offset value because we're saving the
     // unit and it'll be correctly handled on load.
-    prefs->setDouble("/tools/paintbucket/offset", (gdouble)_offset_adj->get_value());
+    prefs->setDouble("/tools/paintbucket/offset", (gdouble)_offset_item.get_adjustment()->get_value());
 
     g_return_if_fail(unit != nullptr);
     prefs->setString("/tools/paintbucket/offsetunits", unit->abbr);
 }
 
-void
-PaintbucketToolbar::autogap_changed(int autogap)
+void PaintbucketToolbar::autogap_changed(int autogap)
 {
-    auto prefs = Inkscape::Preferences::get();
-    prefs->setInt("/tools/paintbucket/autogap", autogap);
+    Preferences::get()->setInt("/tools/paintbucket/autogap", autogap);
 }
 
-void
-PaintbucketToolbar::defaults()
+void PaintbucketToolbar::defaults()
 {
     // FIXME: make defaults settable via Inkscape Options
-    _threshold_adj->set_value(15);
-    _offset_adj->set_value(0.0);
+    _threshold_item.get_adjustment()->set_value(15);
+    _offset_item.get_adjustment()->set_value(0.0);
 
     _channels_item->set_active(Inkscape::UI::Tools::FLOOD_CHANNELS_RGB);
     _autogap_item->set_active(0);
 }
 
-}
-}
-}
+} // namespace Inkscape::UI::Toolbar
 
 /*
   Local Variables:

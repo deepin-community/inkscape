@@ -14,83 +14,72 @@
  *
  */
 
-#ifndef INKSCAPE_UI_WIDGET_REGISTERED_WIDGET__H_
-#define INKSCAPE_UI_WIDGET_REGISTERED_WIDGET__H_
+#ifndef SEEN_INKSCAPE_UI_WIDGET_REGISTERED_WIDGET_H
+#define SEEN_INKSCAPE_UI_WIDGET_REGISTERED_WIDGET_H
 
+#include <utility>
+#include <vector>
+#include <glibmm/ustring.h>
+#include <gtkmm/box.h>
+#include <gtkmm/checkbutton.h>
+#include <gtkmm/togglebutton.h>
 #include <2geom/affine.h>
-#include "xml/node.h"
-#include "registry.h"
 
-#include "ui/widget/scalar.h"
-#include "ui/widget/scalar-unit.h"
-#include "ui/widget/point.h"
-#include "ui/widget/text.h"
-#include "ui/widget/random.h"
-#include "ui/widget/unit-menu.h"
-#include "ui/widget/font-button.h"
-#include "ui/widget/color-picker.h"
-#include "inkscape.h"
-
+#include "desktop.h"
 #include "document.h"
 #include "document-undo.h"
-#include "desktop.h"
-#include "object/sp-namedview.h"
+#include "registry.h"
 
-#include <gtkmm/checkbutton.h>
+#include "helper/auto-connection.h"
+#include "object/sp-namedview.h"
+#include "ui/widget/color-picker.h"
+#include "ui/widget/font-button.h"
+#include "ui/widget/point.h"
+#include "ui/widget/random.h"
+#include "ui/widget/scalar-unit.h"
+#include "ui/widget/scalar.h"
+#include "ui/widget/text.h"
+#include "ui/widget/unit-menu.h"
+#include "xml/node.h"
 
 class SPDocument;
 
 namespace Gtk {
-    class HScale;
-    class RadioButton;
-    class SpinButton;
-}
+class RadioButton;
+} // namespace Gtk
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 class Registry;
 
 template <class W>
 class RegisteredWidget : public W {
 public:
-    void set_undo_parameters(Glib::ustring _event_description, Glib::ustring _icon_name)
+    void set_undo_parameters(Glib::ustring _event_description, Glib::ustring _icon_name, std::string undo_id = "")
     {
-        icon_name = _icon_name;
-        event_description = _event_description;
+        icon_name = std::move(_icon_name);
+        event_description = std::move(_event_description);
+        _undo_id = undo_id;
         write_undo = true;
     }
+
     void set_xml_target(Inkscape::XML::Node *xml_node, SPDocument *document)
     {
         repr = xml_node;
         doc = document;
     }
 
-    bool is_updating() {if (_wr) return _wr->isUpdating(); else return false;}
+    bool is_updating() const { return _wr && _wr->isUpdating(); }
 
 protected:
-    RegisteredWidget() : W() {}
-    template< typename A >
-    explicit RegisteredWidget( A& a ): W( a ) {}
-    template< typename A, typename B >
-    RegisteredWidget( A& a, B& b ): W( a, b ) {}
-    template< typename A, typename B, typename C >
-    RegisteredWidget( A& a, B& b, C* c ): W( a, b, c ) {}
-    template< typename A, typename B, typename C >
-    RegisteredWidget( A& a, B& b, C& c ): W( a, b, c ) {}
-    template< typename A, typename B, typename C, typename D >
-    RegisteredWidget( A& a, B& b, C c, D d ): W( a, b, c, d ) {}
-    template< typename A, typename B, typename C, typename D, typename E >
-    RegisteredWidget( A& a, B& b, C& c, D d, E e ): W( a, b, c, d, e ) {}
-    template< typename A, typename B, typename C, typename D, typename E , typename F>
-    RegisteredWidget( A& a, B& b, C c, D& d, E& e, F* f): W( a, b, c, d, e, f) {}
-    template< typename A, typename B, typename C, typename D, typename E , typename F, typename G>
-    RegisteredWidget( A& a, B& b, C& c, D& d, E& e, F f, G& g): W( a, b, c, d, e, f, g) {}
+    template <typename ...Args>
+    RegisteredWidget(Args &&...args)
+    : W{std::forward<Args>(args)...}
+    {
+    }
 
-    ~RegisteredWidget() override = default;;
-
-    void init_parent(const Glib::ustring& key, Registry& wr, Inkscape::XML::Node* repr_in, SPDocument *doc_in)
+    void init_parent(Glib::ustring const &key, Registry &wr,
+                     Inkscape::XML::Node * const repr_in, SPDocument * const doc_in)
     {
         _wr = &wr;
         _key = key;
@@ -100,7 +89,7 @@ protected:
             g_warning("Initialization of registered widget using defined repr but with doc==NULL");
     }
 
-    void write_to_xml(const char * svgstr)
+    void write_to_xml(const char * const svgstr)
     {
         // Use local repr here. When repr is specified, use that one, but
         // if repr==NULL, get the repr of namedview of active desktop.
@@ -114,21 +103,23 @@ protected:
             local_repr = reinterpret_cast<SPObject *>(dt->getNamedView())->getRepr();
             local_doc = dt->getDocument();
         }
-
-        bool saved = DocumentUndo::getUndoSensitive(local_doc);
-        DocumentUndo::setUndoSensitive(local_doc, false);
         const char * svgstr_old = local_repr->attribute(_key.c_str());
-        if (!write_undo) {
-            local_repr->setAttribute(_key, svgstr);
+        {
+            DocumentUndo::ScopedInsensitive _no_undo(local_doc);
+            if (!write_undo) {
+                local_repr->setAttribute(_key, svgstr);
+            }
         }
-        DocumentUndo::setUndoSensitive(local_doc, saved);
         if (svgstr_old && svgstr && strcmp(svgstr_old,svgstr)) {
             local_doc->setModifiedSinceSave();
         }
 
         if (write_undo) {
             local_repr->setAttribute(_key, svgstr);
-            DocumentUndo::done(local_doc, event_description, icon_name);
+            if (_undo_id.empty())
+                DocumentUndo::done(local_doc, event_description, icon_name);
+            else
+                DocumentUndo::maybeDone(local_doc, _undo_id.c_str(), event_description, icon_name);
         }
     }
 
@@ -139,74 +130,77 @@ protected:
     Glib::ustring event_description;
     Glib::ustring icon_name; // Used by History dialog.
     bool write_undo = false;
+    std::string _undo_id;
 };
 
 //#######################################################
 
 class RegisteredCheckButton : public RegisteredWidget<Gtk::CheckButton> {
 public:
-    ~RegisteredCheckButton() override;
-    RegisteredCheckButton (const Glib::ustring& label, const Glib::ustring& tip, const Glib::ustring& key, Registry& wr, bool right=false, Inkscape::XML::Node* repr_in=nullptr, SPDocument *doc_in=nullptr, char const *active_str = "true", char const *inactive_str = "false");
+    RegisteredCheckButton(Glib::ustring const &label, Glib::ustring const &tip,
+                          Glib::ustring const &key, Registry &wr, bool right = false,
+                          Inkscape::XML::Node *repr_in = nullptr, SPDocument *doc_in = nullptr,
+                          char const *active_str = "true", char const *inactive_str = "false");
 
-    void setActive (bool);
+    void setActive(bool);
 
-    std::list<Gtk::Widget*> _slavewidgets;
+    // a subordinate button is only sensitive when the main button is active
+    // i.e. a subordinate button is greyed-out when the main button is not checked
 
-    // a slave button is only sensitive when the master button is active
-    // i.e. a slave button is greyed-out when the master button is not checked
-
-    void setSlaveWidgets(std::list<Gtk::Widget*> const &btns) {
-        _slavewidgets = btns;
+    void setSubordinateWidgets(std::vector<Gtk::Widget *> btns) {
+        _subordinate_widgets = std::move(btns);
     }
 
     bool setProgrammatically; // true if the value was set by setActive, not changed by the user;
-                                // if a callback checks it, it must reset it back to false
+                              // if a callback checks it, it must reset it back to false
 
-protected:
-    char const *_active_str, *_inactive_str;
-    sigc::connection  _toggled_connection;
-    void on_toggled() override;
+private:
+    char const *_active_str = nullptr, *_inactive_str = nullptr;
+    std::vector<Gtk::Widget *> _subordinate_widgets;
+
+    void on_toggled() final;
 };
 
 class RegisteredToggleButton : public RegisteredWidget<Gtk::ToggleButton> {
 public:
-    ~RegisteredToggleButton() override;
-    RegisteredToggleButton (const Glib::ustring& label, const Glib::ustring& tip, const Glib::ustring& key, Registry& wr, bool right=true, Inkscape::XML::Node* repr_in=nullptr, SPDocument *doc_in=nullptr, char const *icon_active = "true", char const *icon_inactive = "false");
+    RegisteredToggleButton(Glib::ustring const &label, Glib::ustring const &tip,
+                           Glib::ustring const &key, Registry &wr, bool right = true,
+                           Inkscape::XML::Node *repr_in = nullptr, SPDocument *doc_in = nullptr,
+                           char const *icon_active = "true", char const *icon_inactive = "false");
 
-    void setActive (bool);
+    void setActive(bool);
 
-    std::list<Gtk::Widget*> _slavewidgets;
-
-    // a slave button is only sensitive when the master button is active
-    // i.e. a slave button is greyed-out when the master button is not checked
-
-    void setSlaveWidgets(std::list<Gtk::Widget*> const &btns) {
-        _slavewidgets = btns;
+    // a subordinate button is only sensitive when the main button is active
+    // i.e. a subordinate button is greyed-out when the main button is not checked
+    void setSubordinateWidgets(std::vector<Gtk::Widget *> btns) {
+        _subordinate_widgets = std::move(btns);
     }
 
     bool setProgrammatically; // true if the value was set by setActive, not changed by the user;
-                                // if a callback checks it, it must reset it back to false
+                              // if a callback checks it, it must reset it back to false
 
-protected:
-    sigc::connection  _toggled_connection;
-    void on_toggled() override;
+private:
+    std::vector<Gtk::Widget *> _subordinate_widgets;
+
+    void on_toggled() final;
 };
 
 class RegisteredUnitMenu : public RegisteredWidget<Labelled> {
 public:
-    ~RegisteredUnitMenu() override;
-    RegisteredUnitMenu ( const Glib::ustring& label,
-                         const Glib::ustring& key,
-                         Registry& wr,
-                         Inkscape::XML::Node* repr_in = nullptr,
-                         SPDocument *doc_in = nullptr );
+    RegisteredUnitMenu(Glib::ustring const &label,
+                       Glib::ustring const &key,
+                       Registry &wr,
+                       Inkscape::XML::Node *repr_in = nullptr,
+                       SPDocument *doc_in = nullptr);
 
-    void setUnit (const Glib::ustring);
-    Unit const * getUnit() const { return static_cast<UnitMenu*>(_widget)->getUnit(); };
-    UnitMenu* getUnitMenu() const { return static_cast<UnitMenu*>(_widget); };
-    sigc::connection _changed_connection;
+    void setUnit(const Glib::ustring);
+    Unit     const * getUnit    () const { return getUnitMenu()->getUnit(); };
+    UnitMenu const * getUnitMenu() const { return static_cast<UnitMenu const *>(getWidget()); };
+    UnitMenu       * getUnitMenu()       { return static_cast<UnitMenu       *>(getWidget()); };
 
-protected:
+private:
+    auto_connection _changed_connection;
+
     void on_changed();
 };
 
@@ -220,142 +214,105 @@ enum RSU_UserUnits {
 
 class RegisteredScalarUnit : public RegisteredWidget<ScalarUnit> {
 public:
-    ~RegisteredScalarUnit() override;
-    RegisteredScalarUnit ( const Glib::ustring& label,
-                           const Glib::ustring& tip,
-                           const Glib::ustring& key,
-                           const RegisteredUnitMenu &rum,
-                           Registry& wr,
-                           Inkscape::XML::Node* repr_in = nullptr,
-                           SPDocument *doc_in = nullptr,
-                           RSU_UserUnits _user_units = RSU_none );
+    RegisteredScalarUnit(Glib::ustring const &label,
+                         Glib::ustring const &tip,
+                         Glib::ustring const &key,
+                         RegisteredUnitMenu &rum,
+                         Registry &wr,
+                         Inkscape::XML::Node *repr_in = nullptr,
+                         SPDocument *doc_in = nullptr,
+                         RSU_UserUnits user_units = RSU_none);
 
 protected:
-    sigc::connection  _value_changed_connection;
-    UnitMenu         *_um;
     void on_value_changed();
-    RSU_UserUnits _user_units;
+
+private:
+    auto_connection  _value_changed_connection;
+    UnitMenu const  *_um;
+    RSU_UserUnits    _user_units;
 };
 
 class RegisteredScalar : public RegisteredWidget<Scalar> {
 public:
-    ~RegisteredScalar() override;
-    RegisteredScalar (const Glib::ustring& label,
-            const Glib::ustring& tip,
-            const Glib::ustring& key,
-            Registry& wr,
-            Inkscape::XML::Node* repr_in = nullptr,
-            SPDocument *doc_in = nullptr );
+    RegisteredScalar(Glib::ustring const &label,
+                     Glib::ustring const &tip,
+                     Glib::ustring const &key,
+                     Registry &wr,
+                     Inkscape::XML::Node *repr_in = nullptr,
+                     SPDocument *doc_in = nullptr);
+
 protected:
-    sigc::connection _value_changed_connection;
     void on_value_changed();
+
+private:
+    auto_connection _value_changed_connection;
 };
 
 class RegisteredText : public RegisteredWidget<Text> {
 public:
-    ~RegisteredText() override;
-    RegisteredText (const Glib::ustring& label,
-            const Glib::ustring& tip,
-            const Glib::ustring& key,
-            Registry& wr,
-            Inkscape::XML::Node* repr_in = nullptr,
-            SPDocument *doc_in = nullptr );
+    RegisteredText(Glib::ustring const &label,
+                   Glib::ustring const &tip,
+                   Glib::ustring const &key,
+                   Registry &wr,
+                   Inkscape::XML::Node *repr_in = nullptr,
+                   SPDocument *doc_in = nullptr);
 
 protected:
-    sigc::connection  _activate_connection;
     void on_activate();
+
+private:
+    auto_connection _activate_connection;
 };
 
 class RegisteredColorPicker : public RegisteredWidget<LabelledColorPicker> {
 public:
-    ~RegisteredColorPicker() override;
+    RegisteredColorPicker(Glib::ustring const &label,
+                          Glib::ustring const &title,
+                          Glib::ustring const &tip,
+                          Glib::ustring const &ckey,
+                          Glib::ustring const &akey,
+                          Registry &wr,
+                          Inkscape::XML::Node *repr_in = nullptr,
+                          SPDocument *doc_in = nullptr);
 
-    RegisteredColorPicker (const Glib::ustring& label,
-                           const Glib::ustring& title,
-                           const Glib::ustring& tip,
-                           const Glib::ustring& ckey,
-                           const Glib::ustring& akey,
-                           Registry& wr,
-                           Inkscape::XML::Node* repr_in = nullptr,
-                           SPDocument *doc_in = nullptr);
-
-    void setRgba32 (guint32);
+    void setRgba32(std::uint32_t);
     void closeWindow();
 
-protected:
+private:
     Glib::ustring _ckey, _akey;
-    void on_changed (guint32);
-    sigc::connection _changed_connection;
+    auto_connection _changed_connection;
+
+    void on_changed(std::uint32_t);
 };
 
-class RegisteredSuffixedInteger : public RegisteredWidget<Scalar> {
+class RegisteredInteger : public RegisteredWidget<Scalar> {
 public:
-    ~RegisteredSuffixedInteger() override;
-    RegisteredSuffixedInteger ( const Glib::ustring& label,
-                                const Glib::ustring& tip, 
-                                const Glib::ustring& suffix,
-                                const Glib::ustring& key,
-                                Registry& wr,
-                                Inkscape::XML::Node* repr_in = nullptr,
-                                SPDocument *doc_in = nullptr );
+    RegisteredInteger(Glib::ustring const &label,
+                      Glib::ustring const &tip,
+                      Glib::ustring const &key,
+                      Registry &wr,
+                      Inkscape::XML::Node *repr_in = nullptr,
+                      SPDocument *doc_in = nullptr);
 
     bool setProgrammatically; // true if the value was set by setValue, not changed by the user;
-                                // if a callback checks it, it must reset it back to false
+                              // if a callback checks it, it must reset it back to false
 
 protected:
-    sigc::connection _changed_connection;
     void on_value_changed();
-};
 
-class RegisteredRadioButtonPair : public RegisteredWidget<Gtk::Box> {
-public:
-    ~RegisteredRadioButtonPair() override;
-    RegisteredRadioButtonPair ( const Glib::ustring& label,
-                                const Glib::ustring& label1,
-                                const Glib::ustring& label2,
-                                const Glib::ustring& tip1,
-                                const Glib::ustring& tip2,
-                                const Glib::ustring& key,
-                                Registry& wr,
-                                Inkscape::XML::Node* repr_in = nullptr,
-                                SPDocument *doc_in = nullptr );
-
-    void setValue (bool second);
-
-    bool setProgrammatically; // true if the value was set by setValue, not changed by the user;
-                                    // if a callback checks it, it must reset it back to false
-protected:
-    Gtk::RadioButton *_rb1, *_rb2;
-    sigc::connection _changed_connection;
-    void on_value_changed();
-};
-
-class RegisteredPoint : public RegisteredWidget<Point> {
-public:
-    ~RegisteredPoint() override;
-    RegisteredPoint ( const Glib::ustring& label,
-                      const Glib::ustring& tip,
-                      const Glib::ustring& key,
-                      Registry& wr,
-                      Inkscape::XML::Node* repr_in = nullptr,
-                      SPDocument *doc_in = nullptr );
-
-protected:
-    sigc::connection  _value_x_changed_connection;
-    sigc::connection  _value_y_changed_connection;
-    void on_value_changed();
+private:
+    auto_connection _changed_connection;
 };
 
 
 class RegisteredTransformedPoint : public RegisteredWidget<Point> {
 public:
-    ~RegisteredTransformedPoint() override;
-    RegisteredTransformedPoint (  const Glib::ustring& label,
-                                  const Glib::ustring& tip,
-                                  const Glib::ustring& key,
-                                  Registry& wr,
-                                  Inkscape::XML::Node* repr_in = nullptr,
-                                  SPDocument *doc_in = nullptr );
+    RegisteredTransformedPoint(Glib::ustring const &label,
+                               Glib::ustring const &tip,
+                               Glib::ustring const &key,
+                               Registry &wr,
+                               Inkscape::XML::Node *repr_in = nullptr,
+                               SPDocument *doc_in = nullptr);
 
     // redefine setValue, because transform must be applied
     void setValue(Geom::Point const & p);
@@ -363,23 +320,23 @@ public:
     void setTransform(Geom::Affine const & canvas_to_svg);
 
 protected:
-    sigc::connection  _value_x_changed_connection;
-    sigc::connection  _value_y_changed_connection;
     void on_value_changed();
 
+private:
+    auto_connection _value_x_changed_connection;
+    auto_connection _value_y_changed_connection;
     Geom::Affine to_svg;
 };
 
 
 class RegisteredVector : public RegisteredWidget<Point> {
 public:
-    ~RegisteredVector() override;
-    RegisteredVector (const Glib::ustring& label,
-                      const Glib::ustring& tip,
-                      const Glib::ustring& key,
-                      Registry& wr,
-                      Inkscape::XML::Node* repr_in = nullptr,
-                      SPDocument *doc_in = nullptr );
+    RegisteredVector(Glib::ustring const &label,
+                     Glib::ustring const &tip,
+                     Glib::ustring const &key,
+                     Registry &wr,
+                     Inkscape::XML::Node *repr_in = nullptr,
+                     SPDocument *doc_in = nullptr);
 
     // redefine setValue, because transform must be applied
     void setValue(Geom::Point const & p);
@@ -393,10 +350,11 @@ public:
     void setPolarCoords(bool polar_coords = true);
 
 protected:
-    sigc::connection  _value_x_changed_connection;
-    sigc::connection  _value_y_changed_connection;
     void on_value_changed();
 
+private:
+    auto_connection _value_x_changed_connection;
+    auto_connection _value_y_changed_connection;
     Geom::Point _origin;
     bool _polar_coords;
 };
@@ -404,44 +362,44 @@ protected:
 
 class RegisteredRandom : public RegisteredWidget<Random> {
 public:
-    ~RegisteredRandom() override;
-    RegisteredRandom ( const Glib::ustring& label,
-                       const Glib::ustring& tip,
-                       const Glib::ustring& key,
-                       Registry& wr,
-                       Inkscape::XML::Node* repr_in = nullptr,
-                       SPDocument *doc_in = nullptr);
+    RegisteredRandom(Glib::ustring const &label,
+                     Glib::ustring const &tip,
+                     Glib::ustring const &key,
+                     Registry &wr,
+                     Inkscape::XML::Node *repr_in = nullptr,
+                     SPDocument *doc_in = nullptr);
 
-    void setValue (double val, long startseed);
+    void setValue(double val, long startseed);
 
 protected:
-    sigc::connection  _value_changed_connection;
-    sigc::connection  _reseeded_connection;
     void on_value_changed();
+
+private:
+    auto_connection _value_changed_connection;
+    auto_connection _reseeded_connection;
 };
 
 class RegisteredFontButton : public RegisteredWidget<FontButton> {
 public:
-    ~RegisteredFontButton() override;
-    RegisteredFontButton ( const Glib::ustring& label,
-                             const Glib::ustring& tip,
-                             const Glib::ustring& key,
-                             Registry& wr,
-                             Inkscape::XML::Node* repr_in = nullptr,
-                             SPDocument *doc_in = nullptr);
+    RegisteredFontButton(Glib::ustring const &label,
+                         Glib::ustring const &tip,
+                         Glib::ustring const &key,
+                         Registry &wr,
+                         Inkscape::XML::Node *repr_in = nullptr,
+                         SPDocument *doc_in = nullptr);
 
-    void setValue (Glib::ustring fontspec);
+    void setValue(Glib::ustring fontspec);
 
 protected:
-    sigc::connection  _signal_font_set;
     void on_value_changed();
+
+private:
+    auto_connection _signal_font_set;
 };
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
-#endif // INKSCAPE_UI_WIDGET_REGISTERED_WIDGET__H_
+#endif // SEEN_INKSCAPE_UI_WIDGET_REGISTERED_WIDGET_H
 
 /*
   Local Variables:

@@ -7,12 +7,14 @@ version=4
 # main tarball
 opts=\
 pgpmode=next,\
+dversionmangle=auto,\
 uversionmangle=s/(\d)[_\.\-\+]?((RC|rc|pre|dev|beta|alpha|b|a)[\-\.]?\d*)$/$1~$2/ \
 https://inkscape.org/release/all/source/archive/?pre=0 \
 (?:.*/)?@PACKAGE@@ANY_VERSION@(?:_.*)?@ARCHIVE_EXT@
 
 # find the signature
 opts=pgpmode=previous,\
+dversionmangle=auto,\
 uversionmangle=s/(\d)[_\.\-\+]?((RC|rc|pre|dev|beta|alpha|b|a)[\-\.]?\d*)$/$1~$2/ \
 https://inkscape.org/release/all/source/archive/?pre=0 \
 (?:.*/)?@PACKAGE@@ANY_VERSION@(?:_.*)?@SIGNATURE_EXT@ previous

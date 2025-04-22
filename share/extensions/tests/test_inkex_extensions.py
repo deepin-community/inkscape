@@ -3,6 +3,7 @@
 Test each of the extensions base classes (if needed) and sometimes provide
 specialised test classes for testers to use.
 """
+
 import inkex
 from inkex.tester import ComparisonMixin, TestCase
 

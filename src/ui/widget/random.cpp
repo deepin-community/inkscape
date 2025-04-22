@@ -11,21 +11,20 @@
  */
 
 #include "random.h"
-#include "ui/icon-loader.h"
-#include <glibmm/i18n.h>
 
+#include <glibmm/i18n.h>
 #include <gtkmm/button.h>
 #include <gtkmm/image.h>
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+#include "ui/icon-loader.h"
+#include "ui/pack.h"
+
+namespace Inkscape::UI::Widget {
 
 Random::Random(Glib::ustring const &label, Glib::ustring const &tooltip,
-               Glib::ustring const &suffix,
                Glib::ustring const &icon,
                bool mnemonic)
-    : Scalar(label, tooltip, suffix, icon, mnemonic)
+    : Scalar(label, tooltip, icon, mnemonic)
 {
     startseed = 0;
     addReseedButton();
@@ -33,22 +32,20 @@ Random::Random(Glib::ustring const &label, Glib::ustring const &tooltip,
 
 Random::Random(Glib::ustring const &label, Glib::ustring const &tooltip,
                unsigned digits,
-               Glib::ustring const &suffix,
                Glib::ustring const &icon,
                bool mnemonic)
-    : Scalar(label, tooltip, digits, suffix, icon, mnemonic)
+    : Scalar(label, tooltip, digits, icon, mnemonic)
 {
     startseed = 0;
     addReseedButton();
 }
 
 Random::Random(Glib::ustring const &label, Glib::ustring const &tooltip,
-               Glib::RefPtr<Gtk::Adjustment> &adjust,
+               Glib::RefPtr<Gtk::Adjustment> adjust,
                unsigned digits,
-               Glib::ustring const &suffix,
                Glib::ustring const &icon,
                bool mnemonic)
-    : Scalar(label, tooltip, adjust, digits, suffix, icon, mnemonic)
+    : Scalar(label, tooltip, std::move(adjust), digits, icon, mnemonic)
 {
     startseed = 0;
     addReseedButton();
@@ -66,16 +63,16 @@ void Random::setStartSeed(long newseed)
 
 void Random::addReseedButton()
 {
-    Gtk::Image *pIcon = Gtk::manage(sp_get_icon_image("randomize", Gtk::ICON_SIZE_BUTTON));
-    Gtk::Button * pButton = Gtk::manage(new Gtk::Button());
+    auto const pIcon = Gtk::manage(sp_get_icon_image("randomize", Gtk::ICON_SIZE_BUTTON));
+    auto const pButton = Gtk::make_managed<Gtk::Button>();
     pButton->set_relief(Gtk::RELIEF_NONE);
-    pIcon->show();
+    pIcon->set_visible(true);
     pButton->add(*pIcon);
-    pButton->show();
+    pButton->set_visible(true);
     pButton->signal_clicked().connect(sigc::mem_fun(*this, &Random::onReseedButtonClick));
     pButton->set_tooltip_text(_("Reseed the random number generator; this creates a different sequence of random numbers."));
 
-    pack_start(*pButton, Gtk::PACK_SHRINK, 0);
+    UI::pack_start(*this, *pButton, UI::PackOptions::shrink);
 }
 
 void
@@ -85,9 +82,7 @@ Random::onReseedButtonClick()
     signal_reseeded.emit();
 }
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 /*
   Local Variables:

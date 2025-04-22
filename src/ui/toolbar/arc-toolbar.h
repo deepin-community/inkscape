@@ -19,6 +19,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -29,16 +30,16 @@
  */
 
 #include "toolbar.h"
+#include "xml/node-observer.h"
 
-#include <gtkmm/adjustment.h>
+namespace Gtk {
+class Button;
+class Builder;
+class RadioButton;
+} // namespace Gtk
 
 class SPDesktop;
 class SPItem;
-
-namespace Gtk {
-class RadioToolButton;
-class ToolButton;
-}
 
 namespace Inkscape {
 class Selection;
@@ -53,60 +54,55 @@ class ToolBase;
 }
 
 namespace Widget {
-class LabelToolItem;
-class SpinButtonToolItem;
+class SpinButton;
 class UnitTracker;
 }
 
 namespace Toolbar {
-class ArcToolbar : public Toolbar {
+
+class ArcToolbar final
+    : public Toolbar
+    , private XML::NodeObserver
+{
+public:
+    ArcToolbar(SPDesktop *desktop);
+    ~ArcToolbar() override;
+
 private:
-    UI::Widget::UnitTracker *_tracker;
+    Glib::RefPtr<Gtk::Builder> _builder;
+    std::unique_ptr<UI::Widget::UnitTracker> _tracker;
 
-    UI::Widget::SpinButtonToolItem *_rx_item;
-    UI::Widget::SpinButtonToolItem *_ry_item;
+    UI::Widget::SpinButton &_rx_item;
+    UI::Widget::SpinButton &_ry_item;
+    UI::Widget::SpinButton &_start_item;
+    UI::Widget::SpinButton &_end_item;
 
-    UI::Widget::LabelToolItem *_mode_item;
+    Gtk::Label &_mode_item;
 
-    std::vector<Gtk::RadioToolButton *> _type_buttons;
-    Gtk::ToolButton *_make_whole;
+    std::vector<Gtk::RadioButton *> _type_buttons;
+    Gtk::Button &_make_whole;
 
-    Glib::RefPtr<Gtk::Adjustment> _rx_adj;
-    Glib::RefPtr<Gtk::Adjustment> _ry_adj;
-    Glib::RefPtr<Gtk::Adjustment> _start_adj;
-    Glib::RefPtr<Gtk::Adjustment> _end_adj;
-
-    bool _freeze;
+    bool _freeze{false};
     bool _single;
 
-    XML::Node *_repr;
+    XML::Node *_repr{nullptr};
     SPItem *_item;
 
-    void value_changed(Glib::RefPtr<Gtk::Adjustment>&  adj,
-                       gchar const                    *value_name);
-    void startend_value_changed(Glib::RefPtr<Gtk::Adjustment>&  adj,
-                                gchar const                    *value_name,
-                                Glib::RefPtr<Gtk::Adjustment>&  other_adj);
+    void setup_derived_spin_button(UI::Widget::SpinButton &btn, Glib::ustring const &name);
+    void setup_startend_button(UI::Widget::SpinButton &btn, Glib::ustring const &name);
+    void value_changed(Glib::RefPtr<Gtk::Adjustment> &adj, Glib::ustring const &value_name);
+    void startend_value_changed(Glib::RefPtr<Gtk::Adjustment> &adj, Glib::ustring const &value_name,
+                                Glib::RefPtr<Gtk::Adjustment> &other_adj);
     void type_changed( int type );
     void defaults();
     void sensitivize( double v1, double v2 );
-    void check_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec);
+    void check_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* tool);
     void selection_changed(Inkscape::Selection *selection);
 
     sigc::connection _changed;
 
-protected:
-    ArcToolbar(SPDesktop *desktop);
-    ~ArcToolbar() override;
-
-public:
-    static GtkWidget * create(SPDesktop *desktop);
-    static void event_attr_changed(Inkscape::XML::Node *repr,
-                                   gchar const         *name,
-                                   gchar const         *old_value,
-                                   gchar const         *new_value,
-                                   bool                 is_interactive,
-                                   gpointer             data);
+    void notifyAttributeChanged(Inkscape::XML::Node &node, GQuark name, Inkscape::Util::ptr_shared old_value,
+                                Inkscape::Util::ptr_shared new_value) final;
 };
 
 }

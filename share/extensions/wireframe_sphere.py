@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 #
 # Copyright (C) 2009 John Beard john.j.beard@gmail.com
@@ -195,7 +195,7 @@ class WireframeSphere(inkex.GenerateExtension):
             start=start_end[0],
             end=start_end[1],
             open="true",
-            arctype="arc"
+            arctype="arc",
         )
         path.style = {
             "stroke": "#000000",

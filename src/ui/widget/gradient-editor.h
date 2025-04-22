@@ -1,18 +1,23 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+/**
+ * Gradient editor widget for "Fill and Stroke" dialog
+ *
+ * Author:
+ *   Michael Kowalski
+ *
+ * Copyright (C) 2020-2021 Michael Kowalski
+ *
+ * Released under GNU GPL v2+, read the file 'COPYING' for more information.
+ */
+
 #ifndef SEEN_GRADIENT_EDITOR_H
 #define SEEN_GRADIENT_EDITOR_H
 
-#include <gtkmm/box.h>
-#include <gtkmm/grid.h>
-#include <gtkmm/button.h>
-#include <gtkmm/spinbutton.h>
-#include <gtkmm/popover.h>
-#include <gtkmm/image.h>
-#include <gtkmm/expander.h>
-#include <gtkmm/liststore.h>
-#include <gtkmm/treemodelcolumn.h>
-#include <gtkmm/builder.h>
+#include <memory>
 #include <optional>
+#include <glibmm/refptr.h>
+#include <gtkmm/box.h>
+#include <gtkmm/treemodelcolumn.h>
 
 #include "object/sp-gradient.h"
 #include "object/sp-stop.h"
@@ -22,22 +27,35 @@
 #include "gradient-selector-interface.h"
 #include "ui/operation-blocker.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Gtk {
+class Adjustment;
+class Builder;
+class Button;
+class Expander;
+class Grid;
+class Image;
+class ListStore;
+class SpinButton;
+class ToggleButton;
+class TreeRow;
+class TreeView;
+} // namespace Gtk
+
+namespace Inkscape::UI::Widget {
 
 class GradientSelector;
+class PopoverMenu;
 
-class GradientEditor : public Gtk::Box, public GradientSelectorInterface {
+class GradientEditor final : public Gtk::Box, public GradientSelectorInterface {
 public:
     GradientEditor(const char* prefs);
-    ~GradientEditor() noexcept override;
+    ~GradientEditor() noexcept final;
 
 private:
-    sigc::signal<void> _signal_grabbed;
-    sigc::signal<void> _signal_dragged;
-    sigc::signal<void> _signal_released;
-    sigc::signal<void, SPGradient*> _signal_changed;
+    sigc::signal<void ()> _signal_grabbed;
+    sigc::signal<void ()> _signal_dragged;
+    sigc::signal<void ()> _signal_released;
+    sigc::signal<void (SPGradient*)> _signal_changed;
 
 public:
     decltype(_signal_changed) signal_changed() const { return _signal_changed; }
@@ -45,15 +63,15 @@ public:
     decltype(_signal_dragged) signal_dragged() const { return _signal_dragged; }
     decltype(_signal_released) signal_released() const { return _signal_released; }
 
-    void setGradient(SPGradient* gradient) override;
-    SPGradient* getVector() override;
-    void setVector(SPDocument* doc, SPGradient* vector) override;
-    void setMode(SelectorMode mode) override;
-    void setUnits(SPGradientUnits units) override;
-    SPGradientUnits getUnits() override;
-    void setSpread(SPGradientSpread spread) override;
-    SPGradientSpread getSpread() override;
-    void selectStop(SPStop* selected) override;
+    void setGradient(SPGradient *gradient) final;
+    SPGradient *getVector() final;
+    void setVector(SPDocument *doc, SPGradient *vector) final;
+    void setMode(SelectorMode mode) final;
+    void setUnits(SPGradientUnits units) final;
+    SPGradientUnits getUnits() final;
+    void setSpread(SPGradientSpread spread) final;
+    SPGradientSpread getSpread() final;
+    void selectStop(SPStop *selected) final;
 
 private:
     void set_gradient(SPGradient* gradient);
@@ -67,6 +85,7 @@ private:
     void set_repeat_mode(SPGradientSpread mode);
     void set_repeat_icon(SPGradientSpread mode);
     void reverse_gradient();
+    void turn_gradient(double angle, bool relative);
     void set_stop_color(SPColor color, float opacity);
     std::optional<Gtk::TreeRow> current_stop();
     SPStop* get_nth_stop(size_t index);
@@ -79,7 +98,7 @@ private:
     Glib::RefPtr<Gtk::Builder> _builder;
     GradientSelector* _selector;
     Inkscape::UI::SelectedColor _selected_color;
-    Gtk::Popover& _popover;
+    std::unique_ptr<UI::Widget::PopoverMenu> _repeat_popover;
     Gtk::Image& _repeat_icon;
     GradientWithStops _gradient_image;
     Glib::RefPtr<Gtk::ListStore> _stop_list_store;
@@ -89,6 +108,8 @@ private:
     Gtk::TreeModelColumn<Glib::ustring> _stopID;
     Gtk::TreeModelColumn<Glib::RefPtr<Gdk::Pixbuf>> _stop_color;
     Gtk::TreeView& _stop_tree;
+    Gtk::Button& _turn_gradient;
+    Glib::RefPtr<Gtk::Adjustment> _angle_adj;
     Gtk::SpinButton& _offset_btn;
     Gtk::Button& _add_stop;
     Gtk::Button& _delete_stop;
@@ -106,9 +127,17 @@ private:
     Glib::ustring _prefs;
 };
 
+} // namespace Inkscape::UI::Widget
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+#endif // SEEN_GRADIENT_EDITOR_H
 
-#endif
+/*
+  Local Variables:
+  mode:c++
+  c-file-style:"stroustrup"
+  c-file-offsets:((innamespace . 0)(inline-open . 0)(case-label . +))
+  indent-tabs-mode:nil
+  fill-column:99
+  End:
+*/
+// vim:filetype=cpp:expandtab:shiftwidth=4:tabstop=8:softtabstop=4:fileencoding=utf-8:textwidth=99:

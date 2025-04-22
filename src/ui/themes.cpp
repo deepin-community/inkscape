@@ -13,25 +13,50 @@
  */
 
 #include "themes.h"
-#include "preferences.h"
-#include "io/resource.h"
-#include "svg/svg-color.h"
-#include <cstring>
-#include <gio/gio.h>
-#include <glibmm.h>
-#include <gtkmm.h>
-#include <map>
-#include <utility>
-#include <vector>
-#include <regex>
-#include "svg/css-ostringstream.h"
 
-namespace Inkscape {
-namespace UI {
+#include <cstddef>
+#include <cstring>
+#include <regex>
+#include <string>
+#include <utility>
+
+#include <gio/gio.h>
+#include <glibmm/regex.h>
+#include <glibmm/ustring.h>
+#include <gtk/gtk.h>
+#include <gtkmm/cssprovider.h>
+#include <gtkmm/csssection.h>
+#include <gtkmm/settings.h>
+#include <gtkmm/stylecontext.h>
+#include <gtkmm/window.h>
+#include <pangomm/font.h>
+#include <pangomm/fontdescription.h>
+
+#include "config.h"
+#include "desktop.h"
+#include "inkscape.h"
+#include "preferences.h"
+
+#include "io/resource.h"
+#include "object/sp-item-group.h"  // set_default_highlight_colors
+#include "svg/css-ostringstream.h"
+#include "svg/svg-color.h"
+#include "ui/dialog/dialog-manager.h"
+#include "ui/dialog/dialog-window.h"
+#include "ui/util.h"
+
+#if WITH_GSOURCEVIEW
+#   include <gtksourceview/gtksource.h>
+#endif
+
+namespace Inkscape::UI {
 
 ThemeContext::ThemeContext()
+    : _fontsizeprovider{Gtk::CssProvider::create()}
 {
 }
+
+ThemeContext::~ThemeContext() = default;
 
 /**
  * Inkscape fill gtk, taken from glib/gtk code with our own checks.
@@ -155,8 +180,9 @@ ThemeContext::get_symbolic_colors()
     if we not override the color we use defautt theme colors*/
     bool overridebasecolor = !prefs->getBool("/theme/symbolicDefaultBaseColors", true);
     if (overridebasecolor) {
-        css_str += "#InkRuler,";
-        css_str += ":not(.rawstyle) > image";
+        css_str += "#InkRuler:not(.shadow):not(.page):not(.selection),";
+        css_str += ":not(.rawstyle) > image:not(.arrow),";
+        css_str += ":not(.rawstyle) treeview.image";
         css_str += "{color:";
         css_str += colornamed;
         css_str += ";}";
@@ -328,7 +354,10 @@ void ThemeContext::add_gtk_css(bool only_providers, bool cached)
             }
             if (!cached) {
                 // Split on curly brackets. Even tokens are selectors, odd are values.
-                std::vector<Glib::ustring> tokens = Glib::Regex::split_simple("[}{]", cssstringcached);
+                std::vector<Glib::ustring> tokens = Glib::Regex::split_simple("[}{]", cssstringcached.c_str()); // Must use c_str() as a std::string
+                                                                                                                // cannot be converted converted directly
+                                                                                                                // to a Glib::UStringView in Gtk4.
+
                 cssstringcached = "";
                 for (unsigned i = 0; i < tokens.size() - 1; i += 2) {
                     Glib::ustring selector = tokens[i];
@@ -426,6 +455,7 @@ void ThemeContext::add_gtk_css(bool only_providers, bool cached)
         g_critical("CSSProviderError::load_from_data(): failed to load '%s'\n(%s)", css_str.c_str(), ex.what().c_str());
     }
     Gtk::StyleContext::add_provider_for_screen(screen, _colorizeprovider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+
 #if __APPLE__
     Glib::ustring macstyle = get_filename(UIS, "mac.css");
     if (!macstyle.empty()) {
@@ -444,6 +474,23 @@ void ThemeContext::add_gtk_css(bool only_providers, bool cached)
         Gtk::StyleContext::add_provider_for_screen(screen, _macstyleprovider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     }
 #endif
+
+    style = get_filename(UIS, "user.css");
+    if (!style.empty()) {
+        if (_userprovider) {
+            Gtk::StyleContext::remove_provider_for_screen(screen, _userprovider);
+        }
+        if (!_userprovider) {
+            _userprovider = Gtk::CssProvider::create();
+        }
+        try {
+            _userprovider->load_from_path(style);
+        } catch (const Gtk::CssProviderError &ex) {
+            g_critical("CSSProviderError::load_from_path(): failed to load '%s'\n(%s)", style.c_str(),
+                       ex.what().c_str());
+        }
+        Gtk::StyleContext::add_provider_for_screen(screen, _userprovider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    }
 }
 
 /**
@@ -453,31 +500,83 @@ void ThemeContext::add_gtk_css(bool only_providers, bool cached)
  * property other than preferDarkTheme, so theme should be set before calling
  * this function as it may otherwise return outdated result.
  */
-bool ThemeContext::isCurrentThemeDark(Gtk::Container *window)
+bool ThemeContext::isCurrentThemeDark(Gtk::Window * const window)
 {
-    bool dark = false;
-    if (window) {
-        Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-        Glib::ustring current_theme =
-            prefs->getString("/theme/gtkTheme", prefs->getString("/theme/defaultGtkTheme", ""));
-        auto settings = Gtk::Settings::get_default();
-        if (settings) {
-            settings->property_gtk_application_prefer_dark_theme() = prefs->getBool("/theme/preferDarkTheme", false);
-        }
-        dark = current_theme.find(":dark") != std::string::npos;
-        // if theme is dark or we use contrast slider feature and have set preferDarkTheme we force the theme dark
-        // and avoid color check, this fix a issue with low contrast themes bad switch of dark theme toggle
-        dark = dark || (prefs->getInt("/theme/contrast", 10) != 10 && prefs->getBool("/theme/preferDarkTheme", false));
-        if (!dark) {
-            Glib::RefPtr<Gtk::StyleContext> stylecontext = window->get_style_context();
-            Gdk::RGBA rgba;
-            bool background_set = stylecontext->lookup_color("theme_bg_color", rgba);
-            if (background_set && (0.299 * rgba.get_red() + 0.587 * rgba.get_green() + 0.114 * rgba.get_blue()) < 0.5) {
-                dark = true;
+    if (!window) return false;
+
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    Glib::ustring current_theme =
+        prefs->getString("/theme/gtkTheme", prefs->getString("/theme/defaultGtkTheme", ""));
+
+    if (auto const settings = Gtk::Settings::get_default()) {
+        settings->property_gtk_application_prefer_dark_theme() = prefs->getBool("/theme/preferDarkTheme", false);
+    }
+
+    auto dark = current_theme.find(":dark") != std::string::npos;
+
+    // if theme is dark or we use contrast slider feature and have set preferDarkTheme we force the theme dark
+    // and avoid color check, this fix a issue with low contrast themes bad switch of dark theme toggle
+    dark = dark || (prefs->getInt("/theme/contrast", 10) != 10 && prefs->getBool("/theme/preferDarkTheme", false));
+    if (dark) return true;
+
+    // Otherwise, check the foreground color, and if that has luminance >= 50%, we conclude the theme is dark.
+    // Note: Use @theme_fg_color, since currentColor might not be set or correct
+    auto const rgba = get_color_with_class(window->get_style_context(), "theme_fg_color");
+    dark = get_luminance(rgba) >= 0.5;
+    return dark;
+}
+
+void 
+ThemeContext::themechangecallback() {
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    // sync "dark" class between app window and floating dialog windows to ensure that
+    // CSS providers relying on it apply in dialog windows too
+    auto dark = prefs->getBool("/theme/darkTheme", false);
+    std::vector<Gtk::Window *> winds;
+    for (auto wnd : Inkscape::UI::Dialog::DialogManager::singleton().get_all_floating_dialog_windows()) {
+        winds.push_back(dynamic_cast<Gtk::Window *>(wnd));
+    }
+    if (auto desktops = INKSCAPE.get_desktops()) {
+        for (auto & desktop : *desktops) {
+            if (desktop == SP_ACTIVE_DESKTOP) {
+                winds.push_back(dynamic_cast<Gtk::Window *>(desktop->getToplevel()));
+            } else {
+                winds.insert(winds.begin(), dynamic_cast<Gtk::Window *>(desktop->getToplevel()));
             }
         }
     }
-    return dark;
+    for (auto wnd : winds) {
+        if (Glib::RefPtr<Gdk::Window> w = wnd->get_window()) {
+            set_dark_titlebar(w, dark);
+        }
+        if (dark) {
+            wnd->get_style_context()->add_class("dark");
+            wnd->get_style_context()->remove_class("bright");
+        } else {
+            wnd->get_style_context()->add_class("bright");
+            wnd->get_style_context()->remove_class("dark");
+        }
+        if (prefs->getBool("/theme/symbolicIcons", false)) {
+            wnd->get_style_context()->add_class("symbolic");
+            wnd->get_style_context()->remove_class("regular");
+        } else {
+            wnd->get_style_context()->add_class("regular");
+            wnd->get_style_context()->remove_class("symbolic");
+        }
+#if (defined (_WIN32) || defined (_WIN64))
+        wnd->present();
+#endif
+    }
+
+    // set default highlight colors (dark/light theme-specific)
+    if (!winds.empty()) {
+        set_default_highlight_colors(getHighlightColors(winds.front()));
+    }
+
+    // select default syntax coloring theme, if needed
+    if (auto desktop = INKSCAPE.active_desktop()) {
+        select_default_syntax_style(isCurrentThemeDark(desktop->getToplevel()));
+    }
 }
 
 /**
@@ -489,31 +588,30 @@ std::vector<guint32> ThemeContext::getHighlightColors(Gtk::Window *window)
     std::vector<guint32> colors;
     if (!window) return colors;
 
+    auto const child = window->get_child();
+    if (!child) return colors;
+
+    auto const context = child->get_style_context();
     Glib::ustring name = "highlight-color-";
 
     for (int i = 1; i <= 8; ++i) {
-        auto context = Gtk::StyleContext::create();
-
         // The highlight colors will be attached to a GtkWidget
         // but it isn't neccessary to use this in the .css file.
-        auto path = window->get_style_context()->get_path();
-        path.path_append_type(Gtk::Widget::get_type());
-        path.iter_add_class(-1, name + Glib::ustring::format(i));
-        context->set_path(path);
+        // N.B. We must use Window:child; Window itself gives a constant color.
 
-        // Get the color from the new context
-        auto color = context->get_color();
-        guint32 rgba =
-            gint32(0xff * color.get_red()) << 24 |
-            gint32(0xff * color.get_green()) << 16 |
-            gint32(0xff * color.get_blue()) << 8 |
-            gint32(0xff * color.get_alpha());
-        colors.push_back(rgba);
+        auto const css_class = name + std::to_string(i);
+        context->add_class(css_class);
+
+        auto const rgba = get_foreground_color(context);
+        colors.push_back( to_guint32(rgba) );
+
+        context->remove_class(css_class);
     }
+
     return colors;
 }
 
-void ThemeContext::adjust_global_font_scale(double factor) {
+void ThemeContext::adjustGlobalFontScale(double factor) {
     if (factor < 0.1 || factor > 10) {
         g_warning("Invalid font scaling factor %f in ThemeContext::adjust_global_font_scale", factor);
         return;
@@ -524,15 +622,74 @@ void ThemeContext::adjust_global_font_scale(double factor) {
 
     Inkscape::CSSOStringStream os;
     os.precision(3);
-    os << "widget, menuitem, popover { font-size: " << factor << "rem; }";
+    os << "widget, menuitem, popover { font-size: " << factor << "rem; }\n";
+
+    os << ".mono-font {";
+    auto desc = getMonospacedFont();
+    os << "font-family: " << desc.get_family() << ";";
+    switch (desc.get_style()) {
+        case Pango::STYLE_ITALIC:
+            os << "font-style: italic;";
+            break;
+        case Pango::STYLE_OBLIQUE:
+            os << "font-style: oblique;";
+            break;
+    }
+    os << "font-weight: " << static_cast<int>(desc.get_weight()) << ";";
+    double size = desc.get_size();
+    os << "font-size: " << factor * (desc.get_size_is_absolute() ? size : size / Pango::SCALE) << "px;";
+    os << "}";
+
     _fontsizeprovider->load_from_data(os.str());
 
     // note: priority set to APP - 1 to make sure styles.css take precedence over generic font-size
     Gtk::StyleContext::add_provider_for_screen(screen, _fontsizeprovider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION - 1);
 }
 
-} // UI
-} // Inkscape
+void ThemeContext::initialize_source_syntax_styles() {
+#if WITH_GSOURCEVIEW
+    auto manager = gtk_source_style_scheme_manager_get_default();
+    // to reset path: gtk_source_style_scheme_manager_set_search_path(manager, nullptr);
+    auto themes = IO::Resource::get_path_string(IO::Resource::SYSTEM, IO::Resource::UIS, "syntax-themes");
+    gtk_source_style_scheme_manager_prepend_search_path(manager, themes.c_str());
+#endif
+}
+
+void ThemeContext::select_default_syntax_style(bool dark_theme)
+{
+#if WITH_GSOURCEVIEW
+    auto prefs = Inkscape::Preferences::get();
+    auto default_theme = prefs->getString("/theme/syntax-color-theme");
+    auto light = "inkscape-light";
+    auto dark = "inkscape-dark";
+    if (default_theme.empty() || default_theme == light || default_theme == dark) {
+        prefs->setString("/theme/syntax-color-theme", dark_theme ? dark : light);
+    }
+#endif
+}
+
+void ThemeContext::saveMonospacedFont(Pango::FontDescription desc)
+{
+    Preferences::get()->setString(get_monospaced_font_pref_path(), desc.to_string());
+}
+
+Pango::FontDescription ThemeContext::getMonospacedFont() const
+{
+    auto font = Preferences::get()->getString(get_monospaced_font_pref_path(), "Monospace 13");
+    return Pango::FontDescription(font);
+}
+
+double ThemeContext::getFontScale() const
+{
+    return Preferences::get()->getDoubleLimited(get_font_scale_pref_path(), 100.0, 10.0, 500.0);
+}
+
+void ThemeContext::saveFontScale(double scale)
+{
+    Preferences::get()->setDouble(get_font_scale_pref_path(), scale);
+}
+
+} // namespace Inkscape::UI
 
 /*
   Local Variables:

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef __SP_ATTRIBUTES_H__
-#define __SP_ATTRIBUTES_H__
+#ifndef SEEN_ATTRIBUTES_H
+#define SEEN_ATTRIBUTES_H
 
 /** \file
  * Lookup dictionary for attributes/properties.
@@ -82,6 +82,7 @@ enum class SPAttr {
     BORDERCOLOR,
     BORDEROPACITY,
     PAGECOLOR,
+    PAGELABELSTYLE,
     FIT_MARGIN_TOP,
     FIT_MARGIN_LEFT,
     FIT_MARGIN_RIGHT,
@@ -137,6 +138,28 @@ enum class SPAttr {
     POSITION,
     INKSCAPE_COLOR,
     INKSCAPE_LOCKED,
+    /* SPPage */
+    PAGE_MARGIN,
+    PAGE_BLEED,
+    PAGE_SIZE_NAME,
+    /* SPGrid */
+    ORIGINX,
+    ORIGINY,
+    SPACINGX,
+    SPACINGY,
+    ANGLE_X,
+    ANGLE_Z,
+    GAP_X,
+    GAP_Y,
+    MARGIN_X,
+    MARGIN_Y,
+    VISIBLE,
+    ENABLED,
+    EMPOPACITY,
+    EMPCOLOR,
+    MAJOR_LINE_INTERVAL,
+    DOTTED,
+    SNAP_TO_VISIBLE_ONLY,
     /* SPImage, SPRect, etc. */
     X,
     Y,
@@ -302,6 +325,7 @@ enum class SPAttr {
     GRADIENTTRANSFORM,
     SPREADMETHOD,
     INKSCAPE_SWATCH,
+    INKSCAPE_PINNED,
     /* SPRadialGradient */
     FX,
     FY,
@@ -570,6 +594,9 @@ enum class SPAttr {
     INKSCAPE_DESK_COLOR,
     INKSCAPE_DESK_OPACITY,
     INKSCAPE_DESK_CHECKERBOARD,
+    // Inkscape-specific mode: clip content rendering to pages' boundaries
+    INKSCAPE_CLIP_TO_PAGE_RENDERING,
+    INKSCAPE_ANTIALIAS_RENDERING,
 
     // sentinel
     SPAttr_SIZE

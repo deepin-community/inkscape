@@ -14,30 +14,24 @@
 #include "ui/widget/registered-widget.h"
 #include "util/units.h"
 
-using Inkscape::Util::unit_table;
+namespace Inkscape::LivePathEffect {
 
-namespace Inkscape {
-
-namespace LivePathEffect {
-
-
-UnitParam::UnitParam( const Glib::ustring& label, const Glib::ustring& tip,
-                              const Glib::ustring& key, Inkscape::UI::Widget::Registry* wr,
-                              Effect* effect, Glib::ustring default_unit)
+UnitParam::UnitParam(const Glib::ustring& label, const Glib::ustring& tip,
+                     const Glib::ustring& key, Inkscape::UI::Widget::Registry* wr,
+                     Effect* effect, Glib::ustring default_unit)
     : Parameter(label, tip, key, wr, effect)
+    , defunit{default_unit}
 {
-    defunit = unit_table.getUnit(default_unit);
-    unit = defunit;
+    unit = std::make_unique<Inkscape::Util::Unit const>(*Util::UnitTable::get().getUnit(default_unit));
 }
 
-UnitParam::~UnitParam()
-= default;
+UnitParam::~UnitParam() = default;
 
 bool
 UnitParam::param_readSVGValue(const gchar * strvalue)
 {
     if (strvalue) {
-        param_set_value(*unit_table.getUnit(strvalue));
+        param_set_value(strvalue);
         return true;
     }
     return false;
@@ -46,58 +40,61 @@ UnitParam::param_readSVGValue(const gchar * strvalue)
 Glib::ustring
 UnitParam::param_getSVGValue() const
 {
-    return unit->abbr;
+    return unit.get()->abbr;
 }
 
 Glib::ustring
 UnitParam::param_getDefaultSVGValue() const
 {
-    return defunit->abbr;
+    return defunit;
 }
 
 void
 UnitParam::param_set_default()
 {
-    param_set_value(*defunit);
+    param_set_value(defunit.c_str());
 }
 
 void 
 UnitParam::param_update_default(const gchar * default_unit)
 {
-    defunit = unit_table.getUnit((Glib::ustring)default_unit);
+    defunit = "px"; // fallback to px
+    if (default_unit) {
+        defunit = default_unit;
+    }
 }
 
 void
-UnitParam::param_set_value(Inkscape::Util::Unit const &val)
+UnitParam::param_set_value(const gchar * strvalue)
 {
-    param_effect->refresh_widgets = true;
-    unit = new Inkscape::Util::Unit(val);
+    if (strvalue) {
+        param_effect->refresh_widgets = true;
+        unit = std::make_unique<Inkscape::Util::Unit const>(*Util::UnitTable::get().getUnit(strvalue));
+    }
 }
 
 const gchar *
 UnitParam::get_abbreviation() const
 {
-    return unit->abbr.c_str();
+    return unit.get()->abbr.c_str();
 }
 
 Gtk::Widget *
 UnitParam::param_newWidget()
 {
-    Inkscape::UI::Widget::RegisteredUnitMenu* unit_menu = Gtk::manage(
-        new Inkscape::UI::Widget::RegisteredUnitMenu(param_label,
-                                                     param_key,
-                                                     *param_wr,
-                                                     param_effect->getRepr(),
-                                                     param_effect->getSPDoc()));
+    auto const unit_menu = Gtk::make_managed<UI::Widget::RegisteredUnitMenu>( param_label,
+                                                                              param_key,
+                                                                             *param_wr,
+                                                                              param_effect->getRepr(),
+                                                                              param_effect->getSPDoc() );
 
-    unit_menu->setUnit(unit->abbr);
+    unit_menu->setUnit(unit.get()->abbr);
     unit_menu->set_undo_parameters(_("Change unit parameter"), INKSCAPE_ICON("dialog-path-effects"));
-    
-    return dynamic_cast<Gtk::Widget *> (unit_menu);
+    return unit_menu;
 }
 
-} /* namespace LivePathEffect */
-} /* namespace Inkscape */
+
+} // Inkscape::LivePathEffect
 
 /*
   Local Variables:

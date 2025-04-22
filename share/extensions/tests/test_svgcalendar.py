@@ -2,6 +2,7 @@
 """
 All tests for the svg calendar extension
 """
+
 import calendar
 import datetime
 

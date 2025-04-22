@@ -14,21 +14,20 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/join.hpp>
-
-#include <glibmm/i18n.h>
 #include <glibmm/fileutils.h>
+#include <glibmm/i18n.h>
 #include <glibmm/miscutils.h>
 #include <glibmm/regex.h>
-
 #include <gtkmm/box.h>
 #include <gtkmm/button.h>
 #include <gtkmm/dialog.h>
 #include <gtkmm/entry.h>
 #include <gtkmm/filechoosernative.h>
 
-#include "xml/node.h"
 #include "extension/extension.h"
 #include "preferences.h"
+#include "ui/pack.h"
+#include "xml/node.h"
 
 namespace Inkscape {
 namespace Extension {
@@ -105,25 +104,29 @@ std::string ParamPath::value_to_string() const
     }
 }
 
+void ParamPath::string_to_value(const std::string &in)
+{
+    _value = in;
+}
 
 /** A special type of Gtk::Entry to handle path parameters. */
 class ParamPathEntry : public Gtk::Entry {
 private:
     ParamPath *_pref;
-    sigc::signal<void> *_changeSignal;
+    sigc::signal<void ()> *_changeSignal;
 public:
     /**
      * Build a string preference for the given parameter.
      * @param  pref  Where to get the string from, and where to put it
      *                when it changes.
      */
-    ParamPathEntry(ParamPath *pref, sigc::signal<void> *changeSignal)
+    ParamPathEntry(ParamPath *pref, sigc::signal<void ()> *changeSignal)
         : Gtk::Entry()
         , _pref(pref)
         , _changeSignal(changeSignal)
     {
         this->set_text(_pref->get());
-        this->signal_changed().connect(sigc::mem_fun(this, &ParamPathEntry::changed_text));
+        this->signal_changed().connect(sigc::mem_fun(*this, &ParamPathEntry::changed_text));
     };
     void changed_text();
 };
@@ -149,30 +152,29 @@ void ParamPathEntry::changed_text()
  *
  * Builds a hbox with a label and a text box in it.
  */
-Gtk::Widget *ParamPath::get_widget(sigc::signal<void> *changeSignal)
+Gtk::Widget *ParamPath::get_widget(sigc::signal<void ()> *changeSignal)
 {
     if (_hidden) {
         return nullptr;
     }
 
-    Gtk::Box *hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, GUI_PARAM_WIDGETS_SPACING));
-    Gtk::Label *label = Gtk::manage(new Gtk::Label(_text, Gtk::ALIGN_START));
-    label->show();
-    hbox->pack_start(*label, false, false);
+    auto const hbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL, GUI_PARAM_WIDGETS_SPACING);
+    auto const label = Gtk::make_managed<Gtk::Label>(_text, Gtk::ALIGN_START);
+    label->set_visible(true);
+    UI::pack_start(*hbox, *label, false, false);
 
-    ParamPathEntry *textbox = Gtk::manage(new ParamPathEntry(this, changeSignal));
-    textbox->show();
-    hbox->pack_start(*textbox, true, true);
+    auto const textbox = Gtk::make_managed<ParamPathEntry>(this, changeSignal);
+    textbox->set_visible(true);
+    UI::pack_start(*hbox, *textbox, true, true);
     _entry = textbox;
 
-    Gtk::Button *button = Gtk::manage(new Gtk::Button("…"));
-	button->show();
-    hbox->pack_end(*button, false, false);
+    auto const button = Gtk::make_managed<Gtk::Button>("…");
+	button->set_visible(true);
+    UI::pack_end(*hbox, *button, false, false);
     button->signal_clicked().connect(sigc::mem_fun(*this, &ParamPath::on_button_clicked));
 
-    hbox->show();
-
-    return dynamic_cast<Gtk::Widget *>(hbox);
+    hbox->set_visible(true);
+    return hbox;
 }
 
 /**

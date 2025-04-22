@@ -13,7 +13,10 @@
 #include <giomm.h>  // Not <gtkmm.h>! To eventually allow a headless version!
 #include <glibmm/i18n.h>
 
+#include <2geom/angle.h>  // rad_from_deg
+
 #include "actions-canvas-transform.h"
+#include "actions-helper.h"
 #include "inkscape-application.h"
 #include "inkscape-window.h"
 #include "desktop.h"
@@ -52,13 +55,13 @@ enum {
 static void
 canvas_zoom_helper(SPDesktop* dt, const Geom::Point& midpoint, double zoom_factor)
 {
-    if (dynamic_cast<Inkscape::UI::Tools::PencilTool *>(dt->event_context) ||
-        dynamic_cast<Inkscape::UI::Tools::PenTool    *>(dt->event_context)  ) {
-
+    if (auto const * const tool = dt->getTool();
+        tool && (dynamic_cast<Inkscape::UI::Tools::PencilTool const *>(tool) ||
+                 dynamic_cast<Inkscape::UI::Tools::PenTool    const *>(tool)))
+    {
         // Zoom around end of unfinished path.
-        std::optional<Geom::Point> zoom_to =
-            dynamic_cast<Inkscape::UI::Tools::FreehandBase*>(dt->event_context)->red_curve_get_last_point();
-        if (zoom_to) {
+        auto const &freehand_base = dynamic_cast<Inkscape::UI::Tools::FreehandBase const &>(*tool);
+        if (auto const zoom_to = freehand_base.red_curve_get_last_point()) {
             dt->zoom_relative(*zoom_to, zoom_factor);
             return;
         }
@@ -161,8 +164,72 @@ canvas_transform(InkscapeWindow *win, const int& option)
             break;
 
         default:
-            std::cerr << "canvas_zoom: unhandled action value!" << std::endl;
+            show_output("canvas_zoom: unhandled action value!");
     }
+}
+
+// Zoom to an arbitrary value
+void
+canvas_zoom_absolute(Glib::VariantBase const &value, InkscapeWindow *win)
+{
+    auto d = Glib::VariantBase::cast_dynamic<Glib::Variant<double> >(value);
+
+    SPDesktop* dt = win->get_desktop();
+
+    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+    if (prefs->getDouble("/options/zoomcorrection/shown", true)) {
+        dt->zoom_realworld(dt->current_center(), d.get());
+    } else {
+        dt->zoom_absolute(dt->current_center(), d.get(), false);
+    }
+}
+
+// Zoom a relative amount
+void
+canvas_zoom_relative(Glib::VariantBase const &value, InkscapeWindow *win)
+{
+    auto d = Glib::VariantBase::cast_dynamic<Glib::Variant<double> >(value);
+
+    SPDesktop* dt = win->get_desktop();
+    dt->zoom_relative(dt->current_center(), d.get());
+}
+
+// Rotate to an arbitrary value
+void
+canvas_rotate_absolute_radians(Glib::VariantBase const &value, InkscapeWindow *win)
+{
+    auto d = Glib::VariantBase::cast_dynamic<Glib::Variant<double> >(value);
+
+    SPDesktop* dt = win->get_desktop();
+    dt->rotate_absolute_center_point(dt->current_center(), d.get());
+}
+
+void
+canvas_rotate_absolute_degrees(Glib::VariantBase const &value, InkscapeWindow *win)
+{
+    auto d = Glib::VariantBase::cast_dynamic<Glib::Variant<double> >(value);
+
+    SPDesktop* dt = win->get_desktop();
+    dt->rotate_absolute_center_point(dt->current_center(), Geom::rad_from_deg(d.get()));
+}
+
+// Rotate a relative amount
+void
+canvas_rotate_relative_radians(Glib::VariantBase const &value, InkscapeWindow *win)
+{
+    auto d = Glib::VariantBase::cast_dynamic<Glib::Variant<double> >(value);
+
+    SPDesktop* dt = win->get_desktop();
+    dt->rotate_relative_center_point(dt->current_center(), d.get());
+}
+
+void
+canvas_rotate_relative_degrees(Glib::VariantBase const &value, InkscapeWindow *win)
+{
+    auto d = Glib::VariantBase::cast_dynamic<Glib::Variant<double> >(value);
+
+    SPDesktop* dt = win->get_desktop();
+    dt->rotate_relative_center_point(dt->current_center(), Geom::rad_from_deg(d.get()));
 }
 
 /**
@@ -173,13 +240,13 @@ canvas_rotate_lock(InkscapeWindow *win)
 {
     auto action = win->lookup_action("canvas-rotate-lock");
     if (!action) {
-        std::cerr << "canvas_rotate_lock: action missing!" << std::endl;
+        show_output("canvas_rotate_lock: action missing!");
         return;
     }
 
     auto saction = Glib::RefPtr<Gio::SimpleAction>::cast_dynamic(action);
     if (!saction) {
-        std::cerr << "canvas_rotate_lock: action not SimpleAction!" << std::endl;
+        show_output("canvas_rotate_lock: action not SimpleAction!");
         return;
     }
 
@@ -191,12 +258,10 @@ canvas_rotate_lock(InkscapeWindow *win)
     // Save value as a preference
     Inkscape::Preferences *pref = Inkscape::Preferences::get();
     pref->setBool("/options/rotationlock", state);
-    std::cout << "rotate_lock: set to: " << state << std::endl;
 
     SPDesktop* dt = win->get_desktop();
     dt->set_rotation_lock(state);
 }
-
 
 std::vector<std::vector<Glib::ustring>> raw_data_canvas_transform =
 {
@@ -222,6 +287,14 @@ std::vector<std::vector<Glib::ustring>> raw_data_canvas_transform =
     {"win.canvas-flip-vertical",      N_("Flip Vertical"),       "Canvas Geometry",  N_("Flip canvas vertically")                     },
     {"win.canvas-flip-reset",         N_("Reset Flipping"),      "Canvas Geometry",  N_("Reset canvas flipping")                      },
 
+    {"win.canvas-zoom-absolute",      N_("Zoom Absolute"),       "Canvas Geometry",  N_("Zoom to an absolute value")                  },
+    {"win.canvas-zoom-relative",      N_("Zoom Relative"),       "Canvas Geometry",  N_("Zoom by a relative amount")               },
+
+    {"win.canvas-rotate-absolute-radians", N_("Rotate Absolute (Radians)"), "Canvas Geometry",  N_("Rotate to an absolute value (radians)")    },
+    {"win.canvas-rotate-relative-radians", N_("Rotate Relative (Radians)"), "Canvas Geometry",  N_("Rotate by a relative amount (radians)") },
+    {"win.canvas-rotate-absolute-degrees", N_("Rotate Absolute (Degrees)"), "Canvas Geometry",  N_("Rotate to an absolute value (degrees)")    },
+    {"win.canvas-rotate-relative-degrees", N_("Rotate Relative (Degrees)"), "Canvas Geometry",  N_("Rotate by a relative amount (degrees)") },
+
     {"win.canvas-rotate-lock",        N_("Lock Rotation"),       "Canvas Geometry",  N_("Lock canvas rotation")                       },
     // clang-format on
 };
@@ -237,42 +310,51 @@ add_actions_canvas_transform(InkscapeWindow* win)
     if (dt) {
         dt->set_rotation_lock(rotate_lock);
     } else {
-        std::cerr << "add_actions_canvas_transform: no desktop!" << std::endl;
+        show_output("add_actions_canvas_transform: no desktop!");
     }
 
+    Glib::VariantType Double(Glib::VARIANT_TYPE_DOUBLE);
+
     // clang-format off
-    win->add_action( "canvas-zoom-in",         sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_IN));
-    win->add_action( "canvas-zoom-out",        sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_OUT));
-    win->add_action( "canvas-zoom-1-1",        sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_1_1));
-    win->add_action( "canvas-zoom-1-2",        sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_1_2));
-    win->add_action( "canvas-zoom-2-1",        sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_2_1));
-    win->add_action( "canvas-zoom-selection",  sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_SELECTION));
-    win->add_action( "canvas-zoom-drawing",    sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_DRAWING));
-    win->add_action( "canvas-zoom-page",       sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_PAGE));
-    win->add_action( "canvas-zoom-page-width", sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_PAGE_WIDTH));
-    win->add_action( "canvas-zoom-center-page",sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_CENTER_PAGE));
-    win->add_action( "canvas-zoom-prev",       sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_PREV));
-    win->add_action( "canvas-zoom-next",       sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_NEXT));
+    win->add_action( "canvas-zoom-in",         sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_IN));
+    win->add_action( "canvas-zoom-out",        sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_OUT));
+    win->add_action( "canvas-zoom-1-1",        sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_1_1));
+    win->add_action( "canvas-zoom-1-2",        sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_1_2));
+    win->add_action( "canvas-zoom-2-1",        sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_2_1));
+    win->add_action( "canvas-zoom-selection",  sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_SELECTION));
+    win->add_action( "canvas-zoom-drawing",    sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_DRAWING));
+    win->add_action( "canvas-zoom-page",       sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_PAGE));
+    win->add_action( "canvas-zoom-page-width", sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_PAGE_WIDTH));
+    win->add_action( "canvas-zoom-center-page",sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_CENTER_PAGE));
+    win->add_action( "canvas-zoom-prev",       sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_PREV));
+    win->add_action( "canvas-zoom-next",       sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ZOOM_NEXT));
 
-    win->add_action( "canvas-rotate-cw",       sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ROTATE_CW));
-    win->add_action( "canvas-rotate-ccw",      sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ROTATE_CCW));
-    win->add_action( "canvas-rotate-reset",    sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ROTATE_RESET));
+    win->add_action( "canvas-rotate-cw",       sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ROTATE_CW));
+    win->add_action( "canvas-rotate-ccw",      sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ROTATE_CCW));
+    win->add_action( "canvas-rotate-reset",    sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_ROTATE_RESET));
 
-    win->add_action( "canvas-flip-horizontal", sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_FLIP_HORIZONTAL));
-    win->add_action( "canvas-flip-vertical",   sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_FLIP_VERTICAL));
-    win->add_action( "canvas-flip-reset",      sigc::bind<InkscapeWindow*, int>(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_FLIP_RESET));
+    win->add_action( "canvas-flip-horizontal", sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_FLIP_HORIZONTAL));
+    win->add_action( "canvas-flip-vertical",   sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_FLIP_VERTICAL));
+    win->add_action( "canvas-flip-reset",      sigc::bind(sigc::ptr_fun(&canvas_transform), win, INK_CANVAS_FLIP_RESET));
 
-    win->add_action_bool( "canvas-rotate-lock",sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&canvas_rotate_lock),    win), rotate_lock);
+    win->add_action_with_parameter( "canvas-zoom-absolute",   Double, sigc::bind(sigc::ptr_fun(&canvas_zoom_absolute),   win));
+    win->add_action_with_parameter( "canvas-zoom-relative",   Double, sigc::bind(sigc::ptr_fun(&canvas_zoom_relative),   win));
+
+    win->add_action_with_parameter( "canvas-rotate-absolute-radians", Double, sigc::bind(sigc::ptr_fun(&canvas_rotate_absolute_radians), win));
+    win->add_action_with_parameter( "canvas-rotate-relative-radians", Double, sigc::bind(sigc::ptr_fun(&canvas_rotate_relative_radians), win));
+    win->add_action_with_parameter( "canvas-rotate-absolute-degrees", Double, sigc::bind(sigc::ptr_fun(&canvas_rotate_absolute_degrees), win));
+    win->add_action_with_parameter( "canvas-rotate-relative-degrees", Double, sigc::bind(sigc::ptr_fun(&canvas_rotate_relative_degrees), win));
+
+    win->add_action_bool( "canvas-rotate-lock",sigc::bind(sigc::ptr_fun(&canvas_rotate_lock),    win), rotate_lock);
     // clang-format on
 
     auto app = InkscapeApplication::instance();
     if (!app) {
-        std::cerr << "add_actions_canvas_transform: no app!" << std::endl;
+        show_output("add_actions_canvas_transform: no app!");
         return;
     }
     app->get_action_extra_data().add_data(raw_data_canvas_transform);
 }
-
 
 /*
   Local Variables:

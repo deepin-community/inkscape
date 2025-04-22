@@ -1,4 +1,19 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+/** @file
+ * The routines here create and manage a font selector widget with two parts,
+ * one each for font-family and font-style.
+ *
+ * This is essentially a toolbar version of the 'FontSelector' widget. Someday
+ * this may be merged with it.
+ *
+ * The main functions are:
+ *   Create the font-selector toolbar widget.
+ *   Update the lists when a new text selection is made.
+ *   Update the Style list when a new font-family is selected, highlighting the
+ *     best match to the original font style (as not all fonts have the same style options).
+ *   Update the on-screen text.
+ *   Provide the currently selected values.
+ */
 /*
  * Author:
  *   Tavmjong Bah <tavmjong@free.fr>
@@ -8,22 +23,21 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "font-selector-toolbar.h"
+
+#include <iostream>
+#include <sigc++/functors/mem_fun.h>
 #include <glibmm/i18n.h>
 #include <glibmm/regex.h>
 #include <gdkmm/display.h>
+#include <libnrtype/font-instance.h>
+#include <libnrtype/font-lister.h>
 
-#include "font-selector-toolbar.h"
-
-#include "libnrtype/font-lister.h"
-#include "libnrtype/font-instance.h"
-
-#include "ui/icon-names.h"
-
-// For updating from selection
 #include "inkscape.h"
 #include "desktop.h"
 #include "object/sp-text.h"
-
+#include "ui/controller.h"
+#include "ui/icon-names.h"
 // TEMP TEMP TEMP
 #include "ui/toolbar/text-toolbar.h"
 
@@ -34,18 +48,15 @@
  *   * Change the setToolboxFocusTo() argument in tools/text-tool to point to that widget name
  */
 
-void family_cell_data_func(const Gtk::TreeModel::const_iterator iter, Gtk::CellRendererText* cell ) {
-
+static void family_cell_data_func(Gtk::TreeModel::const_iterator const iter,
+                                  Gtk::CellRendererText* const cell)
+{
     Inkscape::FontLister* font_lister = Inkscape::FontLister::get_instance();
     Glib::ustring markup = font_lister->get_font_family_markup(iter);
-    // std::cout << "Markup: " << markup << std::endl;
-
     cell->set_property ("markup", markup);
 }
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 FontSelectorToolbar::FontSelectorToolbar ()
     : Gtk::Grid ()
@@ -53,7 +64,6 @@ FontSelectorToolbar::FontSelectorToolbar ()
     , style_combo (true)
     , signal_block (false)
 {
-
     Inkscape::FontLister* font_lister = Inkscape::FontLister::get_instance();
 
     // Font family
@@ -66,11 +76,10 @@ FontSelectorToolbar::FontSelectorToolbar ()
     family_combo.set_cell_data_func (family_cell,
                                      sigc::bind(sigc::ptr_fun(family_cell_data_func), &family_cell));
     family_combo.pack_start (family_cell);
-    
 
     Gtk::Entry* entry = family_combo.get_entry();
     entry->signal_icon_press().connect (sigc::mem_fun(*this, &FontSelectorToolbar::on_icon_pressed));
-    entry->signal_key_press_event().connect (sigc::mem_fun(*this, &FontSelectorToolbar::on_key_press_event), false); // false => connect first
+    Controller::add_key<&FontSelectorToolbar::on_key_pressed>(*entry, *this);
 
     Glib::RefPtr<Gtk::EntryCompletion> completion = Gtk::EntryCompletion::create();
     completion->set_model (font_lister->get_font_list());
@@ -78,7 +87,6 @@ FontSelectorToolbar::FontSelectorToolbar ()
     completion->set_popup_completion ();
     completion->set_inline_completion (false);
     completion->set_inline_selection ();
-    // completion->signal_match_selected().connect(sigc::mem_fun(*this, &FontSelectorToolbar::on_match_selected), false); // false => connect before default handler.
     entry->set_completion (completion);
 
     // Style
@@ -91,18 +99,17 @@ FontSelectorToolbar::FontSelectorToolbar ()
     attach (style_combo,   1, 0, 1, 1);
 
     // Add signals
-    family_combo.signal_changed().connect (sigc::mem_fun(*this, &FontSelectorToolbar::on_family_changed));
-    style_combo.signal_changed().connect (sigc::mem_fun(*this, &FontSelectorToolbar::on_style_changed));
-    
+    family_combo.signal_changed().connect ([=](){ on_family_changed(); });
+    style_combo.signal_changed().connect ([=](){ on_style_changed(); });
+
     show_all_children();
 
     // Initialize font family lists. (May already be done.) Should be done on document change.
     font_lister->update_font_list(SP_ACTIVE_DESKTOP->getDocument());
 
     // When FontLister is changed, update family and style shown in GUI.
-    font_lister->connectUpdate(sigc::mem_fun(*this, &FontSelectorToolbar::update_font));
+    font_lister->connectUpdate([=](){ update_font(); });
 }
-
 
 // Update GUI based on font-selector values.
 void
@@ -119,18 +126,18 @@ FontSelectorToolbar::update_font ()
     try {
         row = font_lister->get_row_for_font ();
         family_combo.set_active (row);
-    } catch (...) {
+    } catch (FontLister::Exception) {
         std::cerr << "FontSelectorToolbar::update_font: Couldn't find row for family: "
-                  << font_lister->get_font_family() << std::endl;
+                  << font_lister->get_font_family().raw() << std::endl;
     }
 
     // Set style.
     try {
         row = font_lister->get_row_for_style ();
         style_combo.set_active (row);
-    } catch (...) {
+    } catch (FontLister::Exception) {
         std::cerr << "FontSelectorToolbar::update_font: Couldn't find row for style: "
-                  << font_lister->get_font_style() << std::endl;
+                  << font_lister->get_font_style().raw() << std::endl;
     }
 
     // Check for missing fonts.
@@ -169,8 +176,8 @@ FontSelectorToolbar::get_missing_fonts ()
         Gtk::TreeModel::Children children = font_lister->get_font_list()->children();
         for (auto iter2: children) {
             Gtk::TreeModel::Row row2 = *iter2;
-            Glib::ustring family2 = row2[font_lister->FontList.family];
-            bool onSystem2        = row2[font_lister->FontList.onSystem];
+            Glib::ustring family2 = row2[font_lister->font_list.family];
+            bool onSystem2        = row2[font_lister->font_list.onSystem];
             // CSS dictates that font family names are case insensitive.
             // This should really implement full Unicode case unfolding.
             if (onSystem2 && token.casefold().compare(family2.casefold()) == 0) {
@@ -192,7 +199,6 @@ FontSelectorToolbar::get_missing_fonts ()
 
     return missing_font_list;
 }
-
 
 // Callbacks
 
@@ -233,50 +239,33 @@ FontSelectorToolbar::on_style_changed() {
 
 void
 FontSelectorToolbar::on_icon_pressed (Gtk::EntryIconPosition icon_position, const GdkEventButton* event) {
-    std::cout << "FontSelectorToolbar::on_entry_icon_pressed" << std::endl;
-    std::cout << "    .... Should select all items with same font-family. FIXME" << std::endl;
+    std::cerr << "FontSelectorToolbar::on_entry_icon_pressed" << std::endl;
+    std::cerr << "    .... Should select all items with same font-family. FIXME" << std::endl;
     // Call equivalent of sp_text_toolbox_select_cb() in text-toolbar.cpp
     // Should be action!  (Maybe: select_all_fontfamily( Glib::ustring font_family );).
     // Check how Find dialog works.
 }
 
-// bool
-// FontSelectorToolbar::on_match_selected (const Gtk::TreeModel::iterator& iter)
-// {
-//     std::cout << "on_match_selected" << std::endl;
-//     std::cout << "   FIXME" << std::endl;
-//     Inkscape::FontLister* font_lister = Inkscape::FontLister::get_instance();
-//     Glib::ustring family = (*iter)[font_lister->FontList.family];
-//     std::cout << "  family: " << family << std::endl;
-//     return false; // Leave it to default handler to set entry text.
-// }
-
 // Return focus to canvas.
 bool
-FontSelectorToolbar::on_key_press_event (GdkEventKey* key_event)
+FontSelectorToolbar::on_key_pressed(GtkEventControllerKey const * /*controller*/,
+                                    unsigned /*keyval*/, unsigned const keycode,
+                                    GdkModifierType const state)
 {
-    bool consumed = false;
-
     unsigned int key = 0;
-    gdk_keymap_translate_keyboard_state( Gdk::Display::get_default()->get_keymap(),
-                                         key_event->hardware_keycode,
-                                         (GdkModifierType)key_event->state,
-                                         0, &key, nullptr, nullptr, nullptr );
-
+    gdk_keymap_translate_keyboard_state(Gdk::Display::get_default()->get_keymap(),
+                                        keycode, state,
+                                        0, &key, nullptr, nullptr, nullptr);
     switch ( key ) {
-
         case GDK_KEY_Escape:
         case GDK_KEY_Return:
         case GDK_KEY_KP_Enter:
-        {
             // Defocus
-            std::cerr << "FontSelectorToolbar::on_key_press_event: Defocus: FIXME" << std::endl;
-            consumed = true;
-        }
-        break;
+            std::cerr << "FontSelectorToolbar::on_key_pressed: Defocus: FIXME" << std::endl;
+            return true;
     }
 
-    return consumed; // Leave it to default handler if false.
+    return false;
 }
 
 void
@@ -286,9 +275,7 @@ FontSelectorToolbar::changed_emit() {
     signal_block = false;
 }
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 /*
   Local Variables:

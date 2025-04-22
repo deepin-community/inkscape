@@ -13,13 +13,11 @@
 
 #include "scalar.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 /**
  * A labelled text box, with spin buttons and optional
- * icon or suffix, for entering arbitrary number values. It adds an extra
+ * icon, for entering arbitrary number values. It adds an extra
  * number called "startseed", that is not UI edittable, but should be put in SVG.
  * This does NOT generate a random number, but provides merely the saving of 
  * the startseed value.
@@ -31,26 +29,25 @@ public:
     /**
      * Construct a Random scalar Widget.
      *
-     * @param label     Label.
-     * @param suffix    Suffix, placed after the widget (defaults to "").
-     * @param icon      Icon filename, placed before the label (defaults to "").
+     * @param label     Label, as per the Labelled base class.
+     * @param tooltip   Tooltip, as per the Labelled base class.
+     * @param icon      Icon name, placed before the label (defaults to empty).
      * @param mnemonic  Mnemonic toggle; if true, an underscore (_) in the label
      *                  indicates the next character should be used for the
      *                  mnemonic accelerator key (defaults to false).
      */
     Random(Glib::ustring const &label,
            Glib::ustring const &tooltip,
-           Glib::ustring const &suffix = "",
-           Glib::ustring const &icon = "",
+           Glib::ustring const &icon = {},
            bool mnemonic = true);
 
     /**
      * Construct a  Random Scalar Widget.
      *
-     * @param label     Label.
+     * @param label     Label, as per the Labelled base class.
+     * @param tooltip   Tooltip, as per the Labelled base class.
      * @param digits    Number of decimal digits to display.
-     * @param suffix    Suffix, placed after the widget (defaults to "").
-     * @param icon      Icon filename, placed before the label (defaults to "").
+     * @param icon      Icon name, placed before the label (defaults to empty).
      * @param mnemonic  Mnemonic toggle; if true, an underscore (_) in the label
      *                  indicates the next character should be used for the
      *                  mnemonic accelerator key (defaults to false).
@@ -58,28 +55,26 @@ public:
     Random(Glib::ustring const &label,
            Glib::ustring const &tooltip,
            unsigned digits,
-           Glib::ustring const &suffix = "",
-           Glib::ustring const &icon = "",
+           Glib::ustring const &icon = {},
            bool mnemonic = true);
 
     /**
      * Construct a Random Scalar Widget.
      *
-     * @param label     Label.
+     * @param label     Label, as per the Labelled base class.
+     * @param tooltip   Tooltip, as per the Labelled base class.
      * @param adjust    Adjustment to use for the SpinButton.
      * @param digits    Number of decimal digits to display (defaults to 0).
-     * @param suffix    Suffix, placed after the widget (defaults to "").
-     * @param icon      Icon filename, placed before the label (defaults to "").
+     * @param icon      Icon name, placed before the label (defaults to empty).
      * @param mnemonic  Mnemonic toggle; if true, an underscore (_) in the label
      *                  indicates the next character should be used for the
      *                  mnemonic accelerator key (defaults to true).
      */
     Random(Glib::ustring const &label,
            Glib::ustring const &tooltip,
-	   Glib::RefPtr<Gtk::Adjustment> &adjust,
+	   Glib::RefPtr<Gtk::Adjustment> adjust,
            unsigned digits = 0,
-           Glib::ustring const &suffix = "",
-           Glib::ustring const &icon = "",
+           Glib::ustring const &icon = {},
            bool mnemonic = true);
 
     /**
@@ -92,7 +87,7 @@ public:
      */
     void setStartSeed(long newseed);
 
-    sigc::signal <void> signal_reseeded;
+    sigc::signal<void ()> signal_reseeded;
 
 protected:
     long startseed;
@@ -107,9 +102,7 @@ private:
     void onReseedButtonClick();
 };
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 #endif // INKSCAPE_UI_WIDGET_RANDOM_H
 

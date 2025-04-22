@@ -5,6 +5,7 @@
 /* Authors:
  *   Kamalpreet Kaur Grewal
  *   Tavmjong Bah
+ *   Jabiertxof
  *
  * Copyright (C) Kamalpreet Kaur Grewal 2016 <grewalkamal005@gmail.com>
  * Copyright (C) Tavmjong Bah 2017 <tavmjong@free.fr>
@@ -15,25 +16,35 @@
 #ifndef SELECTORSDIALOG_H
 #define SELECTORSDIALOG_H
 
-#include <gtkmm/dialog.h>
-#include <gtkmm/paned.h>
-#include <gtkmm/radiobutton.h>
-#include <gtkmm/scrolledwindow.h>
-#include <gtkmm/switch.h>
-#include <gtkmm/treemodelfilter.h>
-#include <gtkmm/treeselection.h>
-#include <gtkmm/treestore.h>
-#include <gtkmm/treeview.h>
 #include <memory>
 #include <vector>
+#include <glibmm/refptr.h>
+#include <gtkmm/box.h>
+#include <gtkmm/button.h>
+#include <gtkmm/gesture.h> // Gtk::EventSequenceState
+#include <gtkmm/paned.h>
+#include <gtkmm/scrolledwindow.h>
+#include <gtkmm/treemodel.h>
+#include <gtkmm/treestore.h>
+#include <gtkmm/treeview.h>
 
 #include "ui/dialog/dialog-base.h"
-#include "ui/dialog/styledialog.h"
 #include "xml/helper-observer.h"
 
+namespace Gtk {
+class Adjustment;
+class Dialog;
+class GestureMultiPress;
+class RadioButton;
+class SelectionData;
+class TreeModelFilter;
+} // namespace Gtk
+
 namespace Inkscape {
-namespace UI {
-namespace Dialog {
+
+namespace UI::Dialog {
+
+class StyleDialog;
 
 /**
  * @brief The SelectorsDialog class
@@ -46,20 +57,16 @@ namespace Dialog {
  *   1. The text node of the style element.
  *   2. The Gtk::TreeModel.
  */
-class SelectorsDialog : public DialogBase
+class SelectorsDialog final : public DialogBase
 {
 public:
-    // No default constructor, noncopyable, nonassignable
     SelectorsDialog();
-    ~SelectorsDialog() override;
-    SelectorsDialog(SelectorsDialog const &d) = delete;
-    SelectorsDialog operator=(SelectorsDialog const &d) = delete;
-    static SelectorsDialog &getInstance() { return *new SelectorsDialog(); }
+    ~SelectorsDialog() final;
 
-    void update() override;
-    void desktopReplaced() override;
-    void documentReplaced() override;
-    void selectionChanged(Selection *selection) override;
+    void update() final;
+    void desktopReplaced() final;
+    void documentReplaced() final;
+    void selectionChanged(Selection *selection) final;
 
   private:
     // Monitor <style> element for changes.
@@ -102,13 +109,13 @@ public:
     // TreeStore implements simple drag and drop (DND) but there appears no way to know when a DND
     // has been completed (other than doing the whole DND ourselves). As a hack, we use
     // on_row_deleted to trigger write of style element.
-    class TreeStore : public Gtk::TreeStore {
+    class TreeStore final : public Gtk::TreeStore {
     protected:
         TreeStore();
-        bool row_draggable_vfunc(const Gtk::TreeModel::Path& path) const override;
+        bool row_draggable_vfunc(const Gtk::TreeModel::Path& path) const final;
         bool row_drop_possible_vfunc(const Gtk::TreeModel::Path& path,
-                                     const Gtk::SelectionData& selection_data) const override;
-        void on_row_deleted(const TreeModel::Path& path) override;
+                                     const Gtk::SelectionData& selection_data) const final;
+        void on_row_deleted(const TreeModel::Path& path) final;
 
     public:
       static Glib::RefPtr<SelectorsDialog::TreeStore> create(SelectorsDialog *styledialog);
@@ -142,6 +149,7 @@ public:
     std::unique_ptr<Inkscape::XML::NodeObserver> m_styletextwatcher;
 
     // Manipulate Tree
+    [[nodiscard]] std::vector<SPObject *> getSelectedObjects();
     void _addToSelector(Gtk::TreeModel::Row row);
     void _removeFromSelector(Gtk::TreeModel::Row row);
     Glib::ustring _getIdList(std::vector<SPObject *>);
@@ -155,11 +163,11 @@ public:
 
     void _selectObjects(int, int);
     // Variables
-    double _scrollpos;
-    bool _scrollock;
-    bool _updating;                 // Prevent cyclic actions: read <-> write, select via dialog <-> via desktop
-    Inkscape::XML::Node *m_root = nullptr;
-    Inkscape::XML::Node *_textNode; // Track so we know when to add a NodeObserver.
+    double _scrollpos{0.0};
+    bool _scrollock{false};
+    bool _updating{false};          // Prevent cyclic actions: read <-> write, select via dialog <-> via desktop
+    Inkscape::XML::Node *m_root{nullptr};
+    Inkscape::XML::Node *_textNode{nullptr}; // Track so we know when to add a NodeObserver.
 
     void _rowExpand(const Gtk::TreeModel::iterator &iter, const Gtk::TreeModel::Path &path);
     void _rowCollapse(const Gtk::TreeModel::iterator &iter, const Gtk::TreeModel::Path &path);
@@ -171,8 +179,8 @@ public:
     void _addSelector();
     void _delSelector();
     static Glib::ustring _getSelectorClasses(Glib::ustring selector);
-    bool _handleButtonEvent(GdkEventButton *event);
-    void _buttonEventsSelectObjs(GdkEventButton *event);
+    Gtk::EventSequenceState onTreeViewClickReleased(Gtk::GestureMultiPress const &click,
+                                                    int n_press, double x, double y);
     void _selectRow(); // Select row in tree when selection changed.
     void _vscroll();
 
@@ -180,8 +188,8 @@ public:
     void _styleButton(Gtk::Button& btn, char const* iconName, char const* tooltip);
 };
 
-} // namespace Dialogc
-} // namespace UI
+} // namespace UI::Dialog
+
 } // namespace Inkscape
 
 #endif // SELECTORSDIALOG_H

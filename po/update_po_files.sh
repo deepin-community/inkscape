@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run before 'make inkscape_pot' from the copiling 
+# Run before 'make inkscape_pot' from the compiling
 # directory with cmake to generate inkscape.pot file.
 # Updates PO files from the current POT file
 # Please run this program from the po/ directory
@@ -12,7 +12,7 @@ if [ "$?" -eq "0" ]; then
     exit
   fi
 else
-  echo "Could not create POT file (intltool-update not found). Exiting."
+  echo "Could not create POT file (gettext? not found). Exiting."
   exit
 fi
 
@@ -30,7 +30,7 @@ while read FILENAME; do
       echo "Could not merge \"$FILENAME.old\"."
     else
       rm "$FILENAME".old
-      msgfmt -c "$FILENAME"
+      msgfmt -v -c --statistics -o /dev/null "$FILENAME"
     fi
   else
     echo "Could not rename \"$FILENAME\". File skipped."

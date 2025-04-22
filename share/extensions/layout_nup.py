@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 #
 # Copyright (C) 2007 Terry Brown, terry_n_brown@yahoo.com
@@ -191,8 +191,6 @@ class Nup(inkex.OutputExtension, SvgOutputMixin):
                 )
                 / num[rows],
             )
-        else:
-            size = self.expandTuple(unit, size, length=2)
 
         # sep is separation between same points on pieces
         sep = (

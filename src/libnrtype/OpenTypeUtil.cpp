@@ -8,8 +8,6 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef USE_PANGO_WIN32
-
 #include "OpenTypeUtil.h"
 
 
@@ -31,6 +29,7 @@
 #include "io/stream/gzipstream.h"
 #include "io/stream/bufferstream.h"
 
+#include "display/cairo-utils.h"
 
 // Utilities used in this file
 
@@ -106,6 +105,8 @@ void get_glyphs(GlyphToUnicodeMap& glyphMap, HbSet& set, Glib::ustring& characte
             characters += codepoint;
     }
 }
+
+SVGTableEntry::~SVGTableEntry() = default;
 
 // Make a list of all tables found in the GSUB
 // This list includes all tables regardless of script or language.
@@ -219,45 +220,55 @@ void readOpenTypeGsubTable (hb_font_t* hb_font,
 
                 // std::cout << "Table: " << table.first << std::endl;
                 // std::cout << "  Found feature, number: " << feature_index << std::endl;
-                unsigned int lookup_indexes[32]; 
-                unsigned int lookup_count = 32;
-                int count = hb_ot_layout_feature_get_lookups (hb_face, HB_OT_TAG_GSUB,
-                                                              feature_index,
-                                                              0, // Start
-                                                              &lookup_count,
-                                                              lookup_indexes );
-                // std::cout << "  Lookup count: " << count << " total: " << lookup_count << std::endl;
 
-                for (int i = 0; i < count; ++i) {
-                    HbSet glyphs_before (hb_set_create());
-                    HbSet glyphs_input  (hb_set_create());
-                    HbSet glyphs_after  (hb_set_create());
-                    HbSet glyphs_output (hb_set_create());
+                unsigned start_offset = 0;
 
-                    hb_ot_layout_lookup_collect_glyphs (hb_face, HB_OT_TAG_GSUB,
-                                                        lookup_indexes[i],
-                                                        glyphs_before.get(),
-                                                        glyphs_input.get(),
-                                                        glyphs_after.get(),
-                                                        glyphs_output.get() );
+                while (true) {
+                    unsigned lookup_indexes[32];
+                    unsigned lookup_count = 32;
+                    int count = hb_ot_layout_feature_get_lookups(hb_face, HB_OT_TAG_GSUB,
+                                                                 feature_index,
+                                                                 start_offset,
+                                                                 &lookup_count,
+                                                                 lookup_indexes);
+                    // std::cout << "  Lookup count: " << lookup_count << " total: " << count << std::endl;
 
-                    // std::cout << "  Populations: "
-                    //           << " " << hb_set_get_population (glyphs_before)
-                    //           << " " << hb_set_get_population (glyphs_input)
-                    //           << " " << hb_set_get_population (glyphs_after)
-                    //           << " " << hb_set_get_population (glyphs_output)
-                    //           << std::endl;
+                    for (unsigned i = 0; i < lookup_count; i++) {
+                        HbSet glyphs_before (hb_set_create());
+                        HbSet glyphs_input  (hb_set_create());
+                        HbSet glyphs_after  (hb_set_create());
+                        HbSet glyphs_output (hb_set_create());
 
-                    get_glyphs (glyphMap, glyphs_before, tables[table.first].before);
-                    get_glyphs (glyphMap, glyphs_input,  tables[table.first].input );
-                    get_glyphs (glyphMap, glyphs_after,  tables[table.first].after );
-                    get_glyphs (glyphMap, glyphs_output, tables[table.first].output);
+                        hb_ot_layout_lookup_collect_glyphs (hb_face, HB_OT_TAG_GSUB,
+                                                            lookup_indexes[i],
+                                                            glyphs_before.get(),
+                                                            glyphs_input.get(),
+                                                            glyphs_after.get(),
+                                                            glyphs_output.get() );
 
-                    // std::cout << "  Before: " << tables[table.first].before.c_str() << std::endl;
-                    // std::cout << "  Input:  " << tables[table.first].input.c_str() << std::endl;
-                    // std::cout << "  After:  " << tables[table.first].after.c_str() << std::endl;
-                    // std::cout << "  Output: " << tables[table.first].output.c_str() << std::endl;
-                } // End count (lookups)
+                        // std::cout << "  Populations: "
+                        //           << " " << hb_set_get_population (glyphs_before)
+                        //           << " " << hb_set_get_population (glyphs_input)
+                        //           << " " << hb_set_get_population (glyphs_after)
+                        //           << " " << hb_set_get_population (glyphs_output)
+                        //           << std::endl;
+
+                        get_glyphs (glyphMap, glyphs_before, tables[table.first].before);
+                        get_glyphs (glyphMap, glyphs_input,  tables[table.first].input );
+                        get_glyphs (glyphMap, glyphs_after,  tables[table.first].after );
+                        get_glyphs (glyphMap, glyphs_output, tables[table.first].output);
+
+                        // std::cout << "  Before: " << tables[table.first].before.c_str() << std::endl;
+                        // std::cout << "  Input:  " << tables[table.first].input.c_str() << std::endl;
+                        // std::cout << "  After:  " << tables[table.first].after.c_str() << std::endl;
+                        // std::cout << "  Output: " << tables[table.first].output.c_str() << std::endl;
+                    }
+
+                    start_offset += lookup_count;
+                    if (start_offset >= count) {
+                        break;
+                    }
+                }
 
             } else {
                 // std::cout << "  Did not find '" << table.first << "'!" << std::endl;
@@ -286,11 +297,16 @@ void readOpenTypeFvarAxes(const FT_Face ft_face,
 
         for (size_t i = 0; i < mmvar->num_axis; ++i) {
             FT_Var_Axis* axis = &mmvar->axis[i];
+            char tag[5];
+            for (int i = 0; i < 4; ++i) {
+                tag[i] = (axis->tag >> (3 - i) * 8) & 0xff;
+            }
+            tag[4] = 0;
             axes[axis->name] =  OTVarAxis(FTFixedToDouble(axis->minimum),
                                           FTFixedToDouble(axis->def),
                                           FTFixedToDouble(axis->maximum),
                                           FTFixedToDouble(coords[i]),
-                                          i);
+                                          i, tag);
         }
 
         // for (auto a: axes) {
@@ -372,10 +388,6 @@ void readOpenTypeSVGTable(hb_font_t* hb_font,
     }
 
     // OpenType fonts use Big Endian
-#if 0
-    uint16_t version = ((data[0] & 0xff) <<  8) +  (data[1] & 0xff);
-    // std::cout << "Version: " << version << std::endl;
-#endif
     uint32_t offset  = ((data[2] & 0xff) << 24) + ((data[3] & 0xff) << 16) + ((data[4] & 0xff) << 8) + (data[5] & 0xff);
 
     // std::cout << "Offset: "  << offset << std::endl;
@@ -432,8 +444,6 @@ void readOpenTypeSVGTable(hb_font_t* hb_font,
         // }
     }
 }
-
-#endif /* !USE_PANGO_WIND32    */
 
 /*
   Local Variables:

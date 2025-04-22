@@ -5,31 +5,33 @@
 /* Authors:
  *   Joel Holdsworth
  *   The Inkscape Organization
+ *   Abhishek Sharma
  *
  * Copyright (C) 2004-2008 The Inkscape Organization
  *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <glibmm.h>
+#ifndef SEEN_INKSCAPE_UI_DIALOG_FILEDIALOGBASEWIN32
+#define SEEN_INKSCAPE_UI_DIALOG_FILEDIALOGBASEWIN32
 
 #ifdef _WIN32
-
-#include "filedialogimpl-gtkmm.h"
- 
-#include "inkgc/gc-core.h"
 
 #include <memory>
 #include <mutex>
 #include <windows.h>
+#include <glibmm/refptr.h>
+#include <glibmm/ustring.h>
+#include <gdkmm/pixbuf.h>
 
+#include "filedialogimpl-gtkmm.h"
+#include "inkgc/gc-core.h"
 
-namespace Inkscape
-{
-namespace UI
-{
-namespace Dialog
-{
+namespace Gtk {
+class Window;
+} // namespace Gtk
+
+namespace Inkscape::UI::Dialog {
 
 /*#########################################################################
 ### F I L E     D I A L O G    B A S E    C L A S S
@@ -55,13 +57,10 @@ protected:
 
 public:
 
-    /// Gets the currently selected extension. Valid after an [OK]
-    /// @return Returns a pointer to the selected extension, or NULL
-    /// if the selected filter requires an automatic type detection
-    Inkscape::Extension::Extension* getSelectionType();
-
     /// Get the path of the current directory
-    Glib::ustring getCurrentDirectory();
+    std::string getCurrentDirectory();
+    const std::string &getFilename() { return _filename; }
+    Glib::RefPtr<Gio::File> const get_file(); 
 
 
 protected:
@@ -111,8 +110,9 @@ protected:
     /// specified/
     Inkscape::Extension::Extension **_extension_map;
 
-	/// The currently selected extension. Valid after an [OK]
-    Inkscape::Extension::Extension *_extension;
+    // Filename that was given
+    std::string _filename;
+
 };
 
 
@@ -146,24 +146,22 @@ public:
     /// Gets a list of the selected file names
     /// @return Returns an STL vector filled with the
     /// GTK names of the selected files
-    std::vector<Glib::ustring> getFilenames();
+    std::vector<Glib::RefPtr<Gio::File>> getFiles() override; 
+    Glib::RefPtr<Gio::File> const getFile() override { return get_file(); }; 
+    void setSelectMultiple(bool value) final { }; // TODO
+    
+    void setCurrentName(const std::string &path) { _filename = path; };
+
 
     /// Get the path of the current directory
-    virtual Glib::ustring getCurrentDirectory()
+    virtual std::string getCurrentDirectory()
         { return FileDialogBaseWin32::getCurrentDirectory(); }
-
-    /// Gets the currently selected extension. Valid after an [OK]
-    /// @return Returns a pointer to the selected extension, or NULL
-    /// if the selected filter requires an automatic type detection
-    virtual Inkscape::Extension::Extension* getSelectionType()
-        { return FileDialogBaseWin32::getSelectionType(); }
-
 
     /// Add a custom file filter menu item
     /// @param name - Name of the filter (such as "Javscript")
     /// @param pattern - File filtering pattern (such as "*.js")
     /// Use the FileDialogType::CUSTOM_TYPE in constructor to not include other file types
-    virtual void addFilterMenu(Glib::ustring name, Glib::ustring pattern);
+    void addFilterMenu(const Glib::ustring &name, Glib::ustring pattern = "", Inkscape::Extension::Extension *mod = nullptr) override;
 
 private:
 
@@ -339,18 +337,16 @@ public:
     bool show();
 
     /// Get the path of the current directory
-    virtual Glib::ustring getCurrentDirectory()
+    virtual std::string getCurrentDirectory()
         { return FileDialogBaseWin32::getCurrentDirectory(); }
 
-    /// Gets the currently selected extension. Valid after an [OK]
-    /// @return Returns a pointer to the selected extension, or NULL
-    /// if the selected filter requires an automatic type detection
-    virtual Inkscape::Extension::Extension* getSelectionType()
-        { return FileDialogBaseWin32::getSelectionType(); }
-
-    virtual void setSelectionType( Inkscape::Extension::Extension *key );
-
-    virtual void addFileType(Glib::ustring name, Glib::ustring pattern);
+    void addFileType(Glib::ustring name, Glib::ustring pattern);
+    void addFilterMenu(const Glib::ustring &name, Glib::ustring pattern = "", Inkscape::Extension::Extension *mod = nullptr) override
+    {
+    }
+    
+    void setCurrentName(Glib::ustring path) override { _filename = path; };
+    Glib::RefPtr<Gio::File> const getFile() override { return get_file(); }; 
 
 private:
 	/// A handle to the title label and edit box
@@ -373,12 +369,11 @@ private:
 
 };
 
+} // namespace Inkscape::UI::Dialog
 
-}
-}
-}
+#endif // WIN32
 
-#endif
+#endif // SEEN_INKSCAPE_UI_DIALOG_FILEDIALOGBASEWIN32
 
 /*
   Local Variables:

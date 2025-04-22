@@ -16,9 +16,11 @@
 namespace Inkscape {
 
     std::string inkscape_version();
+    std::string inkscape_revision();
     std::string os_version();
     std::string debug_info();
 
+    unsigned short int inkscape_build_year();
 } // namespace Inkscape
 
 #endif // SEEN_INKSCAPE_VERSION_INFO_H
@@ -27,7 +29,7 @@ namespace Inkscape {
   Local Variables:
   mode:c++
   c-file-style:"stroustrup"
-  c-file-offsets:((innamespace .0)(inline-open . 0)(case-label . +))
+  c-file-offsets:((innamespace . 0)(inline-open . 0)(case-label . +))
   indent-tabs-mode:nil
   fill-column:99
   End:

@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef SEEN_SP_MEASURING_CONTEXT_H
-#define SEEN_SP_MEASURING_CONTEXT_H
-
 /*
  * Our fine measuring tool
  *
@@ -13,48 +10,45 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#ifndef INKSCAPE_UI_TOOLS_MEASURE_TOOL_H
+#define INKSCAPE_UI_TOOLS_MEASURE_TOOL_H
+
 #include <cstddef>
-#include <boost/optional.hpp>
 #include <optional>
-
-#include <sigc++/sigc++.h>
-
 #include <2geom/point.h>
-
-#include "ui/tools/tool-base.h"
 
 #include "display/control/canvas-temporary-item.h"
 #include "display/control/canvas-item-enums.h"
+#include "display/control/canvas-item-ptr.h"
+#include "helper/auto-connection.h"
+#include "ui/tools/tool-base.h"
 
 class SPKnot;
+namespace Inkscape { class CanvasItemCurve; }
 
-namespace Inkscape {
+namespace Inkscape::UI::Tools {
 
-class CanvasItemCurve;
-
-namespace UI {
-namespace Tools {
-
-class MeasureTool : public ToolBase {
+class MeasureTool : public ToolBase
+{
 public:
     MeasureTool(SPDesktop *desktop);
     ~MeasureTool() override;
 
-    bool root_handler(GdkEvent* event) override;
-    virtual void showCanvasItems(bool to_guides = false, bool to_item = false, bool to_phantom = false, Inkscape::XML::Node *measure_repr = nullptr);
-    virtual void reverseKnots();
-    virtual void toGuides();
-    virtual void toPhantom();
-    virtual void toMarkDimension();
-    virtual void toItem();
-    virtual void reset();
-    virtual void setMarkers();
-    virtual void setMarker(bool isStart);
-    Geom::Point readMeasurePoint(bool is_start);
+    bool root_handler(CanvasEvent const &event) override;
+    void showCanvasItems(bool to_guides = false, bool to_item = false, bool to_phantom = false, Inkscape::XML::Node *measure_repr = nullptr);
+    void reverseKnots();
+    void toGuides();
+    void toPhantom();
+    void toMarkDimension();
+    void toItem();
+    void reset();
+    void setMarkers();
+    void setMarker(bool isStart);
+    Geom::Point readMeasurePoint(bool is_start) const;
+    void writeMeasurePoint(Geom::Point point, bool is_start) const;
 
     void showInfoBox(Geom::Point cursor, bool into_groups);
     void showItemInfoText(Geom::Point pos, Glib::ustring const &measure_str, double fontsize);
-    void writeMeasurePoint(Geom::Point point, bool is_start);
     void setGuide(Geom::Point origin, double angle, const char *label);
     void setPoint(Geom::Point origin, Inkscape::XML::Node *measure_repr);
     void setLine(Geom::Point start_point,Geom::Point end_point, bool markers, guint32 color,
@@ -78,8 +72,6 @@ public:
     void setMeasureItem(Geom::PathVector pathv, bool is_curve, bool markers, guint32 color, Inkscape::XML::Node *measure_repr);
     void createAngleDisplayCurve(Geom::Point const &center, Geom::Point const &end, Geom::Point const &anchor,
                                  double angle, bool to_phantom,
-                                 std::vector<Inkscape::CanvasItem *> &measure_phantom_items,
-                                 std::vector<Inkscape::CanvasItem *> &measure_tmp_items,
                                  Inkscape::XML::Node *measure_repr = nullptr);
 
 private:
@@ -87,14 +79,14 @@ private:
     std::optional<Geom::Point> last_end;
     SPKnot *knot_start = nullptr;
     SPKnot *knot_end   = nullptr;
-    gint dimension_offset = 20;
+    int dimension_offset = 20;
     Geom::Point start_p;
     Geom::Point end_p;
     Geom::Point last_pos;
 
-    std::vector<Inkscape::CanvasItem *> measure_tmp_items;
-    std::vector<Inkscape::CanvasItem *> measure_phantom_items;
-    std::vector<Inkscape::CanvasItem *> measure_item;
+    std::vector<CanvasItemPtr<CanvasItem>> measure_tmp_items;
+    std::vector<CanvasItemPtr<CanvasItem>> measure_phantom_items;
+    std::vector<CanvasItemPtr<CanvasItem>> measure_item;
 
     double item_width;
     double item_height;
@@ -102,19 +94,17 @@ private:
     double item_y;
     double item_length;
     SPItem *over;
-    sigc::connection _knot_start_moved_connection;
-    sigc::connection _knot_start_ungrabbed_connection;
-    sigc::connection _knot_start_click_connection;
-    sigc::connection _knot_end_moved_connection;
-    sigc::connection _knot_end_click_connection;
-    sigc::connection _knot_end_ungrabbed_connection;
+    auto_connection _knot_start_moved_connection;
+    auto_connection _knot_start_ungrabbed_connection;
+    auto_connection _knot_start_click_connection;
+    auto_connection _knot_end_moved_connection;
+    auto_connection _knot_end_click_connection;
+    auto_connection _knot_end_ungrabbed_connection;
 };
 
-}
-}
-}
+} // namespace Inkscape::UI::Tools
 
-#endif // SEEN_SP_MEASURING_CONTEXT_H
+#endif // INKSCAPE_UI_TOOLS_MEASURE_TOOL_H
 
 /*
   Local Variables:

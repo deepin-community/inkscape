@@ -19,17 +19,22 @@
 
 #include "spellcheck.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+#include <glibmm/i18n.h>
+
 #include "desktop.h"
 #include "document-undo.h"
 #include "document.h"
 #include "inkscape.h"
 #include "message-stack.h"
 #include "layer-manager.h"
+#include "selection.h"
 #include "selection-chemistry.h"
 #include "text-editing.h"
-
 #include "display/control/canvas-item-rect.h"
-
 #include "object/sp-defs.h"
 #include "object/sp-flowtext.h"
 #include "object/sp-object.h"
@@ -37,17 +42,12 @@
 #include "object/sp-string.h"
 #include "object/sp-text.h"
 #include "object/sp-tref.h"
-
 #include "ui/dialog/dialog-container.h"
 #include "ui/dialog/inkscape-preferences.h" // for PREFS_PAGE_SPELLCHECK
 #include "ui/icon-names.h"
+#include "ui/pack.h"
 #include "ui/tools/text-tool.h"
 
-#include <glibmm/i18n.h>
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 namespace Inkscape {
 namespace UI {
@@ -104,7 +104,6 @@ SpellCheck::SpellCheck()
 {
     _prefs = Inkscape::Preferences::get();
 
-    banner_hbox.set_layout(Gtk::BUTTONBOX_START);
     banner_hbox.add(banner_label);
 
     if (_langs.empty()) {
@@ -141,15 +140,15 @@ SpellCheck::SpellCheck()
     pref_button.set_tooltip_text(_("Preferences"));
     pref_button.set_image_from_icon_name("preferences-system");
 
-    dictionary_hbox.pack_start(dictionary_label, false, false, 6);
-    dictionary_hbox.pack_start(dictionary_combo, true, true, 0);
-    dictionary_hbox.pack_start(pref_button, false, false, 0);
+    UI::pack_start(dictionary_hbox, dictionary_label, false, false, 6);
+    UI::pack_start(dictionary_hbox, dictionary_combo, true, true);
+    UI::pack_start(dictionary_hbox, pref_button, false, false);
 
     changebutton_vbox.set_spacing(4);
-    changebutton_vbox.pack_start(accept_button, false, false, 0);
-    changebutton_vbox.pack_start(ignoreonce_button, false, false, 0);
-    changebutton_vbox.pack_start(ignore_button, false, false, 0);
-    changebutton_vbox.pack_start(add_button, false, false, 0);
+    UI::pack_start(changebutton_vbox, accept_button, false, false);
+    UI::pack_start(changebutton_vbox, ignoreonce_button, false, false);
+    UI::pack_start(changebutton_vbox, ignore_button, false, false);
+    UI::pack_start(changebutton_vbox, add_button, false, false);
 
     suggestion_hbox.pack_start (scrolled_window, true, true, 4);
     suggestion_hbox.pack_end (changebutton_vbox, false, false, 0);
@@ -157,7 +156,8 @@ SpellCheck::SpellCheck()
     stop_button.set_tooltip_text(_("Stop the check"));
     start_button.set_tooltip_text(_("Start the check"));
 
-    actionbutton_hbox.set_layout(Gtk::BUTTONBOX_END);
+    actionbutton_hbox.set_halign(Gtk::ALIGN_END);
+    actionbutton_hbox.set_homogeneous(true);
     actionbutton_hbox.set_spacing(4);
     actionbutton_hbox.add(stop_button);
     actionbutton_hbox.add(start_button);
@@ -166,11 +166,11 @@ SpellCheck::SpellCheck()
      * Main dialog
      */
     set_spacing(6);
-    pack_start (banner_hbox, false, false, 0);
-    pack_start (suggestion_hbox, true, true, 0);
-    pack_start (dictionary_hbox, false, false, 0);
-    pack_start (action_sep, false, false, 6);
-    pack_start (actionbutton_hbox, false, false, 0);
+    UI::pack_start(*this, banner_hbox, false, false);
+    UI::pack_start(*this, suggestion_hbox, true, true);
+    UI::pack_start(*this, dictionary_hbox, false, false);
+    UI::pack_start(*this, action_sep, false, false, 6);
+    UI::pack_start(*this, actionbutton_hbox, false, false);
 
     /*
      * Signal handlers
@@ -197,7 +197,6 @@ SpellCheck::SpellCheck()
 
 SpellCheck::~SpellCheck()
 {
-    clearRects();
     disconnect();
 }
 
@@ -212,10 +211,6 @@ void SpellCheck::documentReplaced()
 
 void SpellCheck::clearRects()
 {
-    for(auto rect : _rects) {
-        rect->hide();
-        delete rect;
-    }
     _rects.clear();
 }
 
@@ -231,7 +226,7 @@ void SpellCheck::disconnect()
 
 void SpellCheck::allTextItems (SPObject *r, std::vector<SPItem *> &l, bool hidden, bool locked)
 {
-    if (SP_IS_DEFS(r))
+    if (is<SPDefs>(r))
         return; // we're not interested in items in defs
 
     if (!strcmp(r->getRepr()->name(), "svg:metadata")) {
@@ -240,10 +235,10 @@ void SpellCheck::allTextItems (SPObject *r, std::vector<SPItem *> &l, bool hidde
 
     if (auto desktop = getDesktop()) {
         for (auto& child: r->children) {
-            if (auto item = dynamic_cast<SPItem *>(&child)) {
+            if (auto item = cast<SPItem>(&child)) {
                 if (!child.cloned && !desktop->layerManager().isLayer(item)) {
                     if ((hidden || !desktop->itemIsHidden(item)) && (locked || !item->isLocked())) {
-                        if (SP_IS_TEXT(item) || SP_IS_FLOWTEXT(item))
+                        if (is<SPText>(item) || is<SPFlowtext>(item))
                             l.push_back(item);
                     }
                 }
@@ -421,13 +416,13 @@ SpellCheck::nextWord()
     SPObject *char_item = nullptr;
     Glib::ustring::iterator text_iter;
     _layout->getSourceOfCharacter(_end_w, &char_item, &text_iter);
-    if (SP_IS_STRING(char_item)) {
+    if (is<SPString>(char_item)) {
         int this_char = *text_iter;
         if (this_char == '\'' || this_char == 0x2019) {
             Inkscape::Text::Layout::iterator end_t = _end_w;
             end_t.nextCharacter();
             _layout->getSourceOfCharacter(end_t, &char_item, &text_iter);
-            if (SP_IS_STRING(char_item)) {
+            if (is<SPString>(char_item)) {
                 int this_char = *text_iter;
                 if (g_ascii_isalpha(this_char)) { // 's
                     _end_w.nextEndOfWord();
@@ -497,7 +492,7 @@ SpellCheck::nextWord()
                                   // in that case skip drawing the rect
             Geom::Point tl, br;
             tl = br = points.front();
-            for (auto & point : points) {
+            for (auto const &point : points) {
                 if (point[Geom::X] < tl[Geom::X])
                     tl[Geom::X] = point[Geom::X];
                 if (point[Geom::Y] < tl[Geom::Y])
@@ -518,8 +513,8 @@ SpellCheck::nextWord()
             // Create canvas item rect with red stroke. (TODO: a quad could allow non-axis aligned rects.)
             auto rect = new Inkscape::CanvasItemRect(desktop->getCanvasSketch(), area);
             rect->set_stroke(0xff0000ff);
-            rect->show();
-            _rects.push_back(rect);
+            rect->set_visible(true);
+            _rects.emplace_back(rect);
 
             // scroll to make it all visible
             Geom::Point const center = desktop->current_center();
@@ -532,26 +527,25 @@ SpellCheck::nextWord()
                     scrollto = area.corner(corner);
                 }
             }
-            desktop->scroll_to_point (scrollto, 1.0);
+            desktop->scroll_to_point(scrollto);
         }
 
         // select text; if in Text tool, position cursor to the beginning of word
         // unless it is already in the word
-        if (desktop->selection->singleItem() != _text) {
-            desktop->selection->set (_text);
+        if (desktop->getSelection()->singleItem() != _text) {
+            desktop->getSelection()->set (_text);
         }
 
-        if (dynamic_cast<Inkscape::UI::Tools::TextTool *>(desktop->event_context)) {
-            Inkscape::Text::Layout::iterator *cursor =
-                sp_text_context_get_cursor_position(SP_TEXT_CONTEXT(desktop->event_context), _text);
-            if (!cursor) // some other text is selected there
-                desktop->selection->set (_text);
-            else if (*cursor <= _begin_w || *cursor >= _end_w)
-                sp_text_context_place_cursor (SP_TEXT_CONTEXT(desktop->event_context), _text, _begin_w);
+        if (auto const text_tool = dynamic_cast<Tools::TextTool *>(desktop->getTool())) {
+            auto cursor = get_cursor_position(*text_tool, _text);
+            if (!cursor) { // some other text is selected there
+                desktop->getSelection()->set(_text);
+            } else if (*cursor <= _begin_w || *cursor >= _end_w) {
+                text_tool->placeCursor(_text, _begin_w);
+            }
         }
 
 #if WITH_GSPELL
-
         // get suggestions
         model = Gtk::ListStore::create(tree_columns);
         tree_view.set_model(model);
@@ -565,12 +559,12 @@ SpellCheck::nextWord()
             g_slist_foreach(list, [](gpointer data, gpointer user_data) {
                 const gchar *suggestion = reinterpret_cast<const gchar*>(data);
                 std::vector<std::string> *suggs = reinterpret_cast<std::vector<std::string>*>(user_data);
-                suggs->push_back(suggestion);
+                suggs->emplace_back(suggestion);
             }, &suggs);
             g_slist_free_full(list, g_free);
 
             Gtk::TreeModel::iterator iter;
-            for (std::string sugg : suggs) {
+            for (auto const &sugg : suggs) {
                 iter = model->append();
                 Gtk::TreeModel::Row row = *iter;
                 row[tree_columns.suggestions] = sugg;
@@ -587,19 +581,14 @@ SpellCheck::nextWord()
 #endif  /* WITH_GSPELL */
 
         return true;
-
     }
+
     return false;
 }
 
-
-
-void
-SpellCheck::deleteLastRect ()
+void SpellCheck::deleteLastRect()
 {
     if (!_rects.empty()) {
-        _rects.back()->hide();
-        delete _rects.back();
         _rects.pop_back();
     }
 }

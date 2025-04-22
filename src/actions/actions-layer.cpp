@@ -13,17 +13,24 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "actions-layer.h"
+
 #include <giomm.h>
 #include <glibmm/i18n.h>
 
-#include "actions-layer.h"
+#include "actions-helper.h"
+#include "desktop.h"
+#include "document-undo.h"
+#include "document.h"
 #include "inkscape-application.h"
 #include "inkscape-window.h"
-#include "desktop.h"
-#include "ui/dialog/layer-properties.h"
 #include "message-stack.h"
+#include "selection.h"
 #include "ui/icon-names.h"
+#include "ui/dialog/layer-properties.h"
 #include "document-undo.h"
+#include "layer-manager.h"
+#include "object/sp-root.h"
 
 /*
  * A layer is a group <g> element with a special Inkscape attribute (Inkscape:groupMode) set to
@@ -41,7 +48,21 @@ layer_new(InkscapeWindow* win)
     SPDesktop* dt = win->get_desktop();
 
     // New Layer
-    Inkscape::UI::Dialogs::LayerPropertiesDialog::showCreate(dt, dt->layerManager().currentLayer());
+    Inkscape::UI::Dialog::LayerPropertiesDialog::showCreate(dt, dt->layerManager().currentLayer());
+}
+
+void
+layer_new_above(InkscapeWindow* win)
+{
+    auto desktop = win->get_desktop();
+    auto document = desktop->getDocument();
+    auto current_layer = desktop->layerManager().currentLayer();
+    auto new_layer = Inkscape::create_layer(document->getRoot(), current_layer, Inkscape::LPOS_ABOVE);
+    desktop->layerManager().renameLayer(new_layer, current_layer->label(), true);
+    desktop->getSelection()->clear();
+    desktop->layerManager().setCurrentLayer(new_layer);
+    Inkscape::DocumentUndo::done(document, _("Add layer"), INKSCAPE_ICON("layer-new"));
+    desktop->messageStack()->flash(Inkscape::NORMAL_MESSAGE, _("New layer created."));
 }
 
 void
@@ -51,7 +72,7 @@ layer_duplicate (InkscapeWindow* win)
 
     if (!dt->layerManager().isRoot()) {
 
-        dt->selection->duplicate(true, true); // This requires the selection to be a layer!
+        dt->getSelection()->duplicate(true, true); // This requires the selection to be a layer!
         Inkscape::DocumentUndo::done(dt->getDocument(), _("Duplicate layer"), INKSCAPE_ICON("layer-duplicate"));
         dt->messageStack()->flash(Inkscape::NORMAL_MESSAGE, _("Duplicated layer."));
 
@@ -118,7 +139,7 @@ layer_rename (InkscapeWindow* win)
     SPDesktop* dt = win->get_desktop();
 
     // Rename Layer
-    Inkscape::UI::Dialogs::LayerPropertiesDialog::showRename(dt, dt->layerManager().currentLayer());
+    Inkscape::UI::Dialog::LayerPropertiesDialog::showRename(dt, dt->layerManager().currentLayer());
 }
 
 void
@@ -243,7 +264,7 @@ selection_move_to_layer_above (InkscapeWindow* win)
     SPDesktop* dt = win->get_desktop();
 
     // Layer Rise
-    dt->selection->toNextLayer();
+    dt->getSelection()->toNextLayer();
 }
 
 void
@@ -252,7 +273,7 @@ selection_move_to_layer_below (InkscapeWindow* win)
     SPDesktop* dt = win->get_desktop();
 
     // Layer Lower
-    dt->selection->toPrevLayer();
+    dt->getSelection()->toPrevLayer();
 }
 
 void
@@ -261,7 +282,7 @@ selection_move_to_layer (InkscapeWindow* win)
     SPDesktop* dt = win->get_desktop();
 
     // Selection move to layer
-    Inkscape::UI::Dialogs::LayerPropertiesDialog::showMove(dt, dt->layerManager().currentLayer());
+    Inkscape::UI::Dialog::LayerPropertiesDialog::showMove(dt, dt->layerManager().currentLayer());
 }
 
 void
@@ -389,6 +410,7 @@ layer_to_group (InkscapeWindow* win)
 
     layer->setLayerMode(SPGroup::GROUP);
     layer->updateRepr(SP_OBJECT_WRITE_NO_CHILDREN | SP_OBJECT_WRITE_EXT);
+    dt->getSelection()->set(layer);
     Inkscape::DocumentUndo::done(dt->getDocument(), _("Layer to group"), INKSCAPE_ICON("dialog-objects"));
 }
 
@@ -400,19 +422,22 @@ layer_from_group (InkscapeWindow* win)
 
     std::vector<SPItem*> items(selection->items().begin(), selection->items().end());
     if (items.size() != 1) {
-        std::cerr << "layer_to_group: only one selected item allowed!" << std::endl;
+        show_output("layer_to_group: only one selected item allowed!");
         return;
     }
-
-    auto group = dynamic_cast<SPGroup*>(items[0]);
-    if (group && group->isLayer()) {
-        dt->messageStack()->flash(Inkscape::ERROR_MESSAGE, _("Group already layer."));
-        return;
+    
+    if (auto group = cast<SPGroup>(items[0])) {
+        if (!group->isLayer()) {
+            group->setLayerMode(SPGroup::LAYER);
+            group->updateRepr(SP_OBJECT_WRITE_NO_CHILDREN | SP_OBJECT_WRITE_EXT);
+            selection->set(group);
+            Inkscape::DocumentUndo::done(dt->getDocument(), _("Group to layer"), INKSCAPE_ICON("dialog-objects"));
+        } else {
+            dt->messageStack()->flash(Inkscape::ERROR_MESSAGE, _("Group already layer."));
+        }
+    } else {
+        dt->messageStack()->flash(Inkscape::ERROR_MESSAGE, _("Selection is not a group."));
     }
-
-    group->setLayerMode(SPGroup::LAYER);
-    group->updateRepr(SP_OBJECT_WRITE_NO_CHILDREN | SP_OBJECT_WRITE_EXT);
-    Inkscape::DocumentUndo::done(dt->getDocument(), _("Group to layer"), INKSCAPE_ICON("dialog-objects"));
 }
 
 // Does not change XML.
@@ -420,10 +445,10 @@ void
 group_enter (InkscapeWindow* win)
 {
     SPDesktop* dt = win->get_desktop();
-    auto selection = dt->selection;
+    auto selection = dt->getSelection();
 
     std::vector<SPItem*> items(selection->items().begin(), selection->items().end());
-    if (items.size() == 1 && dynamic_cast<SPGroup*>(items[0])) {
+    if (items.size() == 1 && cast<SPGroup>(items[0])) {
         // Only one item and it is a group!
         dt->layerManager().setCurrentLayer(items[0]);
         selection->clear();
@@ -435,13 +460,13 @@ void
 group_exit (InkscapeWindow* win)
 {
     SPDesktop* dt = win->get_desktop();
-    auto selection = dt->selection;
+    auto selection = dt->getSelection();
 
     auto parent = dt->layerManager().currentLayer()->parent;
     dt->layerManager().setCurrentLayer(parent);
 
     std::vector<SPItem*> items(selection->items().begin(), selection->items().end());
-    if (items.size() == 1 && dynamic_cast<SPGroup*>(items[0]->parent) ) {
+    if (items.size() == 1 && cast<SPGroup>(items[0]->parent) ) {
         // Only one item selected and the parent is a group!
         selection->set(items[0]->parent);
     } else {
@@ -452,28 +477,29 @@ group_exit (InkscapeWindow* win)
 std::vector<std::vector<Glib::ustring>> raw_data_layer =
 {
     // clang-format off
-    {"win.layer-new",                       N_("Add Layer"),                        "Layers",     N_("Create a new layer")},
-    {"win.layer-duplicate",                 N_("Duplicate Current Layer"),          "Layers",     N_("Duplicate the current layer")},
-    {"win.layer-delete",                    N_("Delete Current Layer"),             "Layers",     N_("Delete the current layer")},
-    {"win.layer-rename",                    N_("Rename Layer"),                     "Layers",     N_("Rename the current layer")},
+    {"win.layer-new",                       N_("Add Layer"),                        "Layer",     N_("Create a new layer")},
+    {"win.layer-new-above",                 N_("Add Layer Above"),                  "Layer",     N_("Create a new layer above current")},
+    {"win.layer-duplicate",                 N_("Duplicate Current Layer"),          "Layer",     N_("Duplicate the current layer")},
+    {"win.layer-delete",                    N_("Delete Current Layer"),             "Layer",     N_("Delete the current layer")},
+    {"win.layer-rename",                    N_("Rename Layer"),                     "Layer",     N_("Rename the current layer")},
 
-    {"win.layer-toggle-hide",               N_("Show/Hide Current Layer"),          "Layers",     N_("Toggle visibility of current layer")},
-    {"win.layer-toggle-lock",               N_("Lock/Unlock Current Layer"),        "Layers",     N_("Toggle lock on current layer")},
+    {"win.layer-hide-toggle",               N_("Show/Hide Current Layer"),          "Layer",     N_("Toggle visibility of current layer")},
+    {"win.layer-lock-toggle",               N_("Lock/Unlock Current Layer"),        "Layer",     N_("Toggle lock on current layer")},
 
-    {"win.layer-previous",                  N_("Switch to Layer Above"),            "Layers",     N_("Switch to the layer above the current")},
-    {"win.layer-next",                      N_("Switch to Layer Below"),            "Layers",     N_("Switch to the layer below the current")},
+    {"win.layer-previous",                  N_("Switch to Layer Above"),            "Layer",     N_("Switch to the layer above the current")},
+    {"win.layer-next",                      N_("Switch to Layer Below"),            "Layer",     N_("Switch to the layer below the current")},
 
-    {"win.selection-move-to-layer-above",   N_("Move Selection to Layer Above"),    "Layers",     N_("Move selection to the layer above the current")},
-    {"win.selection-move-to-layer-below",   N_("Move Selection to Layer Below"),    "Layers",     N_("Move selection to the layer below the current")},
-    {"win.selection-move-to-layer",         N_("Move Selection to Layer..."),       "Layers",     N_("Move selection to layer")},
+    {"win.selection-move-to-layer-above",   N_("Move Selection to Layer Above"),    "Layer",     N_("Move selection to the layer above the current")},
+    {"win.selection-move-to-layer-below",   N_("Move Selection to Layer Below"),    "Layer",     N_("Move selection to the layer below the current")},
+    {"win.selection-move-to-layer",         N_("Move Selection to Layer..."),       "Layer",     N_("Move selection to layer")},
 
-    {"win.layer-top",                       N_("Layer to Top"),                     "Layers",     N_("Raise the current layer to the top")},
-    {"win.layer-raise",                     N_("Raise Layer"),                      "Layers",     N_("Raise the current layer")},
-    {"win.layer-lower",                     N_("Lower Layer"),                      "Layers",     N_("Lower the current layer")},
-    {"win.layer-bottom",                    N_("Layer to Bottom"),                  "Layers",     N_("Lower the current layer to the bottom")},
+    {"win.layer-top",                       N_("Layer to Top"),                     "Layer",     N_("Raise the current layer to the top")},
+    {"win.layer-raise",                     N_("Raise Layer"),                      "Layer",     N_("Raise the current layer")},
+    {"win.layer-lower",                     N_("Lower Layer"),                      "Layer",     N_("Lower the current layer")},
+    {"win.layer-bottom",                    N_("Layer to Bottom"),                  "Layer",     N_("Lower the current layer to the bottom")},
 
-    {"win.layer-to-group",                  N_("Layer to Group"),                   "Layers",     N_("Convert the current layer to a group")},
-    {"win.layer-from-group",                N_("Layer from Group"),                 "Layers",     N_("Convert the group to a layer")},
+    {"win.layer-to-group",                  N_("Layer to Group"),                   "Layer",     N_("Convert the current layer to a group")},
+    {"win.layer-from-group",                N_("Layer from Group"),                 "Layer",     N_("Convert the group to a layer")},
 
     // These use Layer technology even if they don't act on layers.
     {"win.selection-group-enter",           N_("Enter Group"),                      "Select",     N_("Enter group")},
@@ -485,43 +511,44 @@ void
 add_actions_layer(InkscapeWindow* win)
 {
     // clang-format off
-    win->add_action("layer-new",                            sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_new), win));
-    win->add_action("layer-duplicate",                      sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_duplicate), win));
-    win->add_action("layer-delete",                         sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_delete), win));
-    win->add_action("layer-rename",                         sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_rename), win));
+    win->add_action("layer-new",                            sigc::bind(sigc::ptr_fun(&layer_new), win));
+    win->add_action("layer-new-above",                      sigc::bind(sigc::ptr_fun(&layer_new_above), win));
+    win->add_action("layer-duplicate",                      sigc::bind(sigc::ptr_fun(&layer_duplicate), win));
+    win->add_action("layer-delete",                         sigc::bind(sigc::ptr_fun(&layer_delete), win));
+    win->add_action("layer-rename",                         sigc::bind(sigc::ptr_fun(&layer_rename), win));
 
-    win->add_action("layer-hide-all",                       sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_hide_all), win));
-    win->add_action("layer-unhide-all",                     sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_unhide_all), win));
-    win->add_action("layer-hide-toggle",                    sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_hide_toggle), win));
-    win->add_action("layer-hide-toggle-others",             sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_hide_toggle_others), win));
+    win->add_action("layer-hide-all",                       sigc::bind(sigc::ptr_fun(&layer_hide_all), win));
+    win->add_action("layer-unhide-all",                     sigc::bind(sigc::ptr_fun(&layer_unhide_all), win));
+    win->add_action("layer-hide-toggle",                    sigc::bind(sigc::ptr_fun(&layer_hide_toggle), win));
+    win->add_action("layer-hide-toggle-others",             sigc::bind(sigc::ptr_fun(&layer_hide_toggle_others), win));
 
-    win->add_action("layer-lock-all",                       sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_lock_all), win));
-    win->add_action("layer-unlock-all",                     sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_unlock_all), win));
-    win->add_action("layer-lock-toggle",                    sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_lock_toggle), win));
-    win->add_action("layer-lock-toggle-others",             sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_lock_toggle_others), win));
+    win->add_action("layer-lock-all",                       sigc::bind(sigc::ptr_fun(&layer_lock_all), win));
+    win->add_action("layer-unlock-all",                     sigc::bind(sigc::ptr_fun(&layer_unlock_all), win));
+    win->add_action("layer-lock-toggle",                    sigc::bind(sigc::ptr_fun(&layer_lock_toggle), win));
+    win->add_action("layer-lock-toggle-others",             sigc::bind(sigc::ptr_fun(&layer_lock_toggle_others), win));
 
-    win->add_action("layer-previous",                       sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_previous), win));
-    win->add_action("layer-next",                           sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_next), win));
+    win->add_action("layer-previous",                       sigc::bind(sigc::ptr_fun(&layer_previous), win));
+    win->add_action("layer-next",                           sigc::bind(sigc::ptr_fun(&layer_next), win));
 
-    win->add_action("selection-move-to-layer-above",        sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&selection_move_to_layer_above), win));
-    win->add_action("selection-move-to-layer-below",        sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&selection_move_to_layer_below), win));
-    win->add_action("selection-move-to-layer",              sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&selection_move_to_layer), win));
+    win->add_action("selection-move-to-layer-above",        sigc::bind(sigc::ptr_fun(&selection_move_to_layer_above), win));
+    win->add_action("selection-move-to-layer-below",        sigc::bind(sigc::ptr_fun(&selection_move_to_layer_below), win));
+    win->add_action("selection-move-to-layer",              sigc::bind(sigc::ptr_fun(&selection_move_to_layer), win));
 
-    win->add_action("layer-top",                            sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_top), win));
-    win->add_action("layer-raise",                          sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_raise), win));
-    win->add_action("layer-lower",                          sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_lower), win));
-    win->add_action("layer-bottom",                         sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_bottom), win));
+    win->add_action("layer-top",                            sigc::bind(sigc::ptr_fun(&layer_top), win));
+    win->add_action("layer-raise",                          sigc::bind(sigc::ptr_fun(&layer_raise), win));
+    win->add_action("layer-lower",                          sigc::bind(sigc::ptr_fun(&layer_lower), win));
+    win->add_action("layer-bottom",                         sigc::bind(sigc::ptr_fun(&layer_bottom), win));
 
-    win->add_action("layer-to-group",                       sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_to_group), win));
-    win->add_action("layer-from-group",                     sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&layer_from_group), win));
+    win->add_action("layer-to-group",                       sigc::bind(sigc::ptr_fun(&layer_to_group), win));
+    win->add_action("layer-from-group",                     sigc::bind(sigc::ptr_fun(&layer_from_group), win));
 
-    win->add_action("selection-group-enter",                sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&group_enter), win));
-    win->add_action("selection-group-exit",                 sigc::bind<InkscapeWindow*>(sigc::ptr_fun(&group_exit), win));
+    win->add_action("selection-group-enter",                sigc::bind(sigc::ptr_fun(&group_enter), win));
+    win->add_action("selection-group-exit",                 sigc::bind(sigc::ptr_fun(&group_exit), win));
     // clang-format on
 
     auto app = InkscapeApplication::instance();
     if (!app) {
-        std::cerr << "add_actions_layer: no app!" << std::endl;
+        show_output("add_actions_layer: no app!");
         return;
     }
     app->get_action_extra_data().add_data(raw_data_layer);

@@ -14,19 +14,34 @@
 #ifndef INKSCAPE_UI_DIALOG_PAINT_SERVERS_H
 #define INKSCAPE_UI_DIALOG_PAINT_SERVERS_H
 
-#include <glibmm/i18n.h>
-#include <gtkmm.h>
+#include <map>
+#include <memory>
+#include <optional>
+#include <tuple>
+#include <vector>
+#include <glibmm/ustring.h>
+#include <gtkmm/liststore.h>
+#include <gtkmm/treemodel.h>
 
 #include "display/drawing.h"
+#include "helper/auto-connection.h"
 #include "ui/dialog/dialog-base.h"
 
+namespace Gtk {
+class ComboBoxText;
+class IconView;
+} // namespace Gtk
+
 class SPObject;
+class SPDocument;
 
 namespace Inkscape {
-namespace UI {
-namespace Dialog {
+class Selection;
+} // namespace Inkscape
 
-class PaintServersColumns : public Gtk::TreeModel::ColumnRecord
+namespace Inkscape::UI::Dialog {
+
+class PaintServersColumns final : public Gtk::TreeModel::ColumnRecord
 {
 public:
     Gtk::TreeModelColumn<Glib::ustring> id;
@@ -43,7 +58,7 @@ public:
     }
 };
 
-struct PaintDescription
+struct PaintDescription final
 {
     /** Pointer to the document from which the paint originates */
     SPDocument *source_document = nullptr;
@@ -60,16 +75,14 @@ struct PaintDescription
     /** Bitmap preview of the paint */
     Glib::RefPtr<Gdk::Pixbuf> bitmap;
 
-    PaintDescription(SPDocument *source_doc, Glib::ustring title, Glib::ustring const &&paint_url)
-        : source_document{source_doc}
-        , doc_title{std::move(title)}
-        , id{} // id will be filled in when generating the bitmap
-        , url{paint_url}
-        , bitmap{nullptr}
-    {}
+    PaintDescription(SPDocument *source_doc, Glib::ustring title, Glib::ustring const &&paint_url);
+    void write_to_iterator(Gtk::ListStore::iterator &it, PaintServersColumns const *cols) const;
+
+    /** Whether the paint with this description has a valid pixbuf preview */
+    inline bool has_preview() const { return (bool)bitmap; }
 
     /** Two paints are considered the same if they have the same urls */
-    bool operator==(PaintDescription const &other) const { return url == other.url; }
+    inline bool operator==(PaintDescription const &other) const { return url == other.url; }
 };
 
 /**
@@ -80,52 +93,54 @@ struct PaintDescription
  * Patterns and hatches are loaded from the preferences paths and displayed
  * for each document, for all documents and for the current document.
  */
-
-class PaintServersDialog : public DialogBase
+class PaintServersDialog final : public DialogBase
 {
-public:
-    ~PaintServersDialog() override;
-    static PaintServersDialog &getInstance() { return *new PaintServersDialog(); }
+    using MaybeString = std::optional<Glib::ustring>;
 
-    void documentReplaced() override;
+public:
+    PaintServersDialog();
+    ~PaintServersDialog() final;
+
+    void documentReplaced() final;
 
 private:
-    // No default constructor, noncopyable, nonassignable
-    PaintServersDialog();
-    PaintServersDialog(PaintServersDialog const &d) = delete;
-    PaintServersDialog operator=(PaintServersDialog const &d) = delete;
-
-    void _cleanupUnused();
+    void _addToStore(PaintDescription &paint);
+    void _buildDialogWindow(char const *const glade_file);
     void _createPaints(std::vector<PaintDescription> &collection);
     PaintDescription _descriptionFromIterator(Gtk::ListStore::iterator const &iter) const;
-    std::vector<SPObject *> extract_elements(SPObject *item);
-    Glib::RefPtr<Gdk::Pixbuf> get_pixbuf(SPDocument *, Glib::ustring const &, Glib::ustring &);
+    void _documentClosed();
+    std::tuple<MaybeString, MaybeString> _findCommonFillAndStroke(std::vector<SPObject *> const &objects) const;
+    static void _findPaints(SPObject *in, std::vector<Glib::ustring> &list);
+    void _generateBitmapPreview(PaintDescription& paint);
     void _instantiatePaint(PaintDescription &paint);
     void _loadFromCurrentDocument();
     void _loadPaintsFromDocument(SPDocument *document, std::vector<PaintDescription> &output);
     void _loadStockPaints();
     void _regenerateAll();
+    void _unpackGroups(SPObject *parent, std::vector<SPObject *> &output) const;
+    std::vector<SPObject *> _unpackSelection(Selection *selection) const;
+    void _updateActiveItem();
     void onPaintClicked(const Gtk::TreeModel::Path &path);
     void onPaintSourceDocumentChanged();
-    void on_target_changed();
+    void selectionChanged(Selection *selection) final;
 
-    bool target_selected; ///< whether setting fill (true) or stroke (false)
-    const Glib::ustring ALLDOCS;
-    const Glib::ustring CURRENTDOC;
+    bool _targetting_fill; ///< whether setting fill (true) or stroke (false)
     std::map<Glib::ustring, Glib::RefPtr<Gtk::ListStore>> store;
     Glib::ustring current_store;
+    std::vector<std::unique_ptr<SPDocument>> _stock_documents;
     std::map<Glib::ustring, SPDocument *> document_map;
-    SPDocument *preview_document;
+    SPDocument *preview_document = nullptr;
     Inkscape::Drawing renderDrawing;
-    Gtk::ComboBoxText *dropdown;
-    Gtk::IconView *icon_view;
-    Gtk::ComboBoxText *target_dropdown;
+    Gtk::ComboBoxText *dropdown = nullptr;
+    Gtk::IconView *icon_view = nullptr;
     PaintServersColumns const columns;
+    MaybeString _common_stroke, _common_fill; ///< Common fill/stroke to all selected elements
+
+    auto_connection _defs_changed, _document_closed;
+    auto_connection _item_activated;
 };
 
-} // namespace Dialog
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Dialog
 
 #endif // SEEN INKSCAPE_UI_DIALOG_PAINT_SERVERS_H
 
@@ -133,10 +148,9 @@ private:
   Local Variables:
   mode:c++
   c-file-style:"stroustrup"
-  c-basic-offset:2
   c-file-offsets:((innamespace . 0)(inline-open . 0)(case-label . +))
   indent-tabs-mode:nil
   fill-column:99
   End:
 */
-// vim: filetype=cpp:expandtab:shiftwidth=2:tabstop=8:softtabstop=2:fileencoding=utf-8:textwidth=99 :
+// vim: filetype=cpp:expandtab:shiftwidth=4:tabstop=8:softtabstop=4:fileencoding=utf-8:textwidth=99 :

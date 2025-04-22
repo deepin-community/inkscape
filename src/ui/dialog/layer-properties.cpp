@@ -14,35 +14,36 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "layer-properties.h"
-
 #include <glibmm/i18n.h>
 #include <glibmm/main.h>
+#include <gtkmm/eventcontroller.h>
 
-#include "inkscape.h"
+#include "layer-properties.h"
 #include "desktop.h"
 #include "document.h"
 #include "document-undo.h"
+#include "inkscape.h"
 #include "layer-manager.h"
 #include "message-stack.h"
-#include "preferences.h"
-#include "selection-chemistry.h"
-
-#include "ui/icon-names.h"
-#include "ui/widget/imagetoggler.h"
-#include "ui/tools/tool-base.h"
 #include "object/sp-root.h"
+#include "preferences.h"
+#include "selection.h"
+#include "selection-chemistry.h"
+#include "ui/controller.h"
+#include "ui/icon-names.h"
+#include "ui/pack.h"
+#include "ui/tools/tool-base.h"
+#include "ui/widget/imagetoggler.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Dialogs {
+namespace Inkscape::UI::Dialog {
 
 LayerPropertiesDialog::LayerPropertiesDialog(LayerPropertiesDialogType type)
     : _type{type}
     , _close_button(_("_Cancel"), true)
 {
     auto mainVBox = get_content_area();
-    _layout_table.set_row_spacing(4);
+    mainVBox->get_style_context()->add_class("popup-dialog-margins");
+    _layout_table.set_row_spacing(8);
     _layout_table.set_column_spacing(4);
 
     // Layer name widgets
@@ -58,7 +59,7 @@ LayerPropertiesDialog::LayerPropertiesDialog(LayerPropertiesDialogType type)
     _layer_name_entry.set_hexpand();
     _layout_table.attach(_layer_name_entry, 1, 0, 1, 1);
 
-    mainVBox->pack_start(_layout_table, true, true, 4);
+    UI::pack_start(*mainVBox, _layout_table, true, true, 8);
 
     // Buttons
     _close_button.set_can_default();
@@ -98,7 +99,7 @@ void LayerPropertiesDialog::_showDialog(LayerPropertiesDialogType type, SPDeskto
     desktop->setWindowTransient(dialog->gobj());
     dialog->property_destroy_with_parent() = true;
 
-    dialog->show();
+    dialog->set_visible(true);
     dialog->present();
 }
 
@@ -138,12 +139,19 @@ void LayerPropertiesDialog::_close()
 void LayerPropertiesDialog::_doCreate()
 {
     LayerRelativePosition position = LPOS_ABOVE;
+
     if (_position_visible) {
-        Gtk::ListStore::iterator activeRow(_layer_position_combo.get_active());
-        position = activeRow->get_value(_dropdown_columns.position);
-        int index = _layer_position_combo.get_active_row_number();
+        int index = 0;
+        if (_layer_position_radio[1].get_active()) {
+            position = LPOS_CHILD;
+            index = 1;
+        } else if (_layer_position_radio[2].get_active()) {
+            position = LPOS_BELOW;
+            index = 2;
+        }
         Preferences::get()->setInt("/dialogs/layerProp/addLayerPosition", index);
     }
+
     Glib::ustring name(_layer_name_entry.get_text());
     if (name.empty()) {
         return;
@@ -165,7 +173,8 @@ void LayerPropertiesDialog::_doCreate()
 void LayerPropertiesDialog::_doMove()
 {
     if (auto moveto = _selectedLayer()) {
-        _desktop->selection->toLayer(moveto);
+        _desktop->getSelection()->toLayer(moveto);
+        DocumentUndo::done(_desktop->getDocument(), _("Move selection to layer"), INKSCAPE_ICON("selection-move-to-layer"));
     }
 }
 
@@ -227,44 +236,37 @@ void LayerPropertiesDialog::_setup()
 void LayerPropertiesDialog::_setup_position_controls()
 {
     if (!_layer || _desktop->getDocument()->getRoot() == _layer) {
-        // no layers yet, so option above/below/sublayer is useless
+        // no layers yet, so option above/below/sublayer is not applicable
         return;
     }
 
     _position_visible = true;
-    _dropdown_list = Gtk::ListStore::create(_dropdown_columns);
-    _layer_position_combo.set_model(_dropdown_list);
-    _layer_position_combo.pack_start(_label_renderer);
-    _layer_position_combo.set_cell_data_func(_label_renderer,
-                                             [=](Gtk::TreeModel::const_iterator const &row) {
-        _prepareLabelRenderer(row);
-    });
-
-    Gtk::ListStore::iterator row;
-    row = _dropdown_list->append();
-    row->set_value(_dropdown_columns.position, LPOS_ABOVE);
-    row->set_value(_dropdown_columns.name, Glib::ustring(_("Above current")));
-    _layer_position_combo.set_active(row);
-    row = _dropdown_list->append();
-    row->set_value(_dropdown_columns.position, LPOS_BELOW);
-    row->set_value(_dropdown_columns.name, Glib::ustring(_("Below current")));
-    row = _dropdown_list->append();
-    row->set_value(_dropdown_columns.position, LPOS_CHILD);
-    row->set_value(_dropdown_columns.name, Glib::ustring(_("As sublayer of current")));
-
-    int position = Preferences::get()->getIntLimited("/dialogs/layerProp/addLayerPosition", 0, 0, 2);
-    _layer_position_combo.set_active(position);
 
     _layer_position_label.set_label(_("Position:"));
     _layer_position_label.set_halign(Gtk::ALIGN_START);
-    _layer_position_label.set_valign(Gtk::ALIGN_CENTER);
-
-    _layer_position_combo.set_halign(Gtk::ALIGN_FILL);
-    _layer_position_combo.set_valign(Gtk::ALIGN_FILL);
-    _layer_position_combo.set_hexpand();
-    _layout_table.attach(_layer_position_combo, 1, 1, 1, 1);
-
+    _layer_position_label.set_valign(Gtk::ALIGN_START);
     _layout_table.attach(_layer_position_label, 0, 1, 1, 1);
+
+    int position = Preferences::get()->getIntLimited("/dialogs/layerProp/addLayerPosition", 0, 0, 2);
+
+    Gtk::RadioButtonGroup group;
+    _layer_position_radio[0].set_group(group);
+    _layer_position_radio[1].set_group(group);
+    _layer_position_radio[2].set_group(group);
+    _layer_position_radio[0].set_label(_("Above current"));
+    _layer_position_radio[1].set_label(_("As sublayer of current"));
+    _layer_position_radio[1].get_style_context()->add_class("indent");
+    _layer_position_radio[2].set_label(_("Below current"));
+    _layer_position_radio[0].set_active(position == LPOS_ABOVE);
+    _layer_position_radio[1].set_active(position == LPOS_CHILD);
+    _layer_position_radio[2].set_active(position == LPOS_BELOW);
+
+    auto& vbox = *Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL, 3);
+    UI::pack_start(vbox, _layer_position_radio[0], false, false);
+    UI::pack_start(vbox, _layer_position_radio[1], false, false);
+    UI::pack_start(vbox, _layer_position_radio[2], false, false);
+
+    _layout_table.attach(vbox, 1, 1, 1, 1);
 
     show_all_children();
 }
@@ -278,30 +280,32 @@ void LayerPropertiesDialog::_setup_layers_controls()
     _tree.set_model( _store );
     _tree.set_headers_visible(false);
 
-    auto *eyeRenderer = Gtk::manage(new UI::Widget::ImageToggler(INKSCAPE_ICON("object-visible"),
-                                                                 INKSCAPE_ICON("object-hidden")));
+    auto const eyeRenderer = Gtk::make_managed<UI::Widget::ImageToggler>(INKSCAPE_ICON("object-visible"),
+                                                                         INKSCAPE_ICON("object-hidden"));
     int visibleColNum = _tree.append_column("vis", *eyeRenderer) - 1;
     Gtk::TreeViewColumn *col = _tree.get_column(visibleColNum);
     if (col) {
         col->add_attribute(eyeRenderer->property_active(), _model->_colVisible);
     }
 
-    auto *renderer = Gtk::manage(new UI::Widget::ImageToggler(INKSCAPE_ICON("object-locked"),
-                                                              INKSCAPE_ICON("object-unlocked")));
+    auto const renderer = Gtk::make_managed<UI::Widget::ImageToggler>(INKSCAPE_ICON("object-locked"),
+                                                                      INKSCAPE_ICON("object-unlocked"));
     int lockedColNum = _tree.append_column("lock", *renderer) - 1;
     col = _tree.get_column(lockedColNum);
     if (col) {
         col->add_attribute(renderer->property_active(), _model->_colLocked);
     }
 
-    Gtk::CellRendererText *_text_renderer = Gtk::manage(new Gtk::CellRendererText());
+    auto const _text_renderer = Gtk::make_managed<Gtk::CellRendererText>();
     int nameColNum = _tree.append_column("Name", *_text_renderer) - 1;
     Gtk::TreeView::Column *_name_column = _tree.get_column(nameColNum);
     _name_column->add_attribute(_text_renderer->property_text(), _model->_colLabel);
 
     _tree.set_expander_column(*_tree.get_column(nameColNum));
-    _tree.signal_key_press_event().connect([=](GdkEventKey *ev) {return _handleKeyEvent(ev);}, false);
-    _tree.signal_button_press_event().connect_notify([=](GdkEventButton *b) {_handleButtonEvent(b);});
+
+    Controller::add_key<&LayerPropertiesDialog::on_key_pressed>(_tree, *this);
+    Controller::add_click(_tree, sigc::mem_fun(*this, &LayerPropertiesDialog::on_click_pressed),
+                          {}, Controller::Button::left);
 
     _scroller.add(_tree);
     _scroller.set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
@@ -354,8 +358,8 @@ void LayerPropertiesDialog::_addLayer(SPObject* layer, Gtk::TreeModel::Row* pare
         Gtk::TreeModel::Row row = *iter;
         row[_model->_colObject] = child;
         row[_model->_colLabel] = child->label() ? child->label() : child->getId();
-        row[_model->_colVisible] = SP_IS_ITEM(child) ? !SP_ITEM(child)->isHidden() : false;
-        row[_model->_colLocked] = SP_IS_ITEM(child) ? SP_ITEM(child)->isLocked() : false;
+        row[_model->_colVisible] = is<SPItem>(child) ? !cast_unsafe<SPItem>(child)->isHidden() : false;
+        row[_model->_colLocked] = is<SPItem>(child) ? cast_unsafe<SPItem>(child)->isLocked() : false;
 
         if (target && child == target) {
             _tree.expand_to_path(_store->get_path(iter));
@@ -380,24 +384,29 @@ SPObject* LayerPropertiesDialog::_selectedLayer()
     return obj;
 }
 
-bool LayerPropertiesDialog::_handleKeyEvent(GdkEventKey *event)
+gboolean LayerPropertiesDialog::on_key_pressed(GtkEventControllerKey const * const controller,
+                                           unsigned const keyval, unsigned const keycode,
+                                           GdkModifierType const state)
 {
-    switch (Inkscape::UI::Tools::get_latin_keyval(event)) {
+    auto const latin_keyval = Inkscape::UI::Tools::get_latin_keyval(controller, keyval, keycode, state);
+    switch (latin_keyval) {
         case GDK_KEY_Return:
         case GDK_KEY_KP_Enter: {
             _apply();
-            _close();
             return true;
         }
     }
     return false;
 }
 
-void LayerPropertiesDialog::_handleButtonEvent(GdkEventButton* event)
+Gtk::EventSequenceState LayerPropertiesDialog::on_click_pressed(Gtk::GestureMultiPress const & /*click*/,
+                                                                int const n_press, double /*x*/, double /*y*/)
 {
-    if ((event->type == GDK_2BUTTON_PRESS) && (event->button == 1)) {
+    if (n_press == 2) {
         _apply();
+        return Gtk::EVENT_SEQUENCE_CLAIMED;
     }
+    return Gtk::EVENT_SEQUENCE_NONE;
 }
 
 /** Formats the label for a given layer row
@@ -419,9 +428,7 @@ void LayerPropertiesDialog::_setLayer(SPObject *layer) {
     _layer = layer;
 }
 
-} // namespace Dialogs
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Dialog
 
 /*
   Local Variables:

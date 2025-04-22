@@ -2,8 +2,14 @@
 
 #include "dialog-manager.h"
 
-#include <gdkmm/monitor.h>
 #include <limits>
+#include <glibmm/keyfile.h>
+#include <glibmm/fileutils.h>
+#include <glibmm/miscutils.h>
+#include <glibmm/ustring.h>
+#include <gdkmm/monitor.h>
+#include <gtkmm/window.h>
+
 #ifdef G_OS_WIN32
 #include <filesystem>
 namespace filesystem = std::filesystem;
@@ -11,7 +17,7 @@ namespace filesystem = std::filesystem;
 // Waiting for compiler on MacOS to catch up to C++x17
 #include <boost/filesystem.hpp>
 namespace filesystem = boost::filesystem;
-#endif
+#endif // G_OS_WIN32
 
 #include "io/resource.h"
 #include "inkscape-application.h"
@@ -21,9 +27,7 @@ namespace filesystem = boost::filesystem;
 #include "enums.h"
 #include "preferences.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
+namespace Inkscape::UI::Dialog {
 
 std::optional<window_position_t> dm_get_window_position(Gtk::Window &window)
 {
@@ -57,6 +61,8 @@ void dm_restore_window_position(Gtk::Window &window, const window_position_t &po
     window.resize(position.width, position.height);
 }
 
+DialogManager::~DialogManager() = default;
+
 DialogManager &DialogManager::singleton()
 {
     static DialogManager dm;
@@ -66,21 +72,16 @@ DialogManager &DialogManager::singleton()
 // store complete dialog window state (including its container state)
 void DialogManager::store_state(DialogWindow &wnd)
 {
-    // get window's size and position
     if (auto pos = dm_get_window_position(wnd)) {
         if (auto container = wnd.get_container()) {
-            // get container's state
             auto state = container->get_container_state(&*pos);
-
-            // find dialogs hosted in this window
-            for (auto dlg : *container->get_dialogs()) {
-                _floating_dialogs[dlg.first] = state;
+            for (auto const &[name, dialog] : container->get_dialogs()) {
+                _floating_dialogs[name] = state;
             }
         }
     }
 }
 
-//
 bool DialogManager::should_open_floating(const Glib::ustring& dialog_type)
 {
     return _floating_dialogs.count(dialog_type) > 0;
@@ -93,7 +94,7 @@ void DialogManager::set_floating_dialog_visibility(DialogWindow* wnd, bool show)
         if (wnd->is_visible()) return;
 
         // wnd->present(); - not sure which one is better, show or present...
-        wnd->show();
+        wnd->set_visible(true);
         _hidden_dlg_windows.erase(wnd);
         // re-add it to application; hiding removed it
         if (auto app = InkscapeApplication::instance()) {
@@ -104,7 +105,7 @@ void DialogManager::set_floating_dialog_visibility(DialogWindow* wnd, bool show)
         if (!wnd->is_visible()) return;
 
         _hidden_dlg_windows.insert(wnd);
-        wnd->hide();
+        wnd->set_visible(false);
     }
 }
 
@@ -209,7 +210,7 @@ void DialogManager::save_dialogs_state(DialogContainer *docking_container)
     std::string filename = Glib::build_filename(Inkscape::IO::Resource::profile_path(), dialogs_state);
     try {
         keyfile->save_to_file(filename);
-    } catch (Glib::FileError &error) {
+    } catch (Glib::FileError const &error) {
         std::cerr << G_STRFUNC << ": " << error.what().raw() << std::endl;
     }
 }
@@ -233,6 +234,15 @@ void DialogManager::load_transient_state(Glib::KeyFile *file)
     }
 }
 
+bool file_exists(const std::string& filepath) {
+#ifdef G_OS_WIN32
+    bool exists = filesystem::exists(filesystem::u8path(filepath));
+#else
+    bool exists = filesystem::exists(filesystem::path(filepath));
+#endif
+    return exists;
+}
+
 // restore state of dialogs; populate docking container and open visible floating dialogs
 void DialogManager::restore_dialogs_state(DialogContainer *docking_container, bool include_floating)
 {
@@ -246,11 +256,7 @@ void DialogManager::restore_dialogs_state(DialogContainer *docking_container, bo
         auto keyfile = std::make_unique<Glib::KeyFile>();
         std::string filename = Glib::build_filename(Inkscape::IO::Resource::profile_path(), dialogs_state);
 
-#ifdef G_OS_WIN32
-        bool exists = filesystem::exists(filesystem::u8path(filename));
-#else
-        bool exists = filesystem::exists(filesystem::path(filename));
-#endif
+        bool exists = file_exists(filename);
 
         if (exists && keyfile->load_from_file(filename)) {
             // restore visible dialogs first; that state is up-to-date
@@ -260,16 +266,16 @@ void DialogManager::restore_dialogs_state(DialogContainer *docking_container, bo
             if (include_floating) {
                 try {
                     load_transient_state(keyfile.get());
-                } catch (Glib::Error &error) {
+                } catch (Glib::Error const &error) {
                     std::cerr << G_STRFUNC << ": transient state not loaded - " << error.what().raw() << std::endl;
                 }
             }
         }
         else {
             // state not available or not valid; prepare defaults
-            dialog_defaults();
+            dialog_defaults(docking_container);
         }
-    } catch (Glib::Error &error) {
+    } catch (Glib::Error const &error) {
         std::cerr << G_STRFUNC << ": dialogs state not loaded - " << error.what().raw() << std::endl;
     }
 }
@@ -282,21 +288,27 @@ void DialogManager::remove_dialog_floating_state(const Glib::ustring& dialog_typ
 }
 
 // apply defaults when dialog state cannot be loaded / doesn't exist:
-// here we can define which dialogs should by default be open floating rather then docked
-void DialogManager::dialog_defaults() {
-    std::shared_ptr<Glib::KeyFile> floating;
-    // strings are dialog types
-    _floating_dialogs["CloneTiler"] = floating;
-    _floating_dialogs["DocumentProperties"] = floating;
-    _floating_dialogs["FilterEffects"] = floating;
-    _floating_dialogs["Input"] = floating;
-    _floating_dialogs["Preferences"] = floating;
-    _floating_dialogs["XMLEditor"] = floating;
+// here we load defaults from dedicated ini file
+void DialogManager::dialog_defaults(DialogContainer* docking_container) {
+    auto keyfile = std::make_unique<Glib::KeyFile>();
+    // default/initial state used when running Inkscape for the first time
+    std::string filename = Inkscape::IO::Resource::get_filename(Inkscape::IO::Resource::UIS, "default-dialog-state.ini");
+
+    bool exists = file_exists(filename);
+
+    if (exists && keyfile->load_from_file(filename)) {
+        // populate info about floating dialogs, so when users try opening them,
+        // they will pop up in a window, not docked
+        load_transient_state(keyfile.get());
+        // create docked dialogs only, if any
+        docking_container->load_container_state(keyfile.get(), false);
+    }
+    else {
+        g_warning("Cannot load default dialog state %s", filename.c_str());
+    }
 }
 
-} // namespace Dialog
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Dialog
 
 /*
   Local Variables:

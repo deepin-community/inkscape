@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef INKSCAPE_LIVEPATHEFFECT_PARAMETER_ENUM_H
-#define INKSCAPE_LIVEPATHEFFECT_PARAMETER_ENUM_H
-
 /*
  * Inkscape::LivePathEffectParameters
  *
@@ -10,17 +7,17 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#ifndef INKSCAPE_LIVEPATHEFFECT_PARAMETER_ENUM_H
+#define INKSCAPE_LIVEPATHEFFECT_PARAMETER_ENUM_H
+
 #include <glibmm/ustring.h>
 
 #include "live_effects/effect.h"
 #include "live_effects/parameter/parameter.h"
-
 #include "ui/icon-names.h"
 #include "ui/widget/registered-enums.h"
 
-namespace Inkscape {
-
-namespace LivePathEffect {
+namespace Inkscape::LivePathEffect {
 
 template<typename E> class EnumParam : public Parameter {
 public:
@@ -40,23 +37,21 @@ public:
         sorted = sort;
     };
 
-    ~EnumParam() override = default;;
     EnumParam(const EnumParam&) = delete;
     EnumParam& operator=(const EnumParam&) = delete;
 
     Gtk::Widget * param_newWidget() override {
-        Inkscape::UI::Widget::RegisteredEnum<E> *regenum = Gtk::manage ( 
-            new Inkscape::UI::Widget::RegisteredEnum<E>( param_label, param_tooltip,
-                       param_key, *enumdataconv, *param_wr, param_effect->getRepr(), param_effect->getSPDoc(), sorted ) );
-
+        auto const regenum = Gtk::make_managed<Inkscape::UI::Widget::RegisteredEnum<E>>(param_label, param_tooltip,
+                       param_key, *enumdataconv, *param_wr, param_effect->getRepr(), param_effect->getSPDoc(), sorted);
         regenum->set_active_by_id(value);
         regenum->combobox()->setProgrammatically = false;
         regenum->combobox()->signal_changed().connect(sigc::mem_fun (*this, &EnumParam::_on_change_combo));
         regenum->set_undo_parameters(_("Change enumeration parameter"), INKSCAPE_ICON("dialog-path-effects"));
-        
-        return dynamic_cast<Gtk::Widget *> (regenum);
+        return regenum;
     };
+
     void _on_change_combo() { param_effect->refresh_widgets = true; }
+
     bool param_readSVGValue(const gchar * strvalue) override {
         if (!strvalue) {
             param_set_default();
@@ -107,9 +102,17 @@ private:
     const Util::EnumDataConverter<E> * enumdataconv;
 };
 
+}; // namespace Inkscape::LivePathEffect
 
-}; //namespace LivePathEffect
+#endif // INKSCAPE_LIVEPATHEFFECT_PARAMETER_ENUM_H
 
-}; //namespace Inkscape
-
-#endif
+/*
+  Local Variables:
+  mode:c++
+  c-file-style:"stroustrup"
+  c-file-offsets:((innamespace . 0)(inline-open . 0)(case-label . +))
+  indent-tabs-mode:nil
+  fill-column:99
+  End:
+*/
+// vim: filetype=cpp:expandtab:shiftwidth=4:tabstop=8:softtabstop=4:fileencoding=utf-8:textwidth=99 :

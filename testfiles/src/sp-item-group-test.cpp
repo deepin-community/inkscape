@@ -10,10 +10,12 @@
  */
 
 #include <gtest/gtest.h>
-#include <src/document.h>
-#include <src/inkscape.h>
-#include <src/live_effects/effect.h>
-#include <src/object/sp-lpe-item.h>
+
+#include "document.h"
+#include "inkscape.h"
+#include "live_effects/effect.h"
+#include "object/sp-item-group.h"
+#include "object/sp-lpe-item.h"
 
 using namespace Inkscape;
 using namespace Inkscape::LivePathEffect;
@@ -39,7 +41,7 @@ TEST_F(SPGroupTest, applyingPowerClipEffectToGroupWithoutClipIsIgnored)
 
     SPDocument *doc = SPDocument::createNewDocFromMem(svg.c_str(), svg.size(), true);
 
-    auto group = dynamic_cast<SPGroup *>(doc->getObjectById("group1"));
+    auto group = cast<SPGroup>(doc->getObjectById("group1"));
     Effect::createAndApply(POWERCLIP, doc, group);
 
     ASSERT_FALSE(group->hasPathEffect());

@@ -1,6 +1,6 @@
 # coding=utf-8
 
-from inkex.colors import Color, ColorError, ColorIdError, is_color
+from inkex.colors import Color, ColorError, ColorIdError, hsv_to_hsl, is_color
 from inkex.tester import TestCase
 
 
@@ -152,6 +152,12 @@ class ColorTest(TestCase):
         color = Color("hsl(0, 131, 10)")
         self.assertEqual(color.to_rgb(), [15, 4, 4])
         self.assertEqual(color.to_rgba(), [15, 4, 4, 1.0])
+
+    def test_hsv_hsl_conversion(self):
+        """Examples from https://en.wikipedia.org/wiki/HSL_and_HSV#Examples"""
+        self.assertEqual(hsv_to_hsl(120, 1, 0.5), (120, 1, 0.25))
+        self.assertEqual(hsv_to_hsl(300, 2 / 3, 0.75), (300, 0.5, 0.5))
+        self.assertEqual(hsv_to_hsl(0, 0, 1), (0, 0, 1))
 
     def test_hsl_grey(self):
         """Parse HSL Grey"""

@@ -5,10 +5,13 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include "lpe-vonkoch.h"
+
 #include <vector>
-#include "live_effects/lpe-vonkoch.h"
-// TODO due to internal breakage in glibmm headers, this must be last:
+
 #include <glibmm/i18n.h>
+
+#include "object/sp-lpe-item.h"
 
 namespace Inkscape {
 namespace LivePathEffect {
@@ -70,8 +73,7 @@ LPEVonKoch::LPEVonKoch(LivePathEffectObject *lpeobject) :
     maxComplexity.param_set_range(0, std::numeric_limits<gint>::max());
 }
 
-LPEVonKoch::~LPEVonKoch()
-= default;
+LPEVonKoch::~LPEVonKoch() = default;
 
 bool 
 LPEVonKoch::doOnOpen(SPLPEItem const *lpeitem)
@@ -286,7 +288,7 @@ LPEVonKoch::resetDefaults(SPItem const* item)
     Effect::resetDefaults(item);
 
     using namespace Geom;
-    original_bbox(SP_LPE_ITEM(item), false, true);
+    original_bbox(cast<SPLPEItem>(item), false, true);
 
     Point A,B;
     A[Geom::X] = boundingbox_X.min();

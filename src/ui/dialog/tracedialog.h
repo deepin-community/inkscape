@@ -1,58 +1,39 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-/** @file
- * @brief Bitmap tracing settings dialog
+/**
+ * @file
+ * Bitmap tracing settings dialog - second implementation.
  */
 /* Authors:
  *   Bob Jamison
- *   Other dudes from The Inkscape Organization
+ *   Marc Jeanmougin <marc.jeanmougin@telecom-paristech.fr>
+ *   PBS <pbs3141@gmail.com>
+ *   Others - see git history.
  *
- * Copyright (C) 2004, 2005 Authors
+ * Copyright (C) 2019-2022 Authors
+ *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef __TRACEDIALOG_H__
-#define __TRACEDIALOG_H__
+#ifndef INKSCAPE_UI_DIALOG_TRACE_H
+#define INKSCAPE_UI_DIALOG_TRACE_H
 
+#include <memory>
 #include "ui/dialog/dialog-base.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
+namespace Inkscape::UI::Dialog  {
 
-
-/**
- * A dialog that displays log messages
- */
 class TraceDialog : public DialogBase
 {
-
 public:
+    static std::unique_ptr<TraceDialog> create();
 
-    /**
-     * Constructor
-     */
+protected:
     TraceDialog() : DialogBase("/dialogs/trace", "Trace") {}
-
-
-    /**
-     * Factory method
-     */
-    static TraceDialog &getInstance();
-
-    /**
-     * Destructor
-     */
-    ~TraceDialog() override = default;;
-
-
 };
 
+} // namespace Inkscape::UI::Dialog
 
-} //namespace Dialog
-} //namespace UI
-} //namespace Inkscape
-
-#endif /* __TRACEDIALOG_H__ */
+#endif // INKSCAPE_UI_DIALOG_TRACE_H
 
 /*
   Local Variables:

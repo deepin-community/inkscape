@@ -15,7 +15,7 @@ class PrintingMarksBasicTest(ComparisonMixin, InkscapeExtensionTestMixin, TestCa
         CompareWithPathSpace(),
         CompareOrderIndependentStyle(),
     ]
-    compare_file = "svg/shapes.svg"
+    compare_file = ["svg/shapes.svg", "svg/empty_multipage.svg"]
     comparisons = {
         (
             "--crop_marks",

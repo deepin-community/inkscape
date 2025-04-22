@@ -1,43 +1,57 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-/** @file
- * @brief Clone tiling dialog
+/**
+ * @file
+ * Clone tiling dialog
  */
 /* Authors:
  *   bulia byak <buliabyak@users.sf.net>
+ *   Johan Engelen <goejendaagh@zonnet.nl>
+ *   Jon A. Cruz <jon@joncruz.org>
+ *   Abhishek Sharma
+ *   Romain de Bossoreille
  *
- * Copyright (C) 2004 Authors
+ * Copyright (C) 2004-2011 Authors
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
-#ifndef __SP_CLONE_TILER_H__
-#define __SP_CLONE_TILER_H__
+
+#ifndef SEEN_INKSCAPE_CLONE_TILER_H
+#define SEEN_INKSCAPE_CLONE_TILER_H
+
+#include <vector>
+#include <glibmm/refptr.h>
 
 #include "ui/dialog/dialog-base.h"
 #include "ui/widget/color-picker.h"
 
+namespace Glib {
+class ustring;
+} // namespace Glib
+
 namespace Gtk {
-    class Box;
-    class ComboBox;
-    class Grid;
-    class Notebook;
-    class SizeGroup;
-    class ToggleButton;
-}
+class Adjustment;
+class Box;
+class ComboBox;
+class Grid;
+class Notebook;
+class SizeGroup;
+class ToggleButton;
+class Widget;
+} // namespace Gtk
 
 class SPItem;
 class SPObject;
 
 namespace Geom {
-    class Rect;
-    class Affine;
-}
+class Affine;
+class Rect;
+} // namespace Geom
 
-namespace Inkscape {
-namespace UI {
+namespace Inkscape::UI {
 
 namespace Widget {
-    class CheckButtonInternal;
-    class UnitMenu;
-}
+class CheckButtonInternal;
+class UnitMenu;
+} // namespace Widget
 
 namespace Dialog {
 
@@ -47,10 +61,11 @@ public:
     CloneTiler();
     ~CloneTiler() override;
 
-    static CloneTiler &getInstance() { return *new CloneTiler(); }
     void show_page_trace();
+
 protected:
-    enum PickType {
+    enum PickType
+    {
         PICK_COLOR,
         PICK_OPACITY,
         PICK_R,
@@ -104,8 +119,8 @@ protected:
     void switch_to_fill();
     void unclump();
     void unit_changed();
-    void value_changed(Glib::RefPtr<Gtk::Adjustment> &adj, Glib::ustring const &pref);
-    void xy_changed(Glib::RefPtr<Gtk::Adjustment> &adj, Glib::ustring const &pref);
+    void value_changed(Glib::RefPtr<Gtk::Adjustment> const &adj, Glib::ustring const &pref);
+    void xy_changed   (Glib::RefPtr<Gtk::Adjustment> const &adj, Glib::ustring const &pref);
 
     Geom::Affine get_transform(
             // symmetry group
@@ -146,9 +161,6 @@ protected:
 
 
 private:
-    CloneTiler(CloneTiler const &d) = delete;
-    CloneTiler& operator=(CloneTiler const &d) = delete;
-
     UI::Widget::CheckButtonInternal *_b;
     UI::Widget::CheckButtonInternal *_cb_keep_bbox;
     Gtk::Notebook *nb = nullptr;
@@ -164,12 +176,11 @@ private:
     sigc::connection color_changed_connection;
     sigc::connection unitChangedConn;
 
-    // Variables that used to be set using GObject
     Gtk::Box *_buttons_on_tiles;
     Gtk::Box *_dotrace;
     Gtk::Label *_status;
-    std::vector<Gtk::Widget*> _rowscols;
-    std::vector<Gtk::Widget*> _widthheight;
+    std::vector<Gtk::Widget *> _rowscols;
+    std::vector<Gtk::Widget *> _widthheight;
 };
 
 enum {
@@ -193,11 +204,10 @@ enum {
 };
 
 } // namespace Dialog
-} // namespace UI
-} // namespace Inkscape
 
+} // namespace Inkscape::UI
 
-#endif
+#endif // SEEN_INKSCAPE_CLONE_TILER_H
 
 /*
   Local Variables:

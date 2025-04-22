@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-/** \file
- * \brief  Document Properties dialog
+/**
+ * @file
+ * Document properties dialog, Gtkmm-style.
  */
 /* Authors:
- *   Ralf Stephan <ralf@ark.in-berlin.de>
+ *   bulia byak <buliabyak@users.sf.net>
  *   Bryce W. Harrington <bryce@bryceharrington.org>
+ *   Lauris Kaplinski <lauris@kaplinski.com>
+ *   Jon Phillips <jon@rejon.org>
+ *   Ralf Stephan <ralf@ark.in-berlin.de> (Gtkmm)
+ *   Diederik van Lierop <mail@diedenrezi.nl>
+ *   Jon A. Cruz <jon@joncruz.org>
+ *   Abhishek Sharma
  *
- * Copyright (C) 2006-2008 Johan Engelen <johan@shouraizou.nl>
- * Copyright (C) 2004, 2005 Authors
+ * Copyright (C) 2006-2008 Johan Engelen  <johan@shouraizou.nl>
+ * Copyright (C) 2000 - 2008 Authors
  *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
@@ -16,41 +23,59 @@
 #define INKSCAPE_UI_DIALOG_DOCUMENT_PREFERENCES_H
 
 #ifdef HAVE_CONFIG_H
-# include "config.h"  // only include where actually required!
+#include "config.h" // only include where actually required!
 #endif
 
-#include <cstddef>
-#include <gtkmm/buttonbox.h>
-#include <gtkmm/comboboxtext.h>
-#include <gtkmm/liststore.h>
+#include <memory>
+#include <vector>
+#include <glibmm/refptr.h>
+#include <gtkmm/box.h>
+#include <gtkmm/button.h>
+#include <gtkmm/combobox.h>
+#include <gtkmm/entry.h>
+#include <gtkmm/label.h>
 #include <gtkmm/notebook.h>
+#include <gtkmm/scrolledwindow.h>
+#include <gtkmm/treemodel.h>
 #include <gtkmm/textview.h>
-#include <sigc++/sigc++.h>
+#include <gtkmm/treeview.h>
 
+#include "object/sp-grid.h"
 #include "ui/dialog/dialog-base.h"
 #include "ui/widget/licensor.h"
 #include "ui/widget/registered-widget.h"
 #include "ui/widget/registry.h"
-#include "ui/widget/tolerance-slider.h"
 #include "xml/helper-observer.h"
+#include "xml/node-observer.h"
+
+
+namespace Glib {
+class ustring;
+} // namespace Glib
+
+namespace Gtk {
+class ListStore;
+} // namespace gtk
 
 namespace Inkscape {
-    namespace XML {
-        class Node;
-    }
-    namespace UI {
-        namespace Widget {
-            class EntityEntry;
-            class NotebookPage;
-            class PageProperties;
-        }
-        namespace Dialog {
 
-typedef std::list<UI::Widget::EntityEntry*> RDElist;
+namespace XML { class Node; }
+
+namespace UI {
+
+namespace Widget {
+class EntityEntry;
+class NotebookPage;
+class PageProperties;
+} // namespace Widget
+
+namespace Dialog {
 
 class DocumentProperties : public DialogBase
 {
 public:
+    DocumentProperties();
+
     void  update_widgets();
     static DocumentProperties &getInstance();
     static void destroy();
@@ -58,7 +83,7 @@ public:
     void documentReplaced() override;
 
     void update() override;
-    void update_gridspage();
+    void rebuild_gridspage();
 
 protected:
     void  build_page();
@@ -70,19 +95,19 @@ protected:
     void  build_cms();
     void  build_scripting();
     void  build_metadata();
-    void  init();
+
+    void add_grid_widget(SPGrid *grid, bool select = false);
+    void remove_grid_widget(XML::Node &node);
 
     virtual void  on_response (int);
+
     void  populate_available_profiles();
     void  populate_linked_profiles_box();
     void  linkSelectedProfile();
     void  removeSelectedProfile();
-    void  onColorProfileSelectRow();
-    void  linked_profiles_list_button_release(GdkEventButton* event);
-    void  cms_create_popup_menu(Gtk::Widget& parent, sigc::slot<void> rem);
 
-    void  external_scripts_list_button_release(GdkEventButton* event);
-    void  embedded_scripts_list_button_release(GdkEventButton* event);
+    void  onColorProfileSelectRow();
+
     void  populate_script_lists();
     void  addExternalScript();
     void  browseExternalScript();
@@ -93,13 +118,12 @@ protected:
     void  onExternalScriptSelectRow();
     void  onEmbeddedScriptSelectRow();
     void  editEmbeddedScript();
-    void  external_create_popup_menu(Gtk::Widget& parent, sigc::slot<void> rem);
-    void  embedded_create_popup_menu(Gtk::Widget& parent, sigc::slot<void> rem);
     void  load_default_metadata();
     void  save_default_metadata();
     void update_viewbox(SPDesktop* desktop);
     void update_scale_ui(SPDesktop* desktop);
     void update_viewbox_ui(SPDesktop* desktop);
+    void set_content_scale(SPDesktop *desktop, double scale_x);
     void set_document_scale(SPDesktop* desktop, double scale_x);
     void set_viewbox_pos(SPDesktop* desktop, double x, double y);
     void set_viewbox_size(SPDesktop* desktop, double width, double height);
@@ -145,7 +169,8 @@ protected:
     AvailableProfilesColumns _AvailableProfilesListColumns;
     Glib::RefPtr<Gtk::ListStore> _AvailableProfilesListStore;
     Gtk::ComboBox _AvailableProfilesList;
-    bool _AvailableProfilesList_separator(const Glib::RefPtr<Gtk::TreeModel>& model, const Gtk::TreeModel::iterator& iter);
+    bool _AvailableProfilesList_separator(Glib::RefPtr<Gtk::TreeModel> const &model,
+                                          Gtk::TreeModel::const_iterator const &iter);
     class LinkedProfilesColumns : public Gtk::TreeModel::ColumnRecord
         {
         public:
@@ -158,14 +183,13 @@ protected:
     Glib::RefPtr<Gtk::ListStore> _LinkedProfilesListStore;
     Gtk::TreeView _LinkedProfilesList;
     Gtk::ScrolledWindow _LinkedProfilesListScroller;
-    Gtk::Menu _EmbProfContextMenu;
 
     //---------------------------------------------------------------
     Gtk::Button         _external_add_btn;
     Gtk::Button         _external_remove_btn;
     Gtk::Button         _embed_new_btn;
     Gtk::Button         _embed_remove_btn;
-    Gtk::ButtonBox      _embed_button_box;
+    Gtk::Box            _embed_button_box;
 
     class ExternalScriptsColumns : public Gtk::TreeModel::ColumnRecord
         {
@@ -189,8 +213,6 @@ protected:
     Gtk::TreeView _EmbeddedScriptsList;
     Gtk::ScrolledWindow _ExternalScriptsListScroller;
     Gtk::ScrolledWindow _EmbeddedScriptsListScroller;
-    Gtk::Menu _ExternalScriptsContextMenu;
-    Gtk::Menu _EmbeddedScriptsContextMenu;
     Gtk::Entry _script_entry;
     Gtk::TextView _EmbeddedContent;
     Gtk::ScrolledWindow _EmbeddedContentScroller;
@@ -199,44 +221,55 @@ protected:
     Gtk::Notebook   _grids_notebook;
     Gtk::Box        _grids_hbox_crea;
     Gtk::Label      _grids_label_crea;
-    Gtk::Button     _grids_button_new;
     Gtk::Button     _grids_button_remove;
-    Gtk::ComboBoxText _grids_combo_gridtype;
     Gtk::Label      _grids_label_def;
-    Gtk::Box        _grids_space;
     //---------------------------------------------------------------
 
-    RDElist _rdflist;
+    using RDFList = std::vector<std::unique_ptr<UI::Widget::EntityEntry>>;
+    RDFList _rdflist;
     UI::Widget::Licensor _licensor;
 
     Gtk::Box& _createPageTabLabel(const Glib::ustring& label, const char *label_image);
 
 private:
-    DocumentProperties();
-    ~DocumentProperties() override;
-
     // callback methods for buttons on grids page.
-    void onNewGrid();
+    void onNewGrid(GridType type);
     void onRemoveGrid();
 
     // callback for display unit change
     void display_unit_change(const Inkscape::Util::Unit* unit);
 
-    struct watch_connection {
-        ~watch_connection() { disconnect(); }
-        void connect(Inkscape::XML::Node* node, const Inkscape::XML::NodeEventVector& vector, void* data);
+    class WatchConnection : private XML::NodeObserver
+    {
+    public:
+        WatchConnection(DocumentProperties *dialog)
+            : _dialog(dialog)
+        {}
+
+        ~WatchConnection() override { disconnect(); }
+
+        void connect(Inkscape::XML::Node *node);
         void disconnect();
+
     private:
-        Inkscape::XML::Node* _node = nullptr;
-        void* _data = nullptr;
+        void notifyChildAdded(XML::Node &node, XML::Node &child, XML::Node *prev) final;
+        void notifyChildRemoved(XML::Node &node, XML::Node &child, XML::Node *prev) final;
+        void notifyAttributeChanged(XML::Node &node, GQuark name, Util::ptr_shared old_value,
+                                    Util::ptr_shared new_value) final;
+
+        Inkscape::XML::Node *_node{nullptr};
+        DocumentProperties *_dialog;
     };
+
     // nodes connected to listeners
-    watch_connection _namedview_connection;
-    watch_connection _root_connection;
+    WatchConnection _namedview_connection;
+    WatchConnection _root_connection;
 };
 
 } // namespace Dialog
+
 } // namespace UI
+
 } // namespace Inkscape
 
 #endif // INKSCAPE_UI_DIALOG_DOCUMENT_PREFERENCES_H

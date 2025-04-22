@@ -8,30 +8,23 @@
 
 #include "live_effects/parameter/satellite.h"
 
+#include <glibmm/i18n.h>
+#include <gtkmm/box.h>
+#include <gtkmm/button.h>
+#include <gtkmm/label.h>
+
 #include "bad-uri-exception.h"
-#include "desktop.h"
-#include "enums.h"
 #include "inkscape.h"
+
 #include "live_effects/effect.h"
 #include "live_effects/lpeobject.h"
-#include "message-stack.h"
-#include "selection-chemistry.h"
-#include "svg/svg.h"
-#include "ui/icon-loader.h"
-#include "ui/widget/point.h"
-#include "xml/repr.h"
-// clipboard support
-#include "ui/clipboard.h"
-// required for linking to other paths
-#include <glibmm/i18n.h>
-
-#include "bad-uri-exception.h"
 #include "object/sp-item.h"
 #include "object/uri.h"
-#include "ui/icon-names.h"
+#include "ui/clipboard.h"
+#include "ui/icon-loader.h"
+#include "ui/pack.h"
 
 namespace Inkscape {
-
 namespace LivePathEffect {
 
 SatelliteParam::SatelliteParam(const Glib::ustring &label, const Glib::ustring &tip, const Glib::ustring &key,
@@ -41,8 +34,7 @@ SatelliteParam::SatelliteParam(const Glib::ustring &label, const Glib::ustring &
     , last_transform(Geom::identity())
 {}
 
-SatelliteParam::~SatelliteParam()
-{
+SatelliteParam::~SatelliteParam() {
     quit_listening();
 }
 
@@ -67,16 +59,16 @@ bool SatelliteParam::param_readSVGValue(const gchar *strvalue)
         bool write = false;
         auto lpeitems = param_effect->getCurrrentLPEItems();
         Glib::ustring id_tmp;
-        if (!lpeitems.size() && !param_effect->is_applied && !param_effect->getSPDoc()->isSeeking()) {
+        if (lpeitems.empty() && !param_effect->is_applied && !param_effect->getSPDoc()->isSeeking()) {
             SPObject * old_ref = param_effect->getSPDoc()->getObjectByHref(strvalue);
             if (old_ref) {
-                SPObject * successor = old_ref->_successor;
+                SPObject * tmpsuccessor = old_ref->_tmpsuccessor;
                 // cast to effect is not possible now
                 if (!g_strcmp0("clone_original", param_effect->getLPEObj()->getAttribute("effect"))) {
                     id_tmp = strvalue;
                 }
-                if (successor) {
-                    id_tmp = successor->getId();
+                if (tmpsuccessor && tmpsuccessor->getId()) {
+                    id_tmp = tmpsuccessor->getId();
                     id_tmp.insert(id_tmp.begin(), '#');
                     write = true;
                 }
@@ -100,12 +92,11 @@ bool SatelliteParam::param_readSVGValue(const gchar *strvalue)
                 g_warning("%s", e.what());
                 lperef->detach();
             }
-        } else if (!lpeitems.size() && !param_effect->is_applied && !param_effect->getSPDoc()->isSeeking()) {
+        } else if (lpeitems.empty() && !param_effect->is_applied && !param_effect->getSPDoc()->isSeeking()) {
             param_write_to_repr("");
         }
         if (write) {
-            auto full = param_getSVGValue();
-            param_write_to_repr(full.c_str());
+            param_write_to_repr(param_getSVGValue().c_str());
         }
         return true;
     }
@@ -156,14 +147,13 @@ void SatelliteParam::link(Glib::ustring itemid)
     }
     auto *document = param_effect->getSPDoc();
     SPObject *object = document->getObjectById(itemid);
-
     if (object && object != getObject()) {
         itemid.insert(itemid.begin(), '#');
         param_write_to_repr(itemid.c_str());
     } else {
         param_write_to_repr("");
     }
-    DocumentUndo::done(document, _("Link item parameter to path"), "");
+    param_effect->makeUndoDone(_("Link item parameter to path"));
 }
 
 // SIGNALS
@@ -175,7 +165,7 @@ void SatelliteParam::start_listening(SPObject *to)
     }
     quit_listening();
     linked_changed_connection = lperef->changedSignal().connect(sigc::mem_fun(*this, &SatelliteParam::linked_changed));
-    SPItem *item = dynamic_cast<SPItem *>(to);
+    auto item = cast<SPItem>(to);
     if (item) {
         linked_released_connection = item->connectRelease(sigc::mem_fun(*this, &SatelliteParam::linked_released));
         linked_modified_connection = item->connectModified(sigc::mem_fun(*this, &SatelliteParam::linked_modified));
@@ -213,18 +203,20 @@ void SatelliteParam::linked_changed(SPObject *old_obj, SPObject *new_obj)
 
 void SatelliteParam::linked_released(SPObject *released)
 {
-    unlink();
-    param_effect->processObjects(LPE_UPDATE);
+    if (param_effect->getLPEObj()) {
+        unlink();
+        param_effect->processObjects(LPE_UPDATE);
+    }
 }
 
 
 void SatelliteParam::linked_modified(SPObject *linked_obj, guint flags)
 {
-    if (!_updating && (!param_effect->is_load || ownerlocator || !SP_ACTIVE_DESKTOP) &&
-        flags & (SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_STYLE_MODIFIED_FLAG |
-                 SP_OBJECT_CHILD_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG)) 
-    {
-        param_effect->getLPEObj()->requestModified(SP_OBJECT_MODIFIED_FLAG);
+    if (!_updating && flags & (SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_STYLE_MODIFIED_FLAG |
+                 SP_OBJECT_CHILD_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG)) {
+        if (!param_effect->is_load || ownerlocator || (!SP_ACTIVE_DESKTOP && param_effect->isReady())) {
+            param_effect->getLPEObj()->requestModified(SP_OBJECT_MODIFIED_FLAG);
+        }
         last_transform = Geom::identity();
         if (effectType() != CLONE_ORIGINAL) {
             update_satellites();
@@ -250,7 +242,16 @@ void SatelliteParam::on_link_button_click()
     if (effectType() == CLONE_ORIGINAL) {
         param_effect->is_load = false;
     }
-    auto itemid = cm->getFirstObjectID();
+    Glib::ustring itemid;
+    if (lookup) {
+        std::vector<Glib::ustring> clones = cm->getElementsOfType(nullptr, "svg:use", 2);
+        if (!clones.empty()) {
+            itemid = clones[0];
+        }
+    }
+    if (itemid.empty()) {
+        itemid = cm->getFirstObjectID();
+    }
     if (itemid.empty()) {
         return;
     }
@@ -260,27 +261,26 @@ void SatelliteParam::on_link_button_click()
 
 Gtk::Widget *SatelliteParam::param_newWidget()
 {
-    Gtk::Box *_widget = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
+    auto const _widget = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
     Gtk::Image *pIcon = Gtk::manage(sp_get_icon_image("edit-clone", Gtk::ICON_SIZE_BUTTON));
-    Gtk::Button *pButton = Gtk::manage(new Gtk::Button());
-    Gtk::Label *pLabel = Gtk::manage(new Gtk::Label(param_label));
-    _widget->pack_start(*pLabel, true, true);
+    auto const pButton = Gtk::make_managed<Gtk::Button>();
+    auto const pLabel = Gtk::make_managed<Gtk::Label>(param_label);
+    UI::pack_start(*_widget, *pLabel, true, true);
     pLabel->set_tooltip_text(param_tooltip);
     pButton->set_relief(Gtk::RELIEF_NONE);
-    pIcon->show();
+    pIcon->set_visible(true);
     pButton->add(*pIcon);
-    pButton->show();
+    pButton->set_visible(true);
     pButton->signal_clicked().connect(sigc::mem_fun(*this, &SatelliteParam::on_link_button_click));
-    _widget->pack_start(*pButton, true, true);
+    UI::pack_start(*_widget, *pButton, true, true);
     pButton->set_tooltip_text(_("Link to item on clipboard"));
 
     _widget->show_all_children();
 
-    return dynamic_cast<Gtk::Widget *>(_widget);
+    return _widget;
 }
 
 } /* namespace LivePathEffect */
-
 } /* namespace Inkscape */
 
 /*

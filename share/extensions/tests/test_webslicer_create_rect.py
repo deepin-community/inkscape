@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from webslicer_create_rect import CreateRect
 from inkex.tester import ComparisonMixin, TestCase
 

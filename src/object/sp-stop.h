@@ -7,9 +7,6 @@
  * Copyright (C) 2018 Authors
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
-#ifndef SEEN_SP_STOP_H
-#define SEEN_SP_STOP_H
-
 /** \file
  * SPStop: SVG <stop> implementation.
  */
@@ -17,26 +14,27 @@
  * Authors:
  */
 
-#include "sp-object.h"
+#ifndef SEEN_SP_STOP_H
+#define SEEN_SP_STOP_H
+
+#include <glibmm/ustring.h>
+
 #include "color.h"
+#include "sp-object.h"
 
 typedef unsigned int guint32;
 
-namespace Glib {
-class ustring;
-}
-
 /** Gradient stop. */
-class SPStop : public SPObject {
+class SPStop final : public SPObject {
 public:
-	SPStop();
-	~SPStop() override;
+    SPStop();
+    ~SPStop() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     /// \todo fixme: Should be SPSVGPercentage
     float offset;
 
-    Glib::ustring * path_string;
-    //SPCurve path;
+    Glib::ustring path_string;
 
     SPStop* getNextStop();
     SPStop* getPrevStop();
@@ -44,16 +42,16 @@ public:
     SPColor getColor() const;
     gfloat getOpacity() const;
     guint32 get_rgba32() const;
+    void setColor(SPColor color, double opacity);
+
+    static void setColorRepr(Inkscape::XML::Node *node, SPColor color, double opacity);
 
 protected:
-	void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
-	void set(SPAttr key, const char* value) override;
-        void modified(guint flags) override;
-	Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
+    void build(SPDocument* doc, Inkscape::XML::Node* repr) override;
+    void set(SPAttr key, const char* value) override;
+    void modified(guint flags) override;
+    Inkscape::XML::Node* write(Inkscape::XML::Document* doc, Inkscape::XML::Node* repr, unsigned int flags) override;
 };
-
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_STOP, SPStop)
-MAKE_SP_OBJECT_TYPECHECK_FUNCTIONS(SP_IS_STOP, SPStop)
 
 #endif /* !SEEN_SP_STOP_H */
 

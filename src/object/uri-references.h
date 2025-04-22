@@ -19,6 +19,7 @@
 #include <vector>
 #include <set>
 #include <sigc++/connection.h>
+#include <sigc++/signal.h>
 #include <sigc++/trackable.h>
 
 class SPObject;
@@ -104,7 +105,7 @@ public:
      *
      * @returns a signal
      */
-    sigc::signal<void, SPObject *, SPObject *> changedSignal() {
+    sigc::signal<void (SPObject *, SPObject *)> changedSignal() {
         return _changed_signal;
     }
 
@@ -140,7 +141,7 @@ private:
     SPObject *_obj;
     URI *_uri;
 
-    sigc::signal<void, SPObject *, SPObject *> _changed_signal;
+    sigc::signal<void (SPObject *, SPObject *)> _changed_signal;
 
     void _setObject(SPObject *object);
     void _release(SPObject *object);

@@ -70,7 +70,7 @@ namespace Extension {
 namespace Internal {
 
 
-SPDocument *WpgInput::open(Inkscape::Extension::Input * /*mod*/, const gchar * uri)
+SPDocument *WpgInput::open(Inkscape::Extension::Input * /*mod*/, const gchar * uri, bool /*is_importing*/)
 {
     #ifdef _WIN32
         // RVNGFileStream uses fopen() internally which unfortunately only uses ANSI encoding on Windows
@@ -117,7 +117,10 @@ SPDocument *WpgInput::open(Inkscape::Extension::Input * /*mod*/, const gchar * u
     
     // Set viewBox if it doesn't exist
     if (doc && !doc->getRoot()->viewBox_set) {
-        doc->setViewBox(Geom::Rect::from_xywh(0, 0, doc->getWidth().value(doc->getDisplayUnit()), doc->getHeight().value(doc->getDisplayUnit())));
+        // Scales the document to account for 72dpi scaling in librevenge(<=0.0.4)
+        doc->setWidth(Inkscape::Util::Quantity(doc->getWidth().quantity, "pt"), false);
+        doc->setHeight(Inkscape::Util::Quantity(doc->getHeight().quantity, "pt"), false);
+        doc->setViewBox(Geom::Rect::from_xywh(0, 0, doc->getWidth().value("pt"), doc->getHeight().value("pt")));
     }
     
     delete input;
@@ -138,7 +141,7 @@ void WpgInput::init() {
                 "<filetypename>" N_("WordPerfect Graphics (*.wpg)") "</filetypename>\n"
                 "<filetypetooltip>" N_("Vector graphics format used by Corel WordPerfect") "</filetypetooltip>\n"
             "</input>\n"
-        "</inkscape-extension>", new WpgInput());
+        "</inkscape-extension>", std::make_unique<WpgInput>());
     // clang-format on
 } // init
 

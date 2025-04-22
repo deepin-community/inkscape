@@ -15,8 +15,9 @@
 
 #include <2geom/rect.h>
 #include <2geom/transforms.h>
-#include <boost/utility.hpp>
+#include <boost/noncopyable.hpp>
 #include <cairo.h>
+
 typedef unsigned int guint32;
 
 namespace Inkscape {
@@ -113,7 +114,6 @@ public:
     }
     void setSource(guint32 rgba);
     void setSource(DrawingSurface *s);
-    void setSourceCheckerboard();
 
     void patternSetFilter(cairo_filter_t filter) {
         cairo_pattern_set_filter(cairo_get_source(_ct), filter);

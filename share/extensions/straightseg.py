@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 #
 # Copyright (C) 2005 Aaron Spike, aaron@ekips.org
@@ -18,6 +18,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
 """Straintens path segments (but doesn't turn them into lines)"""
+
 import inkex
 
 from inkex.bezier import percent_point

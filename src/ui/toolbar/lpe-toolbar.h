@@ -19,6 +19,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -30,12 +31,14 @@
 
 #include "toolbar.h"
 
+namespace Gtk {
+class Builder;
+class RadioButton;
+class ToggleButton;
+} // namespace Gtk
+
 class SPDesktop;
 class SPLPEItem;
-
-namespace Gtk {
-class RadioToolButton;
-}
 
 namespace Inkscape {
 class Selection;
@@ -55,14 +58,24 @@ class UnitTracker;
 }
 
 namespace Toolbar {
-class LPEToolbar : public Toolbar {
+
+class LPEToolbar final : public Toolbar
+{
+public:
+    LPEToolbar(SPDesktop *desktop);
+    ~LPEToolbar() override;
+
+    void set_mode(int mode);
+
 private:
+    Glib::RefPtr<Gtk::Builder> _builder;
     std::unique_ptr<UI::Widget::UnitTracker> _tracker;
-    std::vector<Gtk::RadioToolButton *> _mode_buttons;
-    Gtk::ToggleToolButton *_show_bbox_item;
-    Gtk::ToggleToolButton *_bbox_from_selection_item;
-    Gtk::ToggleToolButton *_measuring_item;
-    Gtk::ToggleToolButton *_open_lpe_dialog_item;
+
+    std::vector<Gtk::RadioButton *> _mode_buttons;
+    Gtk::ToggleButton &_show_bbox_btn;
+    Gtk::ToggleButton &_bbox_from_selection_btn;
+    Gtk::ToggleButton &_measuring_btn;
+    Gtk::ToggleButton &_open_lpe_dialog_btn;
     UI::Widget::ComboToolItem *_line_segment_combo;
     UI::Widget::ComboToolItem *_units_item;
 
@@ -79,21 +92,13 @@ private:
     void sel_modified(Inkscape::Selection *selection, guint flags);
     void sel_changed(Inkscape::Selection *selection);
     void change_line_segment_type(int mode);
-    void watch_ec(SPDesktop* desktop, UI::Tools::ToolBase* ec);
+    void watch_ec(SPDesktop* desktop, UI::Tools::ToolBase* tool);
 
     void toggle_show_bbox();
     void toggle_set_bbox();
     void toggle_show_measuring_info();
     void open_lpe_dialog();
-
-protected:
-    LPEToolbar(SPDesktop *desktop);
-
-public:
-    static GtkWidget * create(SPDesktop *desktop);
-    void set_mode(int mode);
 };
-
 }
 }
 }

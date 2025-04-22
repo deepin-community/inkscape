@@ -14,50 +14,44 @@
 
 #include "ui/widget/point.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+#include <gtkmm/adjustment.h>
+#include <gtkmm/box.h>
+
+#include "ui/pack.h"
+
+namespace Inkscape::UI::Widget {
 
 Point::Point(Glib::ustring const &label, Glib::ustring const &tooltip,
-               Glib::ustring const &suffix,
-               Glib::ustring const &icon,
-               bool mnemonic)
-    : Labelled(label, tooltip, new Gtk::Box(Gtk::ORIENTATION_VERTICAL), suffix, icon, mnemonic),
-      xwidget("X:",""),
-      ywidget("Y:","")
+             Glib::ustring const &icon,
+             bool mnemonic)
+    : Point{label, tooltip, {}, 0, icon, mnemonic}
 {
-    static_cast<Gtk::Box*>(_widget)->pack_start(xwidget, true, true);
-    static_cast<Gtk::Box*>(_widget)->pack_start(ywidget, true, true);
-    static_cast<Gtk::Box*>(_widget)->show_all_children();
 }
 
 Point::Point(Glib::ustring const &label, Glib::ustring const &tooltip,
                unsigned digits,
-               Glib::ustring const &suffix,
                Glib::ustring const &icon,
                bool mnemonic)
-    : Labelled(label, tooltip, new Gtk::Box(Gtk::ORIENTATION_VERTICAL), suffix, icon, mnemonic),
-      xwidget("X:","", digits),
-      ywidget("Y:","", digits)
+    : Point{label, tooltip, {}, digits, icon, mnemonic}
 {
-    static_cast<Gtk::Box*>(_widget)->pack_start(xwidget, true, true);
-    static_cast<Gtk::Box*>(_widget)->pack_start(ywidget, true, true);
-    static_cast<Gtk::Box*>(_widget)->show_all_children();
 }
 
 Point::Point(Glib::ustring const &label, Glib::ustring const &tooltip,
-               Glib::RefPtr<Gtk::Adjustment> &adjust,
+               Glib::RefPtr<Gtk::Adjustment> const &adjust,
                unsigned digits,
-               Glib::ustring const &suffix,
                Glib::ustring const &icon,
                bool mnemonic)
-    : Labelled(label, tooltip, new Gtk::Box(Gtk::ORIENTATION_VERTICAL), suffix, icon, mnemonic),
-      xwidget("X:","", adjust, digits),
-      ywidget("Y:","", adjust, digits)
+    : Labelled(label, tooltip, new Gtk::Box(Gtk::ORIENTATION_VERTICAL), icon, mnemonic),
+      xwidget("X:", {}, adjust, digits),
+      ywidget("Y:", {}, adjust, digits)
 {
-    static_cast<Gtk::Box*>(_widget)->pack_start(xwidget, true, true);
-    static_cast<Gtk::Box*>(_widget)->pack_start(ywidget, true, true);
-    static_cast<Gtk::Box*>(_widget)->show_all_children();
+    xwidget.drag_dest_unset();
+    ywidget.drag_dest_unset();
+
+    auto &box = dynamic_cast<Gtk::Box &>(*getWidget());
+    UI::pack_start(box, xwidget, true, true);
+    UI::pack_start(box, ywidget, true, true);
+    box.show_all_children();
 }
 
 unsigned Point::getDigits() const
@@ -110,7 +104,6 @@ int Point::getYValueAsInt() const
     return ywidget.getValueAsInt();
 }
 
-
 void Point::setDigits(unsigned digits)
 {
     xwidget.setDigits(digits);
@@ -152,21 +145,17 @@ void Point::clearProgrammatically()
     ywidget.setProgrammatically = false;
 }
 
-
-Glib::SignalProxy0<void> Point::signal_x_value_changed()
+Glib::SignalProxy<void> Point::signal_x_value_changed()
 {
     return xwidget.signal_value_changed();
 }
 
-Glib::SignalProxy0<void> Point::signal_y_value_changed()
+Glib::SignalProxy<void> Point::signal_y_value_changed()
 {
     return ywidget.signal_value_changed();
 }
 
-
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 /*
   Local Variables:

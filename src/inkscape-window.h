@@ -17,56 +17,49 @@
 #ifndef INKSCAPE_WINDOW_H
 #define INKSCAPE_WINDOW_H
 
-#include <gtkmm.h>
+#include <gtkmm/applicationwindow.h>
+#include "helper/auto-connection.h"
 
-#include "inkscape-application.h"
+namespace Gtk { class Box; }
 
+class InkscapeApplication;
 class SPDocument;
 class SPDesktop;
 class SPDesktopWidget;
 
-namespace Inkscape {
-namespace UI {
-namespace View {
-//  class SVGViewWidget;
-}
-}
-}
-
-
-class InkscapeWindow : public Gtk::ApplicationWindow {
-
+class InkscapeWindow final : public Gtk::ApplicationWindow {
 public:
     InkscapeWindow(SPDocument* document);
-    ~InkscapeWindow() override;
+    ~InkscapeWindow() final;
 
     SPDocument*      get_document()       { return _document; }
     SPDesktop*       get_desktop()        { return _desktop; }
     SPDesktopWidget* get_desktop_widget() { return _desktop_widget; }
-
     void change_document(SPDocument* document);
 
 private:
     InkscapeApplication *_app = nullptr;
-
-    SPDocument*          _document;
-    SPDesktop*           _desktop;
-    SPDesktopWidget*     _desktop_widget;
-
-    Gtk::Box*      _mainbox;
-    Gtk::MenuBar*  _menubar;
+    SPDocument*          _document = nullptr;
+    SPDesktop*           _desktop = nullptr;
+    SPDesktopWidget*     _desktop_widget = nullptr;
+    Gtk::Box*      _mainbox = nullptr;
+    bool _resized = false;
+    Inkscape::auto_connection _resize;
+    Inkscape::auto_connection _alloc;
 
     void setup_view();
+    void add_document_actions();
 
-    // Callbacks
 public:
-    bool on_key_press_event(GdkEventKey* event) override;
-private:
-    bool on_focus_in_event(GdkEventFocus* event) override;
-    bool on_delete_event(GdkEventAny* event) override;
-    bool on_configure_event(GdkEventConfigure *event) override;
+    // TODO: Can we avoid it being public? Probably yes in GTK4.
+    bool on_key_press_event(GdkEventKey* event) final;
 
-    // Helpers
+private:
+    bool on_window_state_changed(GdkEventWindowState const *event);
+    void on_is_active_changed();
+    bool on_delete_event(GdkEventAny* event) final;
+    bool on_configure_event(GdkEventConfigure *event) final;
+
     void update_dialogs();
 };
 

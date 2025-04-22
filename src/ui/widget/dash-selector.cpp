@@ -16,19 +16,20 @@
 #include "dash-selector.h"
 
 #include <cstring>
-#include <glibmm/i18n.h>
-#include <2geom/coord.h>
 #include <numeric>
+#include <2geom/coord.h>
+#include <glibmm/i18n.h>
+#include <gtkmm/adjustment.h>
+#include <gtkmm/liststore.h>
 
 #include "preferences.h"
-#include "display/cairo-utils.h"
 #include "style.h"
-
 #include "ui/dialog-events.h"
+#include "ui/pack.h"
+#include "ui/util.h"
+#include "ui/widget/spinbutton.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 gchar const *const DashSelector::_prefs_path = "/palette/dashes";
 
@@ -43,27 +44,28 @@ DashSelector::DashSelector()
     // TODO: find something more sensible here!!
     init_dashes();
 
+    // TODO: GTK4: Replace w/ MenuButton+GridView (not PopoverMenu as we dynamically render imgs)
     _dash_store = Gtk::ListStore::create(dash_columns);
     _dash_combo.set_model(_dash_store);
     _dash_combo.pack_start(_image_renderer);
     _dash_combo.set_cell_data_func(_image_renderer, sigc::mem_fun(*this, &DashSelector::prepareImageRenderer));
     _dash_combo.set_tooltip_text(_("Dash pattern"));
-    _dash_combo.show();
+    _dash_combo.set_visible(true);
     _dash_combo.signal_changed().connect( sigc::mem_fun(*this, &DashSelector::on_selection) );
     // show dashes in two columns to eliminate or minimize scrolling
     _dash_combo.set_wrap_width(2);
 
-    this->pack_start(_dash_combo, true, true, 0);
+    UI::pack_start(*this, _dash_combo, true, true);
 
     _offset = Gtk::Adjustment::create(0.0, 0.0, 1000.0, 0.1, 1.0, 0.0);
     _offset->signal_value_changed().connect(sigc::mem_fun(*this, &DashSelector::offset_value_changed));
-    _sb = new Inkscape::UI::Widget::SpinButton(_offset, 0.1, 2);
+    _sb = Gtk::make_managed<UI::Widget::SpinButton>(_offset, 0.1, 2);
     _sb->set_tooltip_text(_("Pattern offset"));
     sp_dialog_defocus_on_enter_cpp(_sb);
     _sb->set_width_chars(4);
-    _sb->show();
+    _sb->set_visible(true);
 
-    this->pack_start(*_sb, false, false, 0);
+    UI::pack_start(*this, *_sb, false, false);
 
     for (std::size_t i = 0; i < s_dashes.size(); ++i) {
         Gtk::TreeModel::Row row = *(_dash_store->append());
@@ -73,10 +75,7 @@ DashSelector::DashSelector()
     _pattern = &s_dashes.front();
 }
 
-DashSelector::~DashSelector() {
-    // FIXME: for some reason this doesn't get called; does the call to manage() in
-    // sp_stroke_style_line_widget_new() not processed correctly?
-}
+DashSelector::~DashSelector() = default;
 
 void DashSelector::prepareImageRenderer( Gtk::TreeModel::const_iterator const &row ) {
     // dashes are rendered on the fly to adapt to current theme colors
@@ -84,7 +83,8 @@ void DashSelector::prepareImageRenderer( Gtk::TreeModel::const_iterator const &r
     Cairo::RefPtr<Cairo::Surface> surface;
     if (index == 1) {
         // add the custom one as a second option; it'll show up at the top of second column
-        surface = sp_text_to_pixbuf((char *)"Custom");
+        // TRANSLATORS: 'Custom' here means, that user-defined dash pattern is specified in an entry box
+        surface = sp_text_to_pixbuf(_("Custom"));
     }
     else if (index < s_dashes.size()) {
         // add the dash to the combobox
@@ -121,13 +121,13 @@ void DashSelector::init_dashes() {
                 if (!style.stroke_dasharray.values.empty()) {
                     s_dashes.emplace_back(map_values(style.stroke_dasharray.values));
                 } else {
-                    s_dashes.emplace_back(std::vector<double>());
+                    s_dashes.emplace_back();
                 }
             }
         } else {
             g_warning("Missing stock dash definitions. DashSelector::init_dashes.");
             //  This code may never execute - a new preferences.xml is created for a new user.  Maybe if the user deletes dashes from preferences.xml?
-            s_dashes.emplace_back(std::vector<double>());
+            s_dashes.emplace_back();
         }
 
         std::vector<double> custom {1, 2, 1, 4}; // 'custom' dashes second on the list, so they are at the top of the second column in a combo box
@@ -182,11 +182,11 @@ Cairo::RefPtr<Cairo::Surface> DashSelector::sp_dash_to_pixbuf(const std::vector<
 
     auto height = _preview_height * device_scale;
     auto width = _preview_width * device_scale;
-    cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
+    auto surface = Cairo::ImageSurface::create(Cairo::FORMAT_ARGB32, width, height);
+    auto const s = surface->cobj();
     cairo_t *ct = cairo_create(s);
 
-    auto context = get_style_context();
-    Gdk::RGBA fg = context->get_color(get_state_flags());
+    auto const fg = get_foreground_color(get_style_context());
 
     cairo_set_line_width (ct, _preview_lineheight * device_scale);
     cairo_scale (ct, _preview_lineheight * device_scale, 1);
@@ -200,7 +200,7 @@ Cairo::RefPtr<Cairo::Surface> DashSelector::sp_dash_to_pixbuf(const std::vector<
     cairo_surface_flush(s);
 
     cairo_surface_set_device_scale(s, device_scale, device_scale);
-    return Cairo::RefPtr<Cairo::Surface>(new Cairo::Surface(s));
+    return surface;
 }
 
 /**
@@ -208,14 +208,15 @@ Cairo::RefPtr<Cairo::Surface> DashSelector::sp_dash_to_pixbuf(const std::vector<
  */
 Cairo::RefPtr<Cairo::Surface> DashSelector::sp_text_to_pixbuf(const char* text) {
     auto device_scale = get_scale_factor();
-    cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, _preview_width * device_scale, _preview_height * device_scale);
+    auto surface = Cairo::ImageSurface::create(Cairo::FORMAT_ARGB32, _preview_width  * device_scale,
+                                                                     _preview_height * device_scale);
+    auto const s = surface->cobj();
     cairo_t *ct = cairo_create(s);
 
     cairo_select_font_face (ct, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
     // todo: how to find default font face and size?
     cairo_set_font_size (ct, 12 * device_scale);
-    auto context = get_style_context();
-    Gdk::RGBA fg = context->get_color(get_state_flags());
+    auto const fg = get_foreground_color(get_style_context());
     cairo_set_source_rgb(ct, fg.get_red(), fg.get_green(), fg.get_blue());
     cairo_move_to (ct, 16.0 * device_scale, 13.0 * device_scale);
     cairo_show_text (ct, text);
@@ -224,7 +225,7 @@ Cairo::RefPtr<Cairo::Surface> DashSelector::sp_text_to_pixbuf(const char* text) 
     cairo_surface_flush(s);
 
     cairo_surface_set_device_scale(s, device_scale, device_scale);
-    return Cairo::RefPtr<Cairo::Surface>(new Cairo::Surface(s));
+    return surface;
 }
 
 void DashSelector::on_selection()
@@ -243,9 +244,7 @@ void DashSelector::offset_value_changed()
     changed_signal.emit();
 }
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 /*
   Local Variables:

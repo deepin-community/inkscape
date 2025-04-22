@@ -27,56 +27,66 @@
 #include "odf.h"
 
 //# System includes
-#include <cstdio>
-#include <ctime>
-#include <vector>
-#include <cmath>
+#include <clocale>                        // for setlocale, LC_NUMERIC
+#include <cmath>                          // for fabs, sqrt, atan, pow, M_PI
+#include <cstring>                        // for strcmp
+#include <optional>                       // for optional
+#include <utility>                        // for pair
+
+//# 2geom includes
+#include <2geom/affine.h>                 // for Affine
+#include <2geom/bezier-curve.h>           // for CubicBezier
+#include <2geom/coord.h>                  // for Dim2, X, Y
+#include <2geom/curve.h>                  // for Curve
+#include <2geom/pathvector.h>
+#include <2geom/transforms.h>
+#include "helper/geom.h"
+#include "helper/geom-curves.h"
 
 //# Inkscape includes
-#include "clear-n_.h"
-#include "inkscape.h"
-#include "display/curve.h"
-#include <2geom/pathvector.h>
-#include <2geom/curves.h>
-#include <2geom/transforms.h>
-#include <helper/geom.h>
-#include "helper/geom-curves.h"
-#include "extension/system.h"
+#include "attributes.h"                   // for SPAttr
+#include "color.h"                        // for SPColor
+#include "document.h"                     // for SPDocument
+#include "preferences.h"                  // for guint32
+#include "style-internal.h"               // for SPIPaint, SPIScale24, SPILe...
+#include "style.h"                        // for SPStyle
+#include "text-editing.h"                 // for te_get_layout
 
-#include "xml/repr.h"
-#include "xml/attribute-record.h"
-#include "object/sp-image.h"
-#include "object/sp-gradient.h"
-#include "object/sp-stop.h"
-#include "object/sp-linear-gradient.h"
-#include "object/sp-radial-gradient.h"
-#include "object/sp-root.h"
-#include "object/sp-path.h"
-#include "object/sp-text.h"
-#include "object/sp-flowtext.h"
-#include "object/uri.h"
-#include "style.h"
+#include "display/curve.h"                // for SPCurve
+#include "extension/extension.h"          // for Extension (ptr only), INKSC...
+#include "extension/internal/clear-n_.h"  // for N_
+#include "extension/internal/odf.h"       // for OdfOutput, GradientInfo
+#include "extension/system.h"             // for build_from_mem
+#include "helper/geom-curves.h"           // for is_straight_curve
+#include "inkscape-version.h"             // for version_string
+#include "io/stream/bufferstream.h"       // for BufferOutputStream
+#include "io/stream/stringstream.h"       // for StringOutputStream
+#include "io/sys.h"                       // for get_file_extension
+#include "libnrtype/Layout-TNG.h"         // for Layout
+#include "object/sp-flowtext.h"           // for SPFlowtext
+#include "object/sp-gradient.h"           // for SPGradient
+#include "object/sp-image.h"              // for SPImage
+#include "object/sp-item.h"               // for SPItem
+#include "object/sp-linear-gradient.h"    // for SPLinearGradient
+#include "object/sp-object.h"             // for SPObject
+#include "object/sp-radial-gradient.h"    // for SPRadialGradient
+#include "object/sp-root.h"               // for SPRoot
+#include "object/sp-shape.h"              // for SPShape
+#include "object/sp-stop.h"               // for SPStop
+#include "object/sp-text.h"               // for SPText
+#include "object/uri.h"                   // for URI
+#include "svg/svg-length.h"               // for SVGLength
+#include "util/cast.h"                    // for cast, is
+#include "util/ziptool.h"                 // for ZipFile
+#include "xml/node.h"                     // for Node, NodeType
 
-#include "svg/svg.h"
-#include "text-editing.h"
-#include "util/units.h"
+namespace Inkscape::Extension {
+class Output;
+} // namespace Inkscape::Extension
 
 
-#include "inkscape-version.h"
-#include "document.h"
-#include "extension/extension.h"
+namespace Inkscape::Extension::Internal {
 
-#include "io/stream/bufferstream.h"
-#include "io/stream/stringstream.h"
-#include "io/sys.h"
-#include <util/ziptool.h>
-#include <iomanip>
-namespace Inkscape
-{
-namespace Extension
-{
-namespace Internal
-{
 //# Shorthand notation
 typedef Inkscape::IO::BufferOutputStream BufferOutputStream;
 typedef Inkscape::IO::OutputStreamWriter OutputStreamWriter;
@@ -86,7 +96,6 @@ typedef Inkscape::IO::StringOutputStream StringOutputStream;
 //########################################################################
 //# C L A S S    SingularValueDecomposition
 //########################################################################
-#include <cmath>
 
 class SVDMatrix
 {
@@ -1015,7 +1024,7 @@ void OdfOutput::preprocess(ZipFile &zf, SPDocument *doc, Inkscape::XML::Node *no
     {
         return;
     }
-    if (!SP_IS_ITEM(reprobj))
+    if (!is<SPItem>(reprobj))
     {
         return;
     }
@@ -1297,7 +1306,7 @@ bool OdfOutput::processStyle(SPItem *item, const Glib::ustring &id, const Glib::
     }
     else if (style->fill.isPaintserver())
     {
-        SPGradient *gradient = SP_GRADIENT(SP_STYLE_FILL_SERVER(style));
+        auto gradient = cast<SPGradient>(SP_STYLE_FILL_SERVER(style));
         if (gradient)
         {
             si.fill = "gradient";
@@ -1324,7 +1333,7 @@ bool OdfOutput::processStyle(SPItem *item, const Glib::ustring &id, const Glib::
     }
     else if (style->stroke.isPaintserver())
     {
-        SPGradient *gradient = SP_GRADIENT(SP_STYLE_STROKE_SERVER(style));
+        auto gradient = cast<SPGradient>(SP_STYLE_STROKE_SERVER(style));
         if (gradient)
         {
             si.stroke = "gradient";
@@ -1411,7 +1420,7 @@ bool OdfOutput::processGradient(SPItem *item,
     }
 
     //## Gradient
-    SPGradient *gradient = SP_GRADIENT((checkFillGradient?(SP_STYLE_FILL_SERVER(style)) :(SP_STYLE_STROKE_SERVER(style))));
+    auto gradient = cast<SPGradient>((checkFillGradient?(SP_STYLE_FILL_SERVER(style)) :(SP_STYLE_STROKE_SERVER(style))));
 
     if (gradient == nullptr)
     {
@@ -1430,20 +1439,20 @@ bool OdfOutput::processGradient(SPItem *item,
     }
 
     Glib::ustring gradientName2;
-    if (SP_IS_LINEARGRADIENT(gradient))
+    if (is<SPLinearGradient>(gradient))
     {
         gi.style = "linear";
-        SPLinearGradient *linGrad = SP_LINEARGRADIENT(gradient);
+        auto linGrad = cast<SPLinearGradient>(gradient);
         gi.x1 = linGrad->x1.value;
         gi.y1 = linGrad->y1.value;
         gi.x2 = linGrad->x2.value;
         gi.y2 = linGrad->y2.value;
         gradientName2 = Glib::ustring::compose("ImportedLinearGradient%1", gradientTable.size());
     }
-    else if (SP_IS_RADIALGRADIENT(gradient))
+    else if (is<SPRadialGradient>(gradient))
     {
         gi.style = "radial";
-        SPRadialGradient *radGrad = SP_RADIALGRADIENT(gradient);
+        auto radGrad = cast<SPRadialGradient>(gradient);
         Geom::OptRect bbox = item->documentVisualBounds();
         gi.cx = (radGrad->cx.value-bbox->left())/bbox->width();
         gi.cy = (radGrad->cy.value-bbox->top())/bbox->height();
@@ -1565,11 +1574,11 @@ bool OdfOutput::writeTree(Writer &couts, Writer &souts,
     {
         return true;
     }
-    if (!SP_IS_ITEM(reprobj))
+    if (!is<SPItem>(reprobj))
     {
         return true;
     }
-    SPItem *item = SP_ITEM(reprobj);
+    auto item = cast<SPItem>(reprobj);
 
     Glib::ustring nodeName = node->name();
     Glib::ustring id       = getAttribute(node, "id");
@@ -1655,13 +1664,13 @@ bool OdfOutput::writeTree(Writer &couts, Writer &souts,
     //# ITEM DATA
     if (nodeName == "image" || nodeName == "svg:image")
     {
-        if (!SP_IS_IMAGE(item))
+        if (!is<SPImage>(item))
         {
             g_warning("<image> is not an SPImage.");
             return false;
         }
 
-        SPImage *img   = SP_IMAGE(item);
+        auto img = cast<SPImage>(item);
         double ix      = img->x.value;
         double iy      = img->y.value;
         double iwidth  = img->width.value;
@@ -1715,16 +1724,7 @@ bool OdfOutput::writeTree(Writer &couts, Writer &souts,
         return true;
     }
 
-    std::unique_ptr<SPCurve> curve;
-
-    if (auto shape = dynamic_cast<SPShape const *>(item)) {
-        curve = SPCurve::copy(shape->curve());
-    } else if (SP_IS_TEXT(item) || SP_IS_FLOWTEXT(item)) {
-        curve = te_get_layout(item)->convertToCurves();
-    }
-
-    if (curve)
-    {
+    auto process_curve = [&, this] (SPCurve const &curve) {
         //### Default <path> output
         couts.writeString("<draw:path ");
         if (!id.empty())
@@ -1748,18 +1748,25 @@ bool OdfOutput::writeTree(Writer &couts, Writer &souts,
                        bbox_width * 1000.0, bbox_height * 1000.0);
 
         couts.printf(" svg:d=\"");
-        int nrPoints = writePath(couts, curve->get_pathvector(),
+        int nrPoints = writePath(couts, curve.get_pathvector(),
                              tf, bbox_x, bbox_y);
         couts.writeString("\"");
 
         couts.writeString(">\n");
         couts.printf("    <!-- %d nodes -->\n", nrPoints);
         couts.writeString("</draw:path>\n\n");
+    };
+
+    if (auto shape = cast<SPShape>(item)) {
+        if (shape->curve()) {
+            process_curve(*shape->curve());
+        }
+    } else if (is<SPText>(item) || is<SPFlowtext>(item)) {
+        process_curve(te_get_layout(item)->convertToCurves());
     }
 
     return true;
 }
-
 
 /**
  * Write the header for the content.xml file
@@ -2088,7 +2095,7 @@ void OdfOutput::init()
                 "<filetypetooltip>" N_("OpenDocument drawing file") "</filetypetooltip>\n"
             "</output>\n"
         "</inkscape-extension>",
-        new OdfOutput());
+        std::make_unique<OdfOutput>());
     // clang-format on
 }
 
@@ -2099,15 +2106,13 @@ bool OdfOutput::check (Inkscape::Extension::Extension */*module*/)
 {
     /* We don't need a Key
     if (NULL == Inkscape::Extension::db.get(SP_MODULE_KEY_OUTPUT_POV))
-        return FALSE;
+        return false;
     */
 
-    return TRUE;
+    return true;
 }
 
-}  //namespace Internal
-}  //namespace Extension
-}  //namespace Inkscape
+}  //namespace Inkscape::Extension::Internal
 
 
 //########################################################################

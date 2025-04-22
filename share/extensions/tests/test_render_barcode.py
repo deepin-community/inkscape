@@ -19,6 +19,7 @@
 """
 Written to test the coding of generating barcodes.
 """
+
 from collections import defaultdict
 
 from barcode import get_barcode

@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef INKSCAPE_LPE_FILLET_CHAMFER_H
-#define INKSCAPE_LPE_FILLET_CHAMFER_H
-
 /*
  * Author(s):
  *     Jabiertxo Arraiza Cenoz <jabier.arraiza@marker.es>
@@ -12,6 +9,9 @@
  *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
+
+#ifndef INKSCAPE_LPE_FILLET_CHAMFER_H
+#define INKSCAPE_LPE_FILLET_CHAMFER_H
 
 #include "helper/geom-nodesatellite.h"
 #include "helper/geom-pathvector_nodesatellites.h"
@@ -46,7 +46,6 @@ public:
     //void convertUnit();
     void updateChamferSteps();
     void updateAmount();
-    void refreshKnots();
     bool helperpath;
     NodeSatelliteArrayParam nodesatellites_param;
 
@@ -62,7 +61,6 @@ private:
     BoolParam hide_knots;
     BoolParam apply_no_radius;
     BoolParam apply_with_radius;
-    bool _degenerate_hide;
     PathVectorNodeSatellites *_pathvector_nodesatellites;
     Geom::PathVector _hp;
     Glib::ustring previous_unit;

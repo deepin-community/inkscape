@@ -23,7 +23,6 @@ MessageParam::MessageParam( const Glib::ustring& label, const Glib::ustring& tip
                       Effect* effect, const gchar * default_message, Glib::ustring  legend, 
                       Gtk::Align halign, Gtk::Align valign, double marginstart, double marginend)
     : Parameter(label, tip, key, wr, effect),
-      message(default_message),
       defmessage(default_message),
       _legend(std::move(legend)),
       _halign(halign),
@@ -41,7 +40,7 @@ MessageParam::MessageParam( const Glib::ustring& label, const Glib::ustring& tip
 void
 MessageParam::param_set_default()
 {
-    param_setValue(defmessage);
+    // do nothing
 }
 
 void 
@@ -50,17 +49,22 @@ MessageParam::param_update_default(const gchar * default_message)
     defmessage = default_message;
 }
 
-bool
-MessageParam::param_readSVGValue(const gchar * strvalue)
+bool MessageParam::param_readSVGValue(const gchar *strvalue)
 {
-    param_setValue(strvalue);
+    if (g_strcmp0(strvalue, "")) {
+        param_setValue(strvalue);
+    } else {
+        // do nothing if the strvalue is empty, stick to default value
+    }
     return true;
 }
 
 Glib::ustring
 MessageParam::param_getSVGValue() const
 {
-    return message;
+    return "";  // we dorn want to store messages in the SVG we store in LPE volatile
+    // variables and get content with
+    // param_getDefaultSVGValue() instead
 }
 
 Glib::ustring
@@ -82,34 +86,32 @@ MessageParam::param_set_min_height(int height)
 Gtk::Widget *
 MessageParam::param_newWidget()
 {
-    Gtk::Frame * frame = new Gtk::Frame (_legend);
-    Gtk::Widget * widg_frame = frame->get_label_widget();
-
+    auto const frame = Gtk::make_managed<Gtk::Frame>(_legend);
+    auto const widg_frame = frame->get_label_widget();
     widg_frame->set_margin_end(_marginend);
     widg_frame->set_margin_start(_marginstart);
-    _label = new Gtk::Label (message, Gtk::ALIGN_END);
+
+    _label = Gtk::make_managed<Gtk::Label>(defmessage, Gtk::ALIGN_END);
     _label->set_use_underline (true);
     _label->set_use_markup();
     _label->set_line_wrap(true);
     _label->set_size_request(-1, _min_height);
-    Gtk::Widget* widg_label = dynamic_cast<Gtk::Widget *> (_label);
-    widg_label->set_halign(_halign);
-    widg_label->set_valign(_valign);
-    widg_label->set_margin_end(_marginend);
-    widg_label->set_margin_start(_marginstart);
-    frame->add(*widg_label);
-    return dynamic_cast<Gtk::Widget *> (frame);
+    _label->set_halign(_halign);
+    _label->set_valign(_valign);
+    _label->set_margin_end(_marginend);
+    _label->set_margin_start(_marginstart);
+
+    frame->add(*_label);
+    return frame;
 }
 
-void
-MessageParam::param_setValue(const gchar * strvalue)
+void MessageParam::param_setValue(const gchar *strvalue)
 {
-    if (strcmp(strvalue, message) != 0) {
+    if (g_strcmp0(strvalue, defmessage.c_str())) {
         param_effect->refresh_widgets = true;
     }
-    message = strvalue;
+    defmessage = strvalue;
 }
-
 
 } /* namespace LivePathEffect */
 

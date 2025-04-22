@@ -34,17 +34,17 @@ int
 path_simplify(SPItem *item, float threshold, bool justCoalesce, double size)
 {
     //If this is a group, do the children instead
-    SPGroup* group = dynamic_cast<SPGroup *>(item);
+    auto group = cast<SPGroup>(item);
     if (group) {
         int pathsSimplified = 0;
-        std::vector<SPItem*> items = sp_item_group_item_list(group);
+        std::vector<SPItem*> items = group->item_list();
         for (auto item : items) {
             pathsSimplified += path_simplify(item, threshold, justCoalesce, size);
         }
         return pathsSimplified;
     }
 
-    SPPath* path = dynamic_cast<SPPath *>(item);
+    auto path = cast<SPPath>(item);
     if (!path) {
         return 0;
     }
@@ -77,8 +77,8 @@ path_simplify(SPItem *item, float threshold, bool justCoalesce, double size)
     // SPLivarot: Start  -----------------
 
     // Get path to simplify (note that the path *before* LPE calculation is needed)
-    Path *orig = Path_for_item_before_LPE(item, false);
-    if (orig == nullptr) {
+    auto orig = Path_for_item_before_LPE(item, false);
+    if (!orig) {
         return 0;
     }
 
@@ -90,23 +90,22 @@ path_simplify(SPItem *item, float threshold, bool justCoalesce, double size)
     }
 
     // Path
-    gchar *str = orig->svg_dump_path();
+    auto str = orig->svg_dump_path();
 
     // SPLivarot: End  -------------------
 
     char const *patheffect = item->getRepr()->attribute("inkscape:path-effect");
     if (patheffect) {
-        item->setAttribute("inkscape:original-d", str);
+        item->setAttribute("inkscape:original-d", str.c_str());
     } else {
-        item->setAttribute("d", str);
+        item->setAttribute("d", str.c_str());
     }
-    g_free(str);
 
     // reapply the transform
     item->doWriteTransform(transform);
 
-    // clean up
-    if (orig) delete orig;
+    // remove irrelevant old nodetypes attibute
+    item->removeAttribute("sodipodi:nodetypes");
 
     return 1;
 }

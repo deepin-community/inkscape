@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /** \file
- *
  * Inkscape::Extension::Extension:
+ * Frontend to certain, possibly pluggable, actions.
  * the ability to have features that are more modular so that they
  * can be added and removed easily.  This is the basis for defining
  * those actions.
  */
-
 /*
  * Authors:
  *   Ted Gould <ted@gould.cx>
@@ -17,17 +16,12 @@
  */
 
 #include "extension.h"
-#include "implementation/implementation.h"
-#include "implementation/script.h"
-#include "implementation/xslt.h"
 
-#include <glibmm/fileutils.h>
-#include <glibmm/miscutils.h>
-
-#include <glib/gstdio.h>
+#include <utility>
 #include <glib/gprintf.h>
-
+#include <glibmm/fileutils.h>
 #include <glibmm/i18n.h>
+#include <glibmm/miscutils.h>
 #include <gtkmm/box.h>
 #include <gtkmm/frame.h>
 #include <gtkmm/grid.h>
@@ -35,22 +29,25 @@
 
 #include "db.h"
 #include "dependency.h"
+#include "document.h"
+#include "processing-action.h"
+#include "implementation/implementation.h"
+#include "implementation/script.h"
+#include "implementation/xslt.h"
 #include "inkscape.h"
-#include "timer.h"
-
 #include "io/resource.h"
 #include "io/sys.h"
-
 #include "prefdialog/parameter.h"
+#include "prefdialog/prefdialog.h"
 #include "prefdialog/widget.h"
-
+#include "timer.h"
+#include "ui/dialog-run.h"
+#include "ui/pack.h"
+#include "ui/util.h"
+#include "xml/node.h"
 #include "xml/repr.h"
 
-
-namespace Inkscape {
-namespace Extension {
-
-/* Inkscape::Extension::Extension */
+namespace Inkscape::Extension {
 
 FILE *Extension::error_file = nullptr;
 
@@ -66,19 +63,15 @@ FILE *Extension::error_file = nullptr;
     not related to the module directly.  If the Repr does not include
     a name and an ID the module will be left in an errored state.
 */
-Extension::Extension(Inkscape::XML::Node *in_repr, Implementation::Implementation *in_imp, std::string *base_directory)
-    : _gui(true)
-    , execution_env(nullptr)
+Extension::Extension(Inkscape::XML::Node *in_repr, ImplementationHolder implementation, std::string *base_directory)
+    : imp{std::move(implementation)}
 {
+    if (!imp) {
+        throw no_implementation_for_extension();
+    }
     g_return_if_fail(in_repr); // should be ensured in system.cpp
     repr = in_repr;
     Inkscape::GC::anchor(repr);
-
-    if (in_imp == nullptr) {
-        imp = new Implementation::Implementation();
-    } else {
-        imp = in_imp;
-    }
 
     if (base_directory) {
         _base_directory = *base_directory;
@@ -86,7 +79,7 @@ Extension::Extension(Inkscape::XML::Node *in_repr, Implementation::Implementatio
 
     // get name of the translation catalog ("gettext textdomain") that the extension wants to use for translations
     // and lookup the locale directory for it
-    const char *translationdomain = repr->attribute("translationdomain");
+    char const *translationdomain = repr->attribute("translationdomain");
     if (translationdomain) {
         _translationdomain = translationdomain;
     } else {
@@ -106,7 +99,7 @@ Extension::Extension(Inkscape::XML::Node *in_repr, Implementation::Implementatio
     // Read XML tree and parse extension
     Inkscape::XML::Node *child_repr = repr->firstChild();
     while (child_repr) {
-        const char *chname = child_repr->name();
+        char const *chname = child_repr->name();
         if (!strncmp(chname, INKSCAPE_EXTENSION_NS_NC, strlen(INKSCAPE_EXTENSION_NS_NC))) {
             chname += strlen(INKSCAPE_EXTENSION_NS);
         }
@@ -115,39 +108,41 @@ Extension::Extension(Inkscape::XML::Node *in_repr, Implementation::Implementatio
         }
 
         if (!strcmp(chname, "id")) {
-            const char *id = child_repr->firstChild() ? child_repr->firstChild()->content() : nullptr;
+            char const *id = child_repr->firstChild() ? child_repr->firstChild()->content() : nullptr;
             if (id) {
-                _id = g_strdup(id);
+                _id = id;
             } else {
                 throw extension_no_id();
             }
         } else if (!strcmp(chname, "name")) {
-            const char *name = child_repr->firstChild() ? child_repr->firstChild()->content() : nullptr;
+            char const *name = child_repr->firstChild() ? child_repr->firstChild()->content() : nullptr;
             if (name) {
-                _name = g_strdup(name);
+                _name = name;
             } else {
                 throw extension_no_name();
             }
         } else if (InxWidget::is_valid_widget_name(chname)) {
             InxWidget *widget = InxWidget::make(child_repr, this);
             if (widget) {
-                _widgets.push_back(widget);
+                _widgets.emplace_back(widget);
             }
+        } else if (!strcmp(chname, "action")) {
+            _actions.emplace_back(child_repr);
         } else if (!strcmp(chname, "dependency")) {
-            _deps.push_back(new Dependency(child_repr, this));
+            _deps.push_back(std::make_unique<Dependency>(child_repr, this));
         } else if (!strcmp(chname, "script")) { // TODO: should these be parsed in their respective Implementation?
-            for (Inkscape::XML::Node *child = child_repr->firstChild(); child != nullptr; child = child->next()) {
+            for (auto child = child_repr->firstChild(); child != nullptr; child = child->next()) {
                 if (child->type() == Inkscape::XML::NodeType::ELEMENT_NODE) { // skip non-element nodes (see LP #1372200)
-                    const char *interpreted = child->attribute("interpreter");
+                    char const *interpreted = child->attribute("interpreter");
                     Dependency::type_t type = interpreted ? Dependency::TYPE_FILE : Dependency::TYPE_EXECUTABLE;
-                    _deps.push_back(new Dependency(child, this, type));
+                    _deps.push_back(std::make_unique<Dependency>(child, this, type));
                     break;
                 }
             }
         } else if (!strcmp(chname, "xslt")) { // TODO: should these be parsed in their respective Implementation?
-            for (Inkscape::XML::Node *child = child_repr->firstChild(); child != nullptr; child = child->next()) {
+            for (auto child = child_repr->firstChild(); child != nullptr; child = child->next()) {
                 if (child->type() == Inkscape::XML::NodeType::ELEMENT_NODE) { // skip non-element nodes (see LP #1372200)
-                    _deps.push_back(new Dependency(child, this, Dependency::TYPE_FILE));
+                    _deps.push_back(std::make_unique<Dependency>(child, this, Dependency::TYPE_FILE));
                     break;
                 }
             }
@@ -160,55 +155,24 @@ Extension::Extension(Inkscape::XML::Node *in_repr, Implementation::Implementatio
     }
 
     // all extensions need an ID and a name
-    if (!_id) {
+    if (_id.empty()) {
         throw extension_no_id();
     }
-    if (!_name) {
+    if (_name.empty()) {
         throw extension_no_name();
     }
 
     // filter out extensions that are not compatible with the current platform
 #ifndef _WIN32
-    if (strstr(_id, "win32")) {
+    if (_id.find("win32") != _id.npos) {
         throw extension_not_compatible();
     }
 #endif
-
-    // finally register the extension if all checks passed
-    db.register_ext (this);
 }
 
-/**
-    \return   none
-    \brief    Destroys the Extension
-
-    This function frees all of the strings that could be attached
-    to the extension and also unreferences the repr.  This is better
-    than freeing it because it may (I wouldn't know why) be referenced
-    in another place.
-*/
-Extension::~Extension ()
+Extension::~Extension()
 {
-    set_state(STATE_UNLOADED);
-
-    db.unregister_ext(this);
-
     Inkscape::GC::release(repr);
-
-    g_free(_id);
-    g_free(_name);
-
-    delete timer;
-    timer = nullptr;
-
-    for (auto widget : _widgets) {
-        delete widget;
-    }
-
-    for (auto & _dep : _deps) {
-        delete _dep;
-    }
-    _deps.clear();
 }
 
 /**
@@ -233,35 +197,24 @@ Extension::set_state (state_t in_state)
                 if (imp->load(this))
                     _state = STATE_LOADED;
 
-                if (timer != nullptr) {
-                    delete timer;
-                }
-                timer = new ExpirationTimer(this);
-
+                timer = std::make_unique<ExpirationTimer>(this);
                 break;
+
             case STATE_UNLOADED:
                 imp->unload(this);
                 _state = STATE_UNLOADED;
-
-                if (timer != nullptr) {
-                    delete timer;
-                    timer = nullptr;
-                }
+                timer.reset();
                 break;
+
             case STATE_DEACTIVATED:
                 _state = STATE_DEACTIVATED;
-
-                if (timer != nullptr) {
-                    delete timer;
-                    timer = nullptr;
-                }
+                timer.reset();
                 break;
+
             default:
                 break;
         }
     }
-
-    return;
 }
 
 /**
@@ -303,23 +256,23 @@ Extension::loaded ()
 bool
 Extension::check ()
 {
-    const char * inx_failure = _("  This is caused by an improper .inx file for this extension."
-                                 "  An improper .inx file could have been caused by a faulty installation of Inkscape.");
+    char const *inx_failure = _("  This is caused by an improper .inx file for this extension."
+                                "  An improper .inx file could have been caused by a faulty installation of Inkscape.");
 
     if (repr == nullptr) {
-        printFailure(Glib::ustring(_("the XML description of it got lost.")) + inx_failure);
+        printFailure(Glib::ustring(_("the XML description of it got lost.")) += inx_failure);
         return false;
     }
-    if (imp == nullptr) {
-        printFailure(Glib::ustring(_("no implementation was defined for the extension.")) + inx_failure);
+    if (!imp) {
+        printFailure(Glib::ustring(_("no implementation was defined for the extension.")) += inx_failure);
         return false;
     }
 
     bool retval = true;
-    for (auto _dep : _deps) {
-        if (_dep->check() == false) {
+    for (auto const &dep : _deps) {
+        if (dep->check() == false) {
             printFailure(Glib::ustring(_("a dependency was not met.")));
-            error_file_write(_dep->info_string());
+            error_file_write(dep->info_string());
             retval = false;
         }
     }
@@ -339,7 +292,7 @@ Extension::check ()
     Real simple, just put everything into \c error_file.
 */
 void
-Extension::printFailure (Glib::ustring reason)
+Extension::printFailure(Glib::ustring const &reason)
 {
     _error_reason = Glib::ustring::compose(_("Extension \"%1\" failed to load because %2"), _name, reason);
     error_file_write(_error_reason);
@@ -359,20 +312,20 @@ Extension::get_repr ()
     \return  The textual id of this extension
     \brief   Get the ID of this extension - not a copy don't delete!
 */
-gchar *
+char const *
 Extension::get_id () const
 {
-    return _id;
+    return _id.c_str();
 }
 
 /**
     \return  The textual name of this extension
     \brief   Get the name of this extension - not a copy don't delete!
 */
-const gchar *
+char const *
 Extension::get_name () const
 {
-    return get_translation(_name, nullptr);
+    return get_translation(_name.c_str(), nullptr);
 }
 
 /**
@@ -397,10 +350,7 @@ Extension::deactivate ()
 
     /* Removing the old implementation, and making this use the default. */
     /* This should save some memory */
-    delete imp;
-    imp = new Implementation::Implementation();
-
-    return;
+    imp = ImplementationHolder();
 }
 
 /**
@@ -426,9 +376,9 @@ Extension::deactivated ()
   *
   * @return Absolute path of the dependency file
   */
-std::string Extension::get_dependency_location(const char *name)
+std::string Extension::get_dependency_location(char const *name)
 {
-    for (auto dep : _deps) {
+    for (auto const &dep : _deps) {
         if (!strcmp(name, dep->get_name())) {
             return dep->get_path();
         }
@@ -500,20 +450,29 @@ void Extension::lookup_translation_catalog() {
     std::string search_name;
     search_name += _translationdomain;
     search_name += ".mo";
-    for (auto locale_dir : locale_dirs) {
+    for (auto &&locale_dir : locale_dirs) {
         if (!Glib::file_test(locale_dir, Glib::FILE_TEST_IS_DIR)) {
             continue;
         }
 
         if (_find_filename_recursive(locale_dir, search_name)) {
-            _gettext_catalog_dir = locale_dir;
+            _gettext_catalog_dir = std::move(locale_dir);
             break;
         }
     }
 
+#ifdef _WIN32
+    // obtain short path, bindtextdomain doesn't understand UTF-8
+    if (!_gettext_catalog_dir.empty()) {
+        auto shortpath = g_win32_locale_filename_from_utf8(_gettext_catalog_dir.c_str());
+        _gettext_catalog_dir = shortpath;
+        g_free(shortpath);
+    }
+#endif
+
     // register catalog with gettext if found, disable translation for this extension otherwise
     if (!_gettext_catalog_dir.empty()) {
-        const char *current_dir = bindtextdomain(_translationdomain, nullptr);
+        char const *current_dir = bindtextdomain(_translationdomain, nullptr);
         if (_gettext_catalog_dir != current_dir) {
             g_info("Binding textdomain '%s' to '%s'.", _translationdomain, _gettext_catalog_dir.c_str());
             bindtextdomain(_translationdomain, _gettext_catalog_dir.c_str());
@@ -536,13 +495,13 @@ void Extension::lookup_translation_catalog() {
   *
   * @return  Translated string (or original string if extension is not supposed to be translated)
   */
-const char *Extension::get_translation(const char *msgid, const char *msgctxt) const {
+char const *Extension::get_translation(char const *msgid, char const *msgctxt) const {
     if (!_translation_enabled) {
         return msgid;
     }
 
     if (!strcmp(msgid, "")) {
-        g_warning("Attempting to translate an empty string in extension '%s', which is not supported.", _id);
+        g_warning("Attempting to translate an empty string in extension '%s', which is not supported.", _id.c_str());
         return msgid;
     }
 
@@ -565,7 +524,10 @@ void Extension::set_environment(const SPDocument *doc) {
     Glib::unsetenv("INKEX_GETTEXT_DIRECTORY");
 
     // This is needed so extensions can interact with the user's profile, keep settings etc.
-    Glib::setenv("INKSCAPE_PROFILE_DIR", std::string(Inkscape::IO::Resource::profile_path()));
+    Glib::setenv("INKSCAPE_PROFILE_DIR", Inkscape::IO::Resource::profile_path());
+
+    // This is needed if an extension calls inkscape itself
+    Glib::setenv("SELF_CALL", "true");
 
     // This is needed so files can be saved relative to their document location (see image-extract)
     if (doc) {
@@ -590,9 +552,9 @@ void Extension::set_environment(const SPDocument *doc) {
   */
 ModuleImpType Extension::get_implementation_type()
 {
-    if (dynamic_cast<Implementation::Script *>(imp)) {
+    if (dynamic_cast<Implementation::Script *>(imp.get())) {
         return MODULE_EXTENSION;
-    } else if (dynamic_cast<Implementation::XSLT *>(imp)) {
+    } else if (dynamic_cast<Implementation::XSLT *>(imp.get())) {
         return MODULE_XSLT;
     }
     // MODULE_UNKNOWN_IMP is not required because it never results in an
@@ -603,14 +565,13 @@ ModuleImpType Extension::get_implementation_type()
 /**
     \brief  A function to get the parameters in a string form
     \return An array with all the parameters in it.
-
 */
 void
-Extension::paramListString (std::list <std::string> &retlist)
+Extension::paramListString(std::list<std::string> &retlist) const
 {
     // first collect all widgets in the current extension
     std::vector<InxWidget *> widget_list;
-    for (auto widget : _widgets) {
+    for (auto const &widget : _widgets) {
         widget->get_widgets(widget_list);
     }
 
@@ -618,7 +579,7 @@ Extension::paramListString (std::list <std::string> &retlist)
     for (auto widget : widget_list) {
         InxParameter *parameter = dynamic_cast<InxParameter *>(widget); // filter InxParameters from InxWidgets
         if (parameter) {
-            const char *name = parameter->name();
+            char const *name = parameter->name();
             std::string value = parameter->value_to_string();
 
             if (name && !value.empty()) { // TODO: Shouldn't empty string values be allowed?
@@ -627,15 +588,13 @@ Extension::paramListString (std::list <std::string> &retlist)
                 parameter_string += name;
                 parameter_string += "=";
                 parameter_string += value;
-                retlist.push_back(parameter_string);
+                retlist.push_back(std::move(parameter_string));
             }
         }
     }
-
-    return;
 }
 
-InxParameter *Extension::get_param(const gchar *name)
+InxParameter *Extension::get_param(char const *name)
 {
     if (!name || _widgets.empty()) {
         throw Extension::param_not_exist();
@@ -643,7 +602,7 @@ InxParameter *Extension::get_param(const gchar *name)
 
     // first collect all widgets in the current extension
     std::vector<InxWidget *> widget_list;
-    for (auto widget : _widgets) {
+    for (auto const &widget : _widgets) {
         widget->get_widgets(widget_list);
     }
 
@@ -659,11 +618,10 @@ InxParameter *Extension::get_param(const gchar *name)
     throw Extension::param_not_exist();
 }
 
-InxParameter const *Extension::get_param(const gchar *name) const
+InxParameter const *Extension::get_param(char const *name) const
 {
     return const_cast<Extension *>(this)->get_param(name);
 }
-
 
 /**
     \return   The value of the parameter identified by the name
@@ -673,7 +631,7 @@ InxParameter const *Extension::get_param(const gchar *name) const
     Look up in the parameters list, const then execute the function on that found parameter.
 */
 bool
-Extension::get_param_bool(const gchar *name) const
+Extension::get_param_bool(char const *name) const
 {
     const InxParameter *param;
     param = get_param(name);
@@ -684,7 +642,7 @@ Extension::get_param_bool(const gchar *name) const
  * \return   The value of the param or the alternate if the param doesn't exist.
  * \brief    Like get_param_bool but with a default on param_not_exist error.
  */
-bool Extension::get_param_bool(const gchar *name, bool alt) const
+bool Extension::get_param_bool(char const *name, bool alt) const
 {
     try {
         return get_param_bool(name);
@@ -701,7 +659,7 @@ bool Extension::get_param_bool(const gchar *name, bool alt) const
     Look up in the parameters list, const then execute the function on that found parameter.
 */
 int
-Extension::get_param_int(const gchar *name) const
+Extension::get_param_int(char const *name) const
 {
     const InxParameter *param;
     param = get_param(name);
@@ -712,7 +670,7 @@ Extension::get_param_int(const gchar *name) const
  * \return   The value of the param or the alternate if the param doesn't exist.
  * \brief    Like get_param_int but with a default on param_not_exist error.
  */
-int Extension::get_param_int(const gchar *name, int alt) const
+int Extension::get_param_int(char const *name, int alt) const
 {
     try {
         return get_param_int(name);
@@ -720,7 +678,6 @@ int Extension::get_param_int(const gchar *name, int alt) const
         return alt;
     }
 }
-
 
 /**
     \return   The double value for the float parameter specified
@@ -730,7 +687,7 @@ int Extension::get_param_int(const gchar *name, int alt) const
     Look up in the parameters list, const then execute the function on that found parameter.
 */
 double
-Extension::get_param_float(const gchar *name) const
+Extension::get_param_float(char const *name) const
 {
     const InxParameter *param;
     param = get_param(name);
@@ -741,7 +698,7 @@ Extension::get_param_float(const gchar *name) const
  * \return   The value of the param or the alternate if the param doesn't exist.
  * \brief    Like get_param_float but with a default on param_not_exist error.
  */
-double Extension::get_param_float(const gchar *name, double alt) const
+double Extension::get_param_float(char const *name, double alt) const
 {
     try {
         return get_param_float(name);
@@ -757,8 +714,8 @@ double Extension::get_param_float(const gchar *name, double alt) const
 
     Look up in the parameters list, const then execute the function on that found parameter.
 */
-const char *
-Extension::get_param_string(const gchar *name) const
+char const *
+Extension::get_param_string(char const *name) const
 {
     const InxParameter *param;
     param = get_param(name);
@@ -769,7 +726,7 @@ Extension::get_param_string(const gchar *name) const
  * \return   The value of the param or the alternate if the param doesn't exist.
  * \brief    Like get_param_string but with a default on param_not_exist error.
  */
-const char *Extension::get_param_string(const gchar *name, const char *alt) const
+char const *Extension::get_param_string(char const *name, char const *alt) const
 {
     try {
         return get_param_string(name);
@@ -785,8 +742,8 @@ const char *Extension::get_param_string(const gchar *name, const char *alt) cons
 
     Look up in the parameters list, const then execute the function on that found parameter.
 */
-const char *
-Extension::get_param_optiongroup(const gchar *name) const
+char const *
+Extension::get_param_optiongroup(char const *name) const
 {
     const InxParameter *param;
     param = get_param(name);
@@ -797,7 +754,7 @@ Extension::get_param_optiongroup(const gchar *name) const
  * \return   The value of the param or the alternate if the param doesn't exist.
  * \brief    Like get_param_optiongroup but with a default on param_not_exist error.
  */
-const char *Extension::get_param_optiongroup(const gchar *name, const char *alt) const
+char const *Extension::get_param_optiongroup(char const *name, char const *alt) const
 {
     try {
         return get_param_optiongroup(name);
@@ -813,7 +770,7 @@ const char *Extension::get_param_optiongroup(const gchar *name, const char *alt)
  * @return true if value exists, false if not
  */
 bool
-Extension::get_param_optiongroup_contains(const gchar *name, const char *value) const
+Extension::get_param_optiongroup_contains(char const *name, char const *value) const
 {
     const InxParameter *param;
     param = get_param(name);
@@ -827,8 +784,8 @@ Extension::get_param_optiongroup_contains(const gchar *name, const char *value) 
 
     Look up in the parameters list, const then execute the function on that found parameter.
 */
-guint32
-Extension::get_param_color(const gchar *name) const
+std::uint32_t
+Extension::get_param_color(char const *name) const
 {
     const InxParameter *param;
     param = get_param(name);
@@ -844,7 +801,7 @@ Extension::get_param_color(const gchar *name) const
     Look up in the parameters list, const then execute the function on that found parameter.
 */
 bool
-Extension::set_param_bool(const gchar *name, const bool value)
+Extension::set_param_bool(char const *name, const bool value)
 {
     InxParameter *param;
     param = get_param(name);
@@ -860,7 +817,7 @@ Extension::set_param_bool(const gchar *name, const bool value)
     Look up in the parameters list, const then execute the function on that found parameter.
 */
 int
-Extension::set_param_int(const gchar *name, const int value)
+Extension::set_param_int(char const *name, const int value)
 {
     InxParameter *param;
     param = get_param(name);
@@ -876,7 +833,7 @@ Extension::set_param_int(const gchar *name, const int value)
     Look up in the parameters list, const then execute the function on that found parameter.
 */
 double
-Extension::set_param_float(const gchar *name, const double value)
+Extension::set_param_float(char const *name, const double value)
 {
     InxParameter *param;
     param = get_param(name);
@@ -891,8 +848,8 @@ Extension::set_param_float(const gchar *name, const double value)
 
     Look up in the parameters list, const then execute the function on that found parameter.
 */
-const char *
-Extension::set_param_string(const gchar *name, const char *value)
+char const *
+Extension::set_param_string(char const *name, char const *value)
 {
     InxParameter *param;
     param = get_param(name);
@@ -907,8 +864,8 @@ Extension::set_param_string(const gchar *name, const char *value)
 
     Look up in the parameters list, const then execute the function on that found parameter.
 */
-const char *
-Extension::set_param_optiongroup(const gchar *name, const char *value)
+char const *
+Extension::set_param_optiongroup(char const *name, char const *value)
 {
     InxParameter *param;
     param = get_param(name);
@@ -923,25 +880,38 @@ Extension::set_param_optiongroup(const gchar *name, const char *value)
 
 Look up in the parameters list, const then execute the function on that found parameter.
 */
-guint32
-Extension::set_param_color(const gchar *name, const guint32 color)
+std::uint32_t
+Extension::set_param_color(char const *name, const std::uint32_t color)
 {
     InxParameter *param;
     param = get_param(name);
     return param->set_color(color);
 }
 
+/**
+    \brief    Parses the given string value and sets a parameter identified by name.
+    \param    name   The name of the parameter to set
+    \param    value  The value to set the parameter to
+ */
+void Extension::set_param_any(char const *name, std::string const &value)
+{
+    get_param(name)->set(value);
+}
+
+void Extension::set_param_hidden(char const *name, bool hidden)
+{
+    get_param(name)->set_hidden(hidden);
+}
 
 /** \brief A function to open the error log file. */
 void
 Extension::error_file_open ()
 {
-    gchar *ext_error_file = Inkscape::IO::Resource::log_path(EXTENSION_ERROR_LOG_FILENAME);
-    error_file = Inkscape::IO::fopen_utf8name(ext_error_file, "w+");
+    auto ext_error_file = Inkscape::IO::Resource::log_path(EXTENSION_ERROR_LOG_FILENAME);
+    error_file = Inkscape::IO::fopen_utf8name(ext_error_file.c_str(), "w+");
     if (!error_file) {
-        g_warning(_("Could not create extension error log file '%s'"), ext_error_file);
+        g_warning(_("Could not create extension error log file '%s'"), ext_error_file.c_str());
     }
-    g_free(ext_error_file);
 };
 
 /** \brief A function to close the error log file. */
@@ -955,7 +925,7 @@ Extension::error_file_close ()
 
 /** \brief A function to write to the error log file. */
 void
-Extension::error_file_write (Glib::ustring text)
+Extension::error_file_write(Glib::ustring const &text)
 {
     if (error_file) {
         g_fprintf(error_file, "%s\n", text.c_str());
@@ -978,11 +948,11 @@ public:
      * @param widg Widget to add.
      * @param tooltip Tooltip for the widget.
      */
-    void addWidget(Gtk::Widget *widg, gchar const *tooltip, int indent) {
+    void addWidget(Gtk::Widget *widg, char const *tooltip, int indent) {
         if (widg) {
             widg->set_margin_start(indent * InxParameter::GUI_INDENTATION);
-            this->pack_start(*widg, false, true, 0); // fill=true does not have an effect here, but allows the
-                                                     // child to choose to expand by setting hexpand/vexpand
+            UI::pack_start(*this, *widg, widg->get_vexpand(), true);
+
             if (tooltip) {
                 widg->set_tooltip_text(tooltip);
             } else {
@@ -1002,30 +972,29 @@ public:
     If there are no visible parameters, this function just returns NULL.
 */
 Gtk::Widget *
-Extension::autogui (SPDocument *doc, Inkscape::XML::Node *node, sigc::signal<void> *changeSignal)
+Extension::autogui (SPDocument *doc, Inkscape::XML::Node *node, sigc::signal<void ()> *changeSignal)
 {
     if (!_gui || widget_visible_count() == 0) {
         return nullptr;
     }
 
-    AutoGUI * agui = Gtk::manage(new AutoGUI());
-    agui->set_border_width(InxParameter::GUI_BOX_MARGIN);
+    auto const agui = Gtk::make_managed<AutoGUI>();
+    agui->property_margin().set_value(InxParameter::GUI_BOX_MARGIN);
     agui->set_spacing(InxParameter::GUI_BOX_SPACING);
 
     // go through the list of widgets and add the all non-hidden ones
-    for (auto widget : _widgets) {
+    for (auto const &widget : _widgets) {
         if (widget->get_hidden()) {
             continue;
         }
 
         Gtk::Widget *widg = widget->get_widget(changeSignal);
-        gchar const *tip = widget->get_tooltip();
+        char const *tip = widget->get_tooltip();
         int indent = widget->get_indent();
-
         agui->addWidget(widg, tip, indent);
     }
 
-    agui->show();
+    agui->set_visible(true);
     return agui;
 };
 
@@ -1034,60 +1003,54 @@ Extension::autogui (SPDocument *doc, Inkscape::XML::Node *node, sigc::signal<voi
 Gtk::Box *
 Extension::get_info_widget()
 {
-    Gtk::Box * retval = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
-    retval->set_border_width(4);
+    auto const retval = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
+    retval->property_margin().set_value(4);
 
-    Gtk::Frame * info = Gtk::manage(new Gtk::Frame("General Extension Information"));
-    retval->pack_start(*info, true, true, 4);
+    auto const info = Gtk::make_managed<Gtk::Frame>("General Extension Information");
+    UI::pack_start(*retval, *info, true, true, 4);
 
-    auto table = Gtk::manage(new Gtk::Grid());
-    table->set_border_width(4);
+    auto const table = Gtk::make_managed<Gtk::Grid>();
+    table->property_margin().set_value(4);
     table->set_column_spacing(4);
-
     info->add(*table);
 
     int row = 0;
-    add_val(_("Name:"), get_translation(_name), table, &row);
-    add_val(_("ID:"), _id, table, &row);
+    add_val(_("Name:"), get_translation(_name.c_str()), table, &row);
+    add_val(_("ID:"), _id.c_str(), table, &row);
     add_val(_("State:"), _state == STATE_LOADED ? _("Loaded") : _state == STATE_UNLOADED ? _("Unloaded") : _("Deactivated"), table, &row);
 
-    retval->show_all();
     return retval;
 }
 
-void Extension::add_val(Glib::ustring labelstr, Glib::ustring valuestr, Gtk::Grid * table, int * row)
+void Extension::add_val(Glib::ustring const &labelstr, Glib::ustring const &valuestr,
+                        Gtk::Grid * table, int * row)
 {
-    Gtk::Label * label;
-    Gtk::Label * value;
+    auto const label = Gtk::make_managed<Gtk::Label>(labelstr, Gtk::ALIGN_START);
+    auto const value = Gtk::make_managed<Gtk::Label>(valuestr, Gtk::ALIGN_START);
 
     (*row)++;
-    label = Gtk::manage(new Gtk::Label(labelstr, Gtk::ALIGN_START));
-    value = Gtk::manage(new Gtk::Label(valuestr, Gtk::ALIGN_START));
-
     table->attach(*label, 0, (*row) - 1, 1, 1);
     table->attach(*value, 1, (*row) - 1, 1, 1);
 
-    label->show();
-    value->show();
-
-    return;
+    label->set_visible(true);
+    value->set_visible(true);
 }
 
 Gtk::Box *
 Extension::get_params_widget()
 {
-    Gtk::Box * retval = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
-    Gtk::Widget * content = Gtk::manage(new Gtk::Label("Params"));
-    retval->pack_start(*content, true, true, 4);
-    content->show();
-    retval->show();
+    auto const retval = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
+    Gtk::Widget * content = Gtk::make_managed<Gtk::Label>("Params");
+    UI::pack_start(*retval, *content, true, true, 4);
+    content->set_visible(true);
+    retval->set_visible(true);
     return retval;
 }
 
-unsigned int Extension::widget_visible_count ( )
+unsigned int Extension::widget_visible_count() const
 {
     unsigned int _visible_count = 0;
-    for (auto widget : _widgets) {
+    for (auto const &widget : _widgets) {
         if (!widget->get_hidden()) {
             _visible_count++;
         }
@@ -1095,9 +1058,47 @@ unsigned int Extension::widget_visible_count ( )
     return _visible_count;
 }
 
-}  /* namespace Extension */
-}  /* namespace Inkscape */
+/**
+ * Create a dialog for preference for this extension.
+ * Will skip if not using GUI.
+ *
+ * @return True if preferences have been shown or not using GUI, False is canceled.
+ */
+bool Extension::prefs()
+{
+    if (!INKSCAPE.use_gui()) {
+        return true;
+    }
 
+    if (!loaded())
+        set_state(Extension::STATE_LOADED);
+    if (!loaded())
+        return false;
+
+    if (auto controls = autogui(nullptr, nullptr)) {
+        auto dialog = PrefDialog(get_name(), controls);
+        int response = Inkscape::UI::dialog_run(dialog);
+        return response == Gtk::RESPONSE_OK;
+    }
+
+    // No controls, no prefs
+    return true;
+}
+
+/**
+ * Runs any pre-processing actions and modifies the document
+ */
+void Extension::run_processing_actions(SPDocument *doc)
+{
+    for (auto &process_action : _actions) {
+        // Pass in the extensions internal prefs if needed in the future.
+        if (process_action.is_enabled()) {
+            process_action.run(doc);
+        }
+    }
+}
+
+} // namespace Inkscape::Extension
 
 /*
   Local Variables:

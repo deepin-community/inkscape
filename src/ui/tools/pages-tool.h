@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef __UI_TOOLS_PAGES_CONTEXT_H__
-#define __UI_TOOLS_PAGES_CONTEXT_H__
+#ifndef INKSCAPE_UI_TOOLS_PAGES_TOOL_H
+#define INKSCAPE_UI_TOOLS_PAGES_TOOL_H
 
 /*
  * Page editing tool
@@ -15,6 +15,7 @@
 
 #include "ui/tools/tool-base.h"
 #include "2geom/rect.h"
+#include "display/control/canvas-item-ptr.h"
 
 #define SP_PAGES_CONTEXT(obj) (dynamic_cast<Inkscape::UI::Tools::PagesTool *>((Inkscape::UI::Tools::ToolBase *)obj))
 #define SP_IS_PAGES_CONTEXT(obj) \
@@ -31,9 +32,9 @@ class SnapCandidatePoint;
 class CanvasItemGroup;
 class CanvasItemRect;
 class CanvasItemBpath;
+} // namespace Inkscape
 
-namespace UI {
-namespace Tools {
+namespace Inkscape::UI::Tools {
 
 class PagesTool : public ToolBase
 {
@@ -41,8 +42,9 @@ public:
     PagesTool(SPDesktop *desktop);
     ~PagesTool() override;
 
-    bool root_handler(GdkEvent *event) override;
-    void menu_popup(GdkEvent *event, SPObject *obj = nullptr) override;
+    bool root_handler(CanvasEvent const &event) override;
+    void menu_popup(CanvasEvent const &event, SPObject *obj = nullptr) override;
+
 private:
     void selectionChanged(SPDocument *doc, SPPage *page);
     void connectDocument(SPDocument *doc);
@@ -59,6 +61,10 @@ private:
     void resizeKnotFinished(SPKnot *knot, guint state);
     void pageModified(SPObject *object, guint flags);
 
+    void marginKnotSet(Geom::Rect margin_rect);
+    bool marginKnotMoved(SPKnot *knot, Geom::Point *point, guint state);
+    void marginKnotFinished(SPKnot *knot, guint state);
+
     void grabPage(SPPage *target);
     Geom::Affine moveTo(Geom::Point xy, bool snap);
 
@@ -74,18 +80,19 @@ private:
     int drag_tolerance = 5;
 
     std::vector<SPKnot *> resize_knots;
+    std::vector<SPKnot *> margin_knots;
+    SPKnot *grabbed_knot = nullptr;
     SPPage *highlight_item = nullptr;
     SPPage *dragging_item = nullptr;
-    std::optional<Geom::Rect> on_screen_rect;
-    Inkscape::CanvasItemRect *visual_box = nullptr;
-    Inkscape::CanvasItemGroup *drag_group = nullptr;
+    std::optional<Geom::Rect> on_screen_rect; ///< On-screen rectangle, in desktop coordinates.
+    CanvasItemPtr<CanvasItemRect> visual_box;
+    CanvasItemPtr<CanvasItemGroup> drag_group;
     std::vector<Inkscape::CanvasItemBpath *> drag_shapes;
-
     std::vector<Inkscape::SnapCandidatePoint> _bbox_points;
+
+    static Geom::Point middleOfSide(int side, const Geom::Rect &rect);
 };
 
-} // namespace Tools
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Tools
 
-#endif
+#endif // INKSCAPE_UI_TOOLS_PAGES_TOOL_H

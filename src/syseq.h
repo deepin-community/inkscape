@@ -215,7 +215,7 @@ static double projectify (std::vector<int> const &cols, const double B[S][T], co
             }
         }
         if (c == -1) {
-            std::cout << "Something is wrong. Rethink!!" << std::endl;
+            std::cerr << "Something is wrong. Rethink!!" << std::endl;
             return SysEq::no_solution;
         }
 
@@ -226,7 +226,7 @@ static double projectify (std::vector<int> const &cols, const double B[S][T], co
         }
         double mu = 1 - val * B[c][index];
         if (fabs(mu) < 1E-6) {
-            std::cout << "No solution since adapted value is too close to zero" << std::endl;
+            std::cerr << "No solution since adapted value is too close to zero" << std::endl;
             return SysEq::no_solution;
         }
         val_proj = sp*val/mu;
@@ -303,7 +303,7 @@ template <int S, int T> SolutionKind gaussjord_solve (double A[S][T], double x[T
 
 } // namespace SysEq
 
-#endif /* __SYSEQ_H__ */
+#endif // SEEN_SYSEQ_H
 
 /*
   Local Variables:

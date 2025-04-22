@@ -18,10 +18,11 @@ message("Binary Dir: ${CMAKE_CURRENT_BINARY_DIR}")
 # -----------------------------------------------------------------------------
 # CMake Configuration
 # -----------------------------------------------------------------------------
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-# set(CMAKE_CXX_EXTENSIONS OFF) # enforces -std=c++17 instead of -std=gnu++17
+# set(CMAKE_CXX_EXTENSIONS OFF) # enforces -std=c++20 instead of -std=gnu++20
                                 # TODO: build currently fails with it as we actually depend on GNU compiler extensions...
+                                #       mostly use of the non-Standard M_PI et al. TODO: C++20: Use the <numbers> header.
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/CMakeScripts/Modules")
 
@@ -42,8 +43,8 @@ set(PROJECT_NAME inkscape)
 
 # see https://gitlab.com/inkscape/inkscape/-/issues/551 for versioning suffixes
 set(INKSCAPE_VERSION_MAJOR  1)
-set(INKSCAPE_VERSION_MINOR  2)
-set(INKSCAPE_VERSION_PATCH  2)
+set(INKSCAPE_VERSION_MINOR  4)
+set(INKSCAPE_VERSION_PATCH  0)
 set(INKSCAPE_VERSION_SUFFIX "")
 
 set(INKSCAPE_VERSION ${INKSCAPE_VERSION_MAJOR}.${INKSCAPE_VERSION_MINOR})
@@ -81,20 +82,20 @@ endif()
 # Define a very strict set of build flags that will prevent any use of deprecated symbols.
 # This will almost certainly cause compilation failure and is intended only for developer use.
 set(CMAKE_CXX_FLAGS_STRICT "${CMAKE_CXX_FLAGS_DEBUG} -Werror=deprecated-declarations -DGTK_DISABLE_DEPRECATED -DGDK_DISABLE_DEPRECATED -DGTKMM_DISABLE_DEPRECATED -DGDKMM_DISABLE_DEPRECATED -DGLIBMM_DISABLE_DEPRECATED"
-	CACHE STRING
-	"Flags used by C++ compiler during Strict builds"
-	FORCE)
+    CACHE STRING
+    "Flags used by C++ compiler during Strict builds"
+    FORCE)
 set(CMAKE_C_FLAGS_STRICT   "${CMAKE_C_FLAGS_DEBUG}   -Werror=deprecated-declarations -DGTK_DISABLE_DEPRECATED -DGDK_DISABLE_DEPRECATED -DGTKMM_DISABLE_DEPRECATED -DGDKMM_DISABLE_DEPRECATED"
-	CACHE STRING
-	"Flags used by C compiler during Strict builds"
-	FORCE)
+    CACHE STRING
+    "Flags used by C compiler during Strict builds"
+    FORCE)
 mark_as_advanced(
-	CMAKE_CXX_FLAGS_STRICT
-	CMAKE_C_FLAGS_STRICT)
+    CMAKE_CXX_FLAGS_STRICT
+    CMAKE_C_FLAGS_STRICT)
 
 set(CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE} CACHE STRING
-	"Choose the type of build, options are: None(CMAKE_CXXFLAGS or CMAKE_C_FLAGS used) Debug Release RelWithDebInfo MinSizeRel Strict."
-	FORCE)
+    "Choose the type of build, options are: None(CMAKE_CXXFLAGS or CMAKE_C_FLAGS used) Debug Release RelWithDebInfo MinSizeRel Strict."
+    FORCE)
 
 # -----------------------------------------------------------------------------
 # Redirect output files
@@ -123,6 +124,7 @@ option(WITH_LIBCDR "Compile with support of libcdr for CorelDRAW Diagrams" ON)
 option(WITH_LIBVISIO "Compile with support of libvisio for Microsoft Visio Diagrams" ON)
 option(WITH_LIBWPG "Compile with support of libwpg for WordPerfect Graphics" ON)
 option(WITH_GSPELL "Compile with support of gspell" ON)
+option(WITH_GSOURCEVIEW "Compile with support of gsourceview (text syntax coloring)" ON)
 option(WITH_NLS "Compile with Native Language Support (using gettext)" ON)
 option(WITH_JEMALLOC "Compile with JEMALLOC support" OFF)
 option(WITH_ASAN "Compile with Clang's AddressSanitizer (for debugging purposes)" OFF)
@@ -133,7 +135,6 @@ option(WITH_FUZZ "Compile for fuzzing purpose (use 'make fuzz' only)" OFF)
 mark_as_advanced(WITH_FUZZ)
 option(WITH_MANPAGE_COMPRESSION "gzips manpages if gzip is available" ON)
 mark_as_advanced(WITH_MANPAGE_COMPRESSION)
-cmake_dependent_option(WITH_INTERNAL_CAIRO "Use a patched version of cairo" OFF "UNIX" ON)
 
 option(ENABLE_BINRELOC "Enable relocatable binaries" OFF)
 
@@ -278,6 +279,7 @@ message("ENABLE_POPPLER:          ${ENABLE_POPPLER}")
 message("ENABLE_POPPLER_CAIRO:    ${ENABLE_POPPLER_CAIRO}")
 message("WITH_GNU_READLINE:       ${WITH_GNU_READLINE}")
 message("WITH_GSPELL:             ${WITH_GSPELL}")
+message("WITH_GSOURCEVIEW:        ${WITH_GSOURCEVIEW}")
 message("WITH_IMAGE_MAGICK:       ${WITH_IMAGE_MAGICK}")
 message("WITH_GRAPHICS_MAGICK:    ${WITH_GRAPHICS_MAGICK}")
 message("WITH_LIBCDR:             ${WITH_LIBCDR}")
@@ -286,8 +288,8 @@ message("WITH_LIBWPG:             ${WITH_LIBWPG}")
 message("WITH_NLS:                ${WITH_NLS}")
 message("WITH_OPENMP:             ${WITH_OPENMP}")
 message("WITH_JEMALLOC:           ${WITH_JEMALLOC}")
+message("WITH_ASAN:               ${WITH_ASAN}")
 message("WITH_INTERNAL_2GEOM:     ${WITH_INTERNAL_2GEOM}")
-message("WITH_INTERNAL_CAIRO:     ${WITH_INTERNAL_CAIRO}")
 message("WITH_X11:                ${WITH_X11}")
 
 message("WITH_PROFILING:          ${WITH_PROFILING}")

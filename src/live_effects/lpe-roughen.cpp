@@ -14,27 +14,32 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "live_effects/lpe-roughen.h"
+#include "lpe-roughen.h"
+
+#include <boost/functional/hash.hpp>
+
+#include <glibmm/i18n.h>
+#include <gtkmm/box.h>
+#include <gtkmm/label.h>
+#include <gtkmm/separator.h>
+
 #include "display/curve.h"
 #include "helper/geom.h"
-#include <boost/functional/hash.hpp>
-#include <gtkmm.h>
-
-// TODO due to internal breakage in glibmm headers, this must be last:
-#include <glibmm/i18n.h>
+#include "object/sp-lpe-item.h"
+#include "ui/pack.h"
 
 namespace Inkscape {
 namespace LivePathEffect {
 
 static const Util::EnumData<DivisionMethod> DivisionMethodData[] = { 
-    { DM_SEGMENTS, N_("By number of segments"), "segments" }, 
-    { DM_SIZE, N_("By max. segment size"), "size" } 
+    { DM_SEGMENTS, N_("Number of segments"), "segments" }, 
+    { DM_SIZE, N_("Segment size"), "size" } 
 };
 static const Util::EnumDataConverter<DivisionMethod> DMConverter(DivisionMethodData, DM_END);
 
 static const Util::EnumData<HandlesMethod> HandlesMethodData[] = {
     { HM_ALONG_NODES, N_("Along nodes"), "along" },
-    { HM_RAND, N_("Rand"), "rand" },
+    { HM_RAND, N_("Random"), "rand" },
     { HM_RETRACT, N_("Retract"), "retract" },
     { HM_SMOOTH, N_("Smooth"), "smooth" } 
 };
@@ -42,35 +47,38 @@ static const Util::EnumDataConverter<HandlesMethod> HMConverter(HandlesMethodDat
 
 LPERoughen::LPERoughen(LivePathEffectObject *lpeobject)
     : Effect(lpeobject)
-    , method(_("Method"), _("Division method"), "method", DMConverter, &wr, this, DM_SIZE)
-    , max_segment_size(_("Max. segment size"), _("Max. segment size"), "max_segment_size", &wr, this, 10)
-    , segments(_("Number of segments"), _("Number of segments"), "segments", &wr, this, 2)
-    , displace_x(_("Max. displacement in X"), _("Max. displacement in X"), "displace_x", &wr, this, 10.)
-    , displace_y(_("Max. displacement in Y"), _("Max. displacement in Y"), "displace_y", &wr, this, 10.)
-    , global_randomize(_("Global randomize"), _("Global randomize"), "global_randomize", &wr, this, 1.)
-    , handles(_("Handles"), _("Handles options"), "handles", HMConverter, &wr, this, HM_ALONG_NODES)
-    , shift_nodes(_("Shift nodes"), _("Shift nodes"), "shift_nodes", &wr, this, true)
+    , method(_("Method"), _("<b>Segment size:</b> add nodes to path evenly; <b>Number of segments:</b> add nodes between existing nodes"), "method", DMConverter, &wr, this, DM_SIZE)
+    , max_segment_size(_("Segment size"), _("Add nodes to path evenly. Choose <b>Segment size</b> method from the dropdown to use this subdivision method."), "max_segment_size", &wr, this, 10)
+    , segments(_("Number of segments"), _("Add nodes between existing nodes. Choose <b>Number of segments</b> method from the dropdown to use this subdivision method."), "segments", &wr, this, 2)
+    , displace_x(_("Displace ←→"), _("Maximal displacement in x direction"), "displace_x", &wr, this, 10.)
+    , displace_y(_("Displace ↑↓"), _("Maximal displacement in y direction"), "displace_y", &wr, this, 10.)
+    , global_randomize(_("Global randomize"), _("Global displacement in all directions"), "global_randomize", &wr, this, 1.)
+    , handles(_("Direction"), _("Options for handle direction"), "handles", HMConverter, &wr, this, HM_ALONG_NODES)
+    , shift_nodes(_("Apply displacement"), _("Uncheck to use this LPE for just adding nodes, without roughening; useful for further interactive processing."), "shift_nodes", &wr, this, true)
     , fixed_displacement(_("Fixed displacement"), _("Fixed displacement, 1/3 of segment length"), "fixed_displacement",
                          &wr, this, false)
-    , spray_tool_friendly(_("Spray Tool friendly"), _("For use with spray tool in copy mode"), "spray_tool_friendly",
+    , spray_tool_friendly(_("Spray Tool friendly"), _("For use with Spray Tool in copy mode"), "spray_tool_friendly",
                           &wr, this, false)
 {
+    registerParameter(&global_randomize);
+    registerParameter(&displace_x);
+    registerParameter(&displace_y);
     registerParameter(&method);
     registerParameter(&max_segment_size);
     registerParameter(&segments);
-    registerParameter(&displace_x);
-    registerParameter(&displace_y);
-    registerParameter(&global_randomize);
     registerParameter(&handles);
     registerParameter(&shift_nodes);
     registerParameter(&fixed_displacement);
     registerParameter(&spray_tool_friendly);
+    
     displace_x.param_set_range(0., std::numeric_limits<double>::max());
     displace_y.param_set_range(0., std::numeric_limits<double>::max());
     global_randomize.param_set_range(0., std::numeric_limits<double>::max());
+
     max_segment_size.param_set_range(0., std::numeric_limits<double>::max());
     max_segment_size.param_set_increments(1, 1);
     max_segment_size.param_set_digits(3);
+
     segments.param_make_integer();
     segments.param_set_range(1, 9999);
     segments.param_set_increments(1, 1);
@@ -84,31 +92,27 @@ void LPERoughen::doOnApply(SPLPEItem const *lpeitem)
 {
     Geom::OptRect bbox = lpeitem->bounds(SPItem::GEOMETRIC_BBOX);
     if (bbox) {
-        std::vector<Parameter *>::iterator it = param_vector.begin();
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-        while (it != param_vector.end()) {
-            Parameter *param = *it;
-            const gchar *key = param->param_key.c_str();
-            Glib::ustring pref_path = (Glib::ustring) "/live_effects/" +
-                                      (Glib::ustring)LPETypeConverter.get_key(effectType()).c_str() +
-                                      (Glib::ustring) "/" + (Glib::ustring)key;
 
+        for (auto const param: param_vector) {
+            auto const pref_path = Glib::ustring::compose("/live_effects/%1/%2",
+                                                          LPETypeConverter.get_key(effectType()),
+                                                          param->param_key);
+            if (prefs->getEntry(pref_path).isValid()) continue;
 
-            bool valid = prefs->getEntry(pref_path).isValid();
-            Glib::ustring displace_x_str = Glib::ustring::format((*bbox).width() / 150.0);
-            Glib::ustring displace_y_str = Glib::ustring::format((*bbox).height() / 150.0);
-            Glib::ustring max_segment_size_str = Glib::ustring::format(std::min((*bbox).height(), (*bbox).width()) / 50.0);
-            if (!valid) {
-                if (strcmp(key, "max_segment_size") == 0) {
-                    param->param_readSVGValue(max_segment_size_str.c_str());
-                } else if (strcmp(key, "displace_x") == 0) {
-                    param->param_readSVGValue(displace_x_str.c_str());
-                } else if (strcmp(key, "displace_y") == 0) {
-                    param->param_readSVGValue(displace_y_str.c_str());
-                }
+            if (param->param_key == "max_segment_size") {
+                auto const minor = std::min(bbox->width(), bbox->height());
+                auto const max_segment_size_str = Glib::ustring::format(minor / 50.0);
+                param->param_readSVGValue(max_segment_size_str.c_str());
+            } else if (param->param_key == "displace_x") {
+                auto const displace_x_str = Glib::ustring::format(bbox->width() / 150.0);
+                param->param_readSVGValue(displace_x_str.c_str());
+            } else if (param->param_key == "displace_y") {
+                auto const displace_y_str = Glib::ustring::format(bbox->height() / 150.0);
+                param->param_readSVGValue(displace_y_str.c_str());
             }
-            ++it;
         }
+        writeParamsToSVG();
     }
     lpeversion.param_setValue("1.2", true);
 }
@@ -133,52 +137,36 @@ void LPERoughen::doBeforeEffect(SPLPEItem const *lpeitem)
 
 Gtk::Widget *LPERoughen::newWidget()
 {
-    Gtk::Box *vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
-    vbox->set_border_width(5);
-    vbox->set_homogeneous(false);
-    vbox->set_spacing(2);
+    auto const vbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL, 2);
+    vbox->property_margin().set_value(5);
+
     std::vector<Parameter *>::iterator it = param_vector.begin();
     while (it != param_vector.end()) {
         if ((*it)->widget_is_visible) {
             Parameter *param = *it;
-            Gtk::Widget *widg = dynamic_cast<Gtk::Widget *>(param->param_newWidget());
+            auto widg = param->param_newWidget();
             if (param->param_key == "method") {
-                Gtk::Label *method_label = Gtk::manage(
-                    new Gtk::Label(Glib::ustring(_("<b>Add nodes</b> Subdivide each segment")), Gtk::ALIGN_START));
+                auto const method_label = Gtk::make_managed<Gtk::Label>(
+                    Glib::ustring(_("<b>Resolution</b>")), Gtk::ALIGN_START);
                 method_label->set_use_markup(true);
-                vbox->pack_start(*method_label, false, false, 2);
-                vbox->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)),
-                                 Gtk::PACK_EXPAND_WIDGET);
-            }
-            if (param->param_key == "displace_x") {
-                Gtk::Label *displace_x_label = Gtk::manage(
-                    new Gtk::Label(Glib::ustring(_("<b>Jitter nodes</b> Move nodes/handles")), Gtk::ALIGN_START));
-                displace_x_label->set_use_markup(true);
-                vbox->pack_start(*displace_x_label, false, false, 2);
-                vbox->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)),
-                                 Gtk::PACK_EXPAND_WIDGET);
-            }
-            if (param->param_key == "global_randomize") {
-                Gtk::Label *global_rand = Gtk::manage(new Gtk::Label(
-                    Glib::ustring(_("<b>Extra roughen</b> Add an extra layer of rough")), Gtk::ALIGN_START));
-                global_rand->set_use_markup(true);
-                vbox->pack_start(*global_rand, false, false, 2);
-                vbox->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)),
-                                 Gtk::PACK_EXPAND_WIDGET);
+                UI::pack_start(*vbox, *method_label, false, false, 2);
+                UI::pack_start(*vbox, *Gtk::make_managed<Gtk::Separator>(Gtk::ORIENTATION_HORIZONTAL),
+                               UI::PackOptions::expand_widget);
             }
             if (param->param_key == "handles") {
-                Gtk::Label *options = Gtk::manage(
-                    new Gtk::Label(Glib::ustring(_("<b>Options</b> Modify options to rough")), Gtk::ALIGN_START));
+                auto const options = Gtk::make_managed<Gtk::Label>(
+                    Glib::ustring(_("<b>Options</b>")), Gtk::ALIGN_START);
                 options->set_use_markup(true);
-                vbox->pack_start(*options, false, false, 2);
-                vbox->pack_start(*Gtk::manage(new Gtk::Separator(Gtk::ORIENTATION_HORIZONTAL)),
-                                 Gtk::PACK_EXPAND_WIDGET);
+                UI::pack_start(*vbox, *options, false, false, 2);
+                UI::pack_start(*vbox, *Gtk::make_managed<Gtk::Separator>(Gtk::ORIENTATION_HORIZONTAL),
+                               UI::PackOptions::expand_widget);
             }
-            Glib::ustring *tip = param->param_getTooltip();
+
             if (widg) {
-                vbox->pack_start(*widg, true, true, 2);
-                if (tip) {
-                    widg->set_tooltip_text(*tip);
+                UI::pack_start(*vbox, *widg, true, true, 2);
+
+                if (auto const tip = param->param_getTooltip()) {
+                    widg->set_tooltip_markup(*tip);
                 } else {
                     widg->set_tooltip_text("");
                     widg->set_has_tooltip(false);
@@ -187,10 +175,8 @@ Gtk::Widget *LPERoughen::newWidget()
         }
         ++it;
     }
-    if (Gtk::Widget *widg = defaultParamSet()) {
-        vbox->pack_start(*widg, true, true, 2);
-    }
-    return dynamic_cast<Gtk::Widget *>(vbox);
+
+    return vbox;
 }
 
 double LPERoughen::sign(double random_number)
@@ -230,10 +216,10 @@ void LPERoughen::doEffect(SPCurve *curve)
         Geom::Path::const_iterator curve_it1 = path_it.begin();
         Geom::Path::const_iterator curve_it2 = ++(path_it.begin());
         Geom::Path::const_iterator curve_endit = path_it.end_default();
-        auto nCurve = std::make_unique<SPCurve>();
+        SPCurve nCurve;
         Geom::Point prev(0, 0);
         Geom::Point last_move(0, 0);
-        nCurve->moveto(curve_it1->initialPoint());
+        nCurve.moveto(curve_it1->initialPoint());
         if (path_it.closed()) {
             const Geom::Curve &closingline = path_it.back_closed();
             // the closing line segment is always of type
@@ -250,9 +236,9 @@ void LPERoughen::doEffect(SPCurve *curve)
             Geom::CubicBezier const *cubic = nullptr;
             cubic = dynamic_cast<Geom::CubicBezier const *>(&*curve_it1);
             if (cubic) {
-                nCurve->curveto((*cubic)[1] + last_move, (*cubic)[2], curve_it1->finalPoint());
+                nCurve.curveto((*cubic)[1] + last_move, (*cubic)[2], curve_it1->finalPoint());
             } else {
-                nCurve->lineto(curve_it1->finalPoint());
+                nCurve.lineto(curve_it1->finalPoint());
             }
             last_move = Geom::Point(0, 0);
             double length = curve_it1->length(0.01);
@@ -262,27 +248,26 @@ void LPERoughen::doEffect(SPCurve *curve)
             } else {
                 splits = ceil(length / max_segment_size);
             }
-            auto const original = std::unique_ptr<Geom::Curve>(nCurve->last_segment()->duplicate());
+            auto const original = std::unique_ptr<Geom::Curve>(nCurve.last_segment()->duplicate());
             for (unsigned int t = 1; t <= splits; t++) {
                 if (t == splits && splits != 1) {
                     continue;
                 }
-                std::unique_ptr<SPCurve> tmp;
+                SPCurve tmp;
                 if (splits == 1) {
-                    tmp = jitter(nCurve->last_segment(), prev, last_move);
+                    tmp = jitter(nCurve.last_segment(), prev, last_move);
                 } else {
                     bool last = false;
                     if (t == splits - 1) {
                         last = true;
                     }
                     double time =
-                        Geom::nearest_time(original->pointAt((1. / (double)splits) * t), *nCurve->last_segment());
-                    tmp = addNodesAndJitter(nCurve->last_segment(), prev, last_move, time, last);
+                        Geom::nearest_time(original->pointAt((1. / (double)splits) * t), *nCurve.last_segment());
+                    tmp = addNodesAndJitter(nCurve.last_segment(), prev, last_move, time, last);
                 }
-                assert(tmp);
-                if (nCurve->get_segment_count() > 1) {
-                    nCurve->backspace();
-                    nCurve->append_continuous(*tmp, 0.001);
+                if (nCurve.get_segment_count() > 1) {
+                    nCurve.backspace();
+                    nCurve.append_continuous(std::move(tmp), 0.001);
                 } else {
                     nCurve = std::move(tmp);
                 }
@@ -293,10 +278,10 @@ void LPERoughen::doEffect(SPCurve *curve)
         if (path_it.closed()) {
             if (handles == HM_SMOOTH && curve_it1 == curve_endit) {
                 SPCurve *out = new SPCurve();
-                nCurve = nCurve->create_reverse();
-                Geom::CubicBezier const *cubic_start = dynamic_cast<Geom::CubicBezier const *>(nCurve->first_segment());
-                Geom::CubicBezier const *cubic = dynamic_cast<Geom::CubicBezier const *>(nCurve->last_segment());
-                Geom::Point oposite = nCurve->first_segment()->pointAt(1.0 / 3.0);
+                nCurve.reverse();
+                Geom::CubicBezier const *cubic_start = dynamic_cast<Geom::CubicBezier const *>(nCurve.first_segment());
+                Geom::CubicBezier const *cubic = dynamic_cast<Geom::CubicBezier const *>(nCurve.last_segment());
+                Geom::Point oposite = nCurve.first_segment()->pointAt(1.0 / 3.0);
                 if (cubic_start) {
                     Geom::Ray ray((*cubic_start)[1], (*cubic_start)[0]);
                     double dist = Geom::distance((*cubic_start)[1], (*cubic_start)[0]);
@@ -306,37 +291,35 @@ void LPERoughen::doEffect(SPCurve *curve)
                     out->moveto((*cubic)[0]);
                     out->curveto((*cubic)[1], oposite, (*cubic)[3]);
                 } else {
-                    out->moveto(nCurve->last_segment()->initialPoint());
-                    out->curveto(nCurve->last_segment()->initialPoint(), oposite, nCurve->last_segment()->finalPoint());
+                    out->moveto(nCurve.last_segment()->initialPoint());
+                    out->curveto(nCurve.last_segment()->initialPoint(), oposite, nCurve.last_segment()->finalPoint());
                 }
-                nCurve->backspace();
-                nCurve->append_continuous(*out, 0.001);
-                nCurve = nCurve->create_reverse();
+                nCurve.backspace();
+                nCurve.append_continuous(*out, 0.001);
+                nCurve.reverse();
             }
             if (handles == HM_ALONG_NODES && curve_it1 == curve_endit) {
-                SPCurve *out = new SPCurve();
-                nCurve = nCurve->create_reverse();
-                Geom::CubicBezier const *cubic = dynamic_cast<Geom::CubicBezier const *>(nCurve->last_segment());
+                SPCurve out;
+                nCurve.reverse();
+                Geom::CubicBezier const *cubic = dynamic_cast<Geom::CubicBezier const *>(nCurve.last_segment());
                 if (cubic) {
-                    out->moveto((*cubic)[0]);
-                    out->curveto((*cubic)[1], (*cubic)[2] - ((*cubic)[3] - nCurve->first_segment()->initialPoint()),
-                                 (*cubic)[3]);
-                    nCurve->backspace();
-                    nCurve->append_continuous(*out, 0.001);
+                    out.moveto((*cubic)[0]);
+                    out.curveto((*cubic)[1], (*cubic)[2] - ((*cubic)[3] - nCurve.first_segment()->initialPoint()), (*cubic)[3]);
+                    nCurve.backspace();
+                    nCurve.append_continuous(std::move(out), 0.001);
                 }
-                nCurve = nCurve->create_reverse();
+                nCurve.reverse();
             }
-            nCurve->move_endpoints(nCurve->last_segment()->finalPoint(), nCurve->last_segment()->finalPoint());
-            nCurve->closepath_current();
+            nCurve.move_endpoints(nCurve.last_segment()->finalPoint(), nCurve.last_segment()->finalPoint());
+            nCurve.closepath_current();
         }
-        curve->append(*nCurve);
+        curve->append(std::move(nCurve));
     }
 }
 
-std::unique_ptr<SPCurve> LPERoughen::addNodesAndJitter(Geom::Curve const *A, Geom::Point &prev, Geom::Point &last_move, double t,
-                                             bool last)
+SPCurve LPERoughen::addNodesAndJitter(Geom::Curve const *A, Geom::Point &prev, Geom::Point &last_move, double t, bool last)
 {
-    auto out = std::make_unique<SPCurve>();
+    SPCurve out;
     Geom::CubicBezier const *cubic = dynamic_cast<Geom::CubicBezier const *>(&*A);
     double max_length = Geom::distance(A->initialPoint(), A->pointAt(t)) / 3.0;
     Geom::Point point_a1(0, 0);
@@ -397,9 +380,9 @@ std::unique_ptr<SPCurve> LPERoughen::addNodesAndJitter(Geom::Curve const *A, Geo
             } else {
                 prev = point_a2;
             }
-            out->moveto(seg1[0]);
-            out->curveto(point_a1, point_a2, point_a3);
-            out->curveto(point_b1, point_b2, point_b3);
+            out.moveto(seg1[0]);
+            out.curveto(point_a1, point_a2, point_a3);
+            out.curveto(point_b1, point_b2, point_b3);
         } else {
             Geom::Ray ray(A->pointAt(t) + point_a3, A->pointAt(t + (t / 3)));
             double length = max_length;
@@ -432,55 +415,55 @@ std::unique_ptr<SPCurve> LPERoughen::addNodesAndJitter(Geom::Curve const *A, Geo
             } else {
                 prev = point_a2;
             }
-            out->moveto(A->initialPoint());
-            out->curveto(point_a1, point_a2, point_a3);
-            out->curveto(point_b1, point_b2, point_b3);
+            out.moveto(A->initialPoint());
+            out.curveto(point_a1, point_a2, point_a3);
+            out.curveto(point_b1, point_b2, point_b3);
         }
     } else if (handles == HM_RETRACT) {
-        out->moveto(A->initialPoint());
-        out->lineto(A->pointAt(t) + point_a3);
+        out.moveto(A->initialPoint());
+        out.lineto(A->pointAt(t) + point_a3);
         if (cubic && !last) {
             std::pair<Geom::CubicBezier, Geom::CubicBezier> div = cubic->subdivide(t);
             std::vector<Geom::Point> seg2 = div.second.controlPoints();
-            out->curveto(seg2[1], seg2[2], seg2[3]);
+            out.curveto(seg2[1], seg2[2], seg2[3]);
         } else {
-            out->lineto(A->finalPoint() + point_b3);
+            out.lineto(A->finalPoint() + point_b3);
         }
     } else if (handles == HM_ALONG_NODES) {
         if (cubic) {
             std::pair<Geom::CubicBezier, Geom::CubicBezier> div = cubic->subdivide(t);
             std::vector<Geom::Point> seg1 = div.first.controlPoints(), seg2 = div.second.controlPoints();
-            out->moveto(seg1[0]);
-            out->curveto(seg1[1] + last_move, seg1[2] + point_a3, seg1[3] + point_a3);
+            out.moveto(seg1[0]);
+            out.curveto(seg1[1] + last_move, seg1[2] + point_a3, seg1[3] + point_a3);
             last_move = point_a3;
             if (last) {
                 last_move = point_b3;
             }
-            out->curveto(seg2[1] + point_a3, seg2[2] + point_b3, seg2[3] + point_b3);
+            out.curveto(seg2[1] + point_a3, seg2[2] + point_b3, seg2[3] + point_b3);
         } else {
-            out->moveto(A->initialPoint());
-            out->lineto(A->pointAt(t) + point_a3);
-            out->lineto(A->finalPoint() + point_b3);
+            out.moveto(A->initialPoint());
+            out.lineto(A->pointAt(t) + point_a3);
+            out.lineto(A->finalPoint() + point_b3);
         }
     } else if (handles == HM_RAND) {
         if (cubic) {
             std::pair<Geom::CubicBezier, Geom::CubicBezier> div = cubic->subdivide(t);
             std::vector<Geom::Point> seg1 = div.first.controlPoints(), seg2 = div.second.controlPoints();
-            out->moveto(seg1[0]);
-            out->curveto(seg1[1] + point_a1, seg1[2] + point_a2 + point_a3, seg1[3] + point_a3);
-            out->curveto(seg2[1] + point_a3 + point_b1, seg2[2] + point_b2 + point_b3, seg2[3] + point_b3);
+            out.moveto(seg1[0]);
+            out.curveto(seg1[1] + point_a1, seg1[2] + point_a2 + point_a3, seg1[3] + point_a3);
+            out.curveto(seg2[1] + point_a3 + point_b1, seg2[2] + point_b2 + point_b3, seg2[3] + point_b3);
         } else {
-            out->moveto(A->initialPoint());
-            out->lineto(A->pointAt(t) + point_a3);
-            out->lineto(A->finalPoint() + point_b3);
+            out.moveto(A->initialPoint());
+            out.lineto(A->pointAt(t) + point_a3);
+            out.lineto(A->finalPoint() + point_b3);
         }
     }
     return out;
 }
 
-std::unique_ptr<SPCurve> LPERoughen::jitter(Geom::Curve const *A, Geom::Point &prev, Geom::Point &last_move)
+SPCurve LPERoughen::jitter(Geom::Curve const *A, Geom::Point &prev, Geom::Point &last_move)
 {
-    auto out = std::make_unique<SPCurve>();
+    SPCurve out;
     Geom::CubicBezier const *cubic = dynamic_cast<Geom::CubicBezier const *>(&*A);
     double max_length = Geom::distance(A->initialPoint(), A->finalPoint()) / 3.0;
     Geom::Point point_a1(0, 0);
@@ -507,8 +490,8 @@ std::unique_ptr<SPCurve> LPERoughen::jitter(Geom::Curve const *A, Geom::Point &p
                 point_a2 = randomize(max_length, false);
             }
             prev = (*cubic)[2] + point_a2;
-            out->moveto((*cubic)[0]);
-            out->curveto((*cubic)[0] + point_a1, (*cubic)[2] + point_a2 + point_a3, (*cubic)[3] + point_a3);
+            out.moveto((*cubic)[0]);
+            out.curveto((*cubic)[0] + point_a1, (*cubic)[2] + point_a2 + point_a3, (*cubic)[3] + point_a3);
         } else {
             Geom::Ray ray(prev, A->initialPoint());
             point_a1 = Geom::Point::polar(ray.angle(), max_length);
@@ -522,25 +505,25 @@ std::unique_ptr<SPCurve> LPERoughen::jitter(Geom::Curve const *A, Geom::Point &p
                 point_a2 = randomize(max_length, false);
             }
             prev = A->pointAt((1.0 / 3.0) * 2) + point_a2 + point_a3;
-            out->moveto(A->initialPoint());
-            out->curveto(A->initialPoint() + point_a1, A->pointAt((1.0 / 3.0) * 2) + point_a2 + point_a3,
+            out.moveto(A->initialPoint());
+            out.curveto(A->initialPoint() + point_a1, A->pointAt((1.0 / 3.0) * 2) + point_a2 + point_a3,
                          A->finalPoint() + point_a3);
         }
     } else if (handles == HM_RETRACT) {
-        out->moveto(A->initialPoint());
-        out->lineto(A->finalPoint() + point_a3);
+        out.moveto(A->initialPoint());
+        out.lineto(A->finalPoint() + point_a3);
     } else if (handles == HM_ALONG_NODES) {
         if (cubic) {
-            out->moveto((*cubic)[0]);
-            out->curveto((*cubic)[1] + last_move, (*cubic)[2] + point_a3, (*cubic)[3] + point_a3);
+            out.moveto((*cubic)[0]);
+            out.curveto((*cubic)[1] + last_move, (*cubic)[2] + point_a3, (*cubic)[3] + point_a3);
             last_move = point_a3;
         } else {
-            out->moveto(A->initialPoint());
-            out->lineto(A->finalPoint() + point_a3);
+            out.moveto(A->initialPoint());
+            out.lineto(A->finalPoint() + point_a3);
         }
     } else if (handles == HM_RAND) {
-        out->moveto(A->initialPoint());
-        out->curveto(A->pointAt(0.3333) + point_a1, A->pointAt(0.6666) + point_a2 + point_a3,
+        out.moveto(A->initialPoint());
+        out.curveto(A->pointAt(0.3333) + point_a1, A->pointAt(0.6666) + point_a2 + point_a3,
                      A->finalPoint() + point_a3);
     }
     return out;

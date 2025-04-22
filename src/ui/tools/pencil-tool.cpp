@@ -17,7 +17,11 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <numeric> // For std::accumulate
+#include "pencil-tool.h"
+
+#include <cmath>   // std::lerp
+#include <numeric> // std::accumulate
+
 #include <gdk/gdkkeysyms.h>
 #include <glibmm/i18n.h>
 
@@ -26,7 +30,6 @@
 #include <2geom/sbasis-to-bezier.h>
 #include <2geom/svg-path-parser.h>
 
-#include "pencil-tool.h"
 
 #include "context-fns.h"
 #include "desktop.h"
@@ -57,49 +60,42 @@
 #include "svg/svg.h"
 
 #include "ui/draw-anchor.h"
-#include "ui/tool/event-utils.h"
+#include "ui/widget/events/canvas-event.h"
 
 #include "xml/node.h"
 #include "xml/sp-css-attr.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Tools {
+#define DDC_MIN_PRESSURE      0.0
+#define DDC_MAX_PRESSURE      1.0
+#define DDC_DEFAULT_PRESSURE  1.0
+
+namespace Inkscape::UI::Tools {
 
 static Geom::Point pencil_drag_origin_w(0, 0);
 static bool pencil_within_tolerance = false;
 
 static bool in_svg_plane(Geom::Point const &p) { return Geom::LInfty(p) < 1e18; }
-const double HANDLE_CUBIC_GAP = 0.01;
 
 PencilTool::PencilTool(SPDesktop *desktop)
     : FreehandBase(desktop, "/tools/freehand/pencil", "pencil.svg")
-    , p()
-    , _npoints(0)
-    , _state(SP_PENCIL_CONTEXT_IDLE)
-    , _req_tangent(0, 0)
-    , _is_drawing(false)
-    , sketch_n(0)
-    , _pressure_curve(nullptr)
 {
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     if (prefs->getBool("/tools/freehand/pencil/selcue")) {
         this->enableSelectionCue();
     }
-    this->_pressure_curve = std::make_unique<SPCurve>();
     this->_is_drawing = false;
     this->anchor_statusbar = false;
 }
 
-PencilTool::~PencilTool() {
-}
+PencilTool::~PencilTool() = default;
 
-void PencilTool::_extinput(GdkEvent *event) {
-    if (gdk_event_get_axis (event, GDK_AXIS_PRESSURE, &this->pressure)) {
-        this->pressure = CLAMP (this->pressure, DDC_MIN_PRESSURE, DDC_MAX_PRESSURE);
+void PencilTool::_extinput(ExtendedInput const &ext)
+{
+    if (ext.pressure) {
+        pressure = std::clamp(*ext.pressure, DDC_MIN_PRESSURE, DDC_MAX_PRESSURE);
         is_tablet = true;
     } else {
-        this->pressure = DDC_DEFAULT_PRESSURE;
+        pressure = DDC_DEFAULT_PRESSURE;
         is_tablet = false;
     }
 }
@@ -108,16 +104,16 @@ void PencilTool::_extinput(GdkEvent *event) {
 void PencilTool::_endpointSnap(Geom::Point &p, guint const state) {
     if ((state & GDK_CONTROL_MASK)) { //CTRL enables constrained snapping
         if (this->_npoints > 0) {
-            spdc_endpoint_snap_rotation(this, p, this->p[0], state);
+            spdc_endpoint_snap_rotation(this, p, p_array[0], state);
         }
     } else {
         if (!(state & GDK_SHIFT_MASK)) { //SHIFT disables all snapping, except the angular snapping above
                                          //After all, the user explicitly asked for angular snapping by
                                          //pressing CTRL
-            std::optional<Geom::Point> origin = this->_npoints > 0 ? this->p[0] : std::optional<Geom::Point>();
-            spdc_endpoint_snap_free(this, p, origin, state);
+            std::optional<Geom::Point> origin = this->_npoints > 0 ? p_array[0] : std::optional<Geom::Point>();
+            spdc_endpoint_snap_free(this, p, origin);
         } else {
-            _desktop->snapindicator->remove_snaptarget();
+            _desktop->getSnapIndicator()->remove_snaptarget();
         }
     }
 }
@@ -125,43 +121,38 @@ void PencilTool::_endpointSnap(Geom::Point &p, guint const state) {
 /**
  * Callback for handling all pencil context events.
  */
-bool PencilTool::root_handler(GdkEvent* event) {
+bool PencilTool::root_handler(CanvasEvent const &event)
+{
     bool ret = false;
-    this->_extinput(event);
-    switch (event->type) {
-        case GDK_BUTTON_PRESS:
-            ret = this->_handleButtonPress(event->button);
-            break;
 
-        case GDK_MOTION_NOTIFY:
-            ret = this->_handleMotionNotify(event->motion);
-            break;
+    inspect_event(event,
+        [&] (ButtonPressEvent const &event) {
+            _extinput(event.extinput);
+            ret = _handleButtonPress(event);
+        },
+        [&] (MotionEvent const &event) {
+            _extinput(event.extinput);
+            ret = _handleMotionNotify(event);
+        },
+        [&] (ButtonReleaseEvent const &event) {
+            ret = _handleButtonRelease(event);
+        },
+        [&] (KeyPressEvent const &event) {
+            ret = _handleKeyPress(event);
+        },
+        [&] (KeyReleaseEvent const &event) {
+            ret = _handleKeyRelease(event);
+        },
+        [&] (CanvasEvent const &event) {}
+    );
 
-        case GDK_BUTTON_RELEASE:
-            ret = this->_handleButtonRelease(event->button);
-            break;
-
-        case GDK_KEY_PRESS:
-            ret = this->_handleKeyPress(event->key);
-            break;
-
-        case GDK_KEY_RELEASE:
-            ret = this->_handleKeyRelease(event->key);
-            break;
-
-        default:
-            break;
-    }
-    if (!ret) {
-        ret = FreehandBase::root_handler(event);
-    }
-
-    return ret;
+    return ret || FreehandBase::root_handler(event);
 }
 
-bool PencilTool::_handleButtonPress(GdkEventButton const &bevent) {
+bool PencilTool::_handleButtonPress(ButtonPressEvent const &event)
+{
     bool ret = false;
-    if ( bevent.button == 1) {
+    if (event.num_press == 1 && event.button == 1) {
         Inkscape::Selection *selection = _desktop->getSelection();
 
         if (Inkscape::have_viable_layer(_desktop, defaultMessageContext()) == false) {
@@ -171,20 +162,19 @@ bool PencilTool::_handleButtonPress(GdkEventButton const &bevent) {
         /* Grab mouse, so release will not pass unnoticed */
         grabCanvasEvents();
 
-        Geom::Point const button_w(bevent.x, bevent.y);
-
         /* Find desktop coordinates */
-        Geom::Point p = _desktop->w2d(button_w);
+        Geom::Point p = _desktop->w2d(event.pos);
 
         /* Test whether we hit any anchor. */
-        SPDrawAnchor *anchor = spdc_test_inside(this, button_w);
+        SPDrawAnchor *anchor = spdc_test_inside(this, event.pos);
         if (tablet_enabled) {
             anchor = nullptr;
         }
-        pencil_drag_origin_w = Geom::Point(bevent.x,bevent.y);
+        pencil_drag_origin_w = event.pos;
         pencil_within_tolerance = true;
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         tablet_enabled = prefs->getBool("/tools/freehand/pencil/pressure", false);
+
         switch (this->_state) {
             case SP_PENCIL_CONTEXT_ADDLINE:
                 /* Current segment will be finished with release */
@@ -192,13 +182,13 @@ bool PencilTool::_handleButtonPress(GdkEventButton const &bevent) {
                 break;
             default:
                 /* Set first point of sequence */
-                SnapManager &m = _desktop->namedview->snap_manager;
-                if (bevent.state & GDK_CONTROL_MASK) {
+                auto &m = _desktop->getNamedView()->snap_manager;
+                if (event.modifiers & GDK_CONTROL_MASK) {
                     m.setup(_desktop, true);
-                    if (!(bevent.state & GDK_SHIFT_MASK)) {
+                    if (!(event.modifiers & GDK_SHIFT_MASK)) {
                         m.freeSnapReturnByRef(p, Inkscape::SNAPSOURCE_NODE_HANDLE);
                       }
-                    spdc_create_single_dot(this, p, "/tools/freehand/pencil", bevent.state);
+                    spdc_create_single_dot(this, p, "/tools/freehand/pencil", event.modifiers);
                     m.unSetup();
                     ret = true;
                     break;
@@ -207,9 +197,9 @@ bool PencilTool::_handleButtonPress(GdkEventButton const &bevent) {
                     p = anchor->dp;
                     //Put the start overwrite curve always on the same direction
                     if (anchor->start) {
-                        this->sa_overwrited = anchor->curve->create_reverse();
+                        sa_overwrited = std::make_shared<SPCurve>(anchor->curve->reversed());
                     } else {
-                        this->sa_overwrited = anchor->curve->copy();
+                        sa_overwrited = std::make_shared<SPCurve>(*anchor->curve);
                     }
                     _desktop->messageStack()->flash(Inkscape::NORMAL_MESSAGE, _("Continuing selected path"));
                 } else {
@@ -220,66 +210,65 @@ bool PencilTool::_handleButtonPress(GdkEventButton const &bevent) {
                         // anchor, which is handled by the sibling branch above)
                         selection->clear();
                         _desktop->messageStack()->flash(Inkscape::NORMAL_MESSAGE, _("Creating new path"));
-                    } else if (!(bevent.state & GDK_SHIFT_MASK)) {
+                    } else if (!(event.modifiers & GDK_SHIFT_MASK)) {
                         // This is the first click of a new curve; deselect item so that
                         // this curve is not combined with it (unless it is drawn from its
                         // anchor, which is handled by the sibling branch above)
                         selection->clear();
                         _desktop->messageStack()->flash(Inkscape::NORMAL_MESSAGE, _("Creating new path"));
                         m.freeSnapReturnByRef(p, Inkscape::SNAPSOURCE_NODE_HANDLE);
-                    } else if (selection->singleItem() && SP_IS_PATH(selection->singleItem())) {
+                    } else if (selection->singleItem() && is<SPPath>(selection->singleItem())) {
                         _desktop->messageStack()->flash(Inkscape::NORMAL_MESSAGE, _("Appending to selected path"));
                         m.freeSnapReturnByRef(p, Inkscape::SNAPSOURCE_NODE_HANDLE);
                     }
                     m.unSetup();
                 }
                 if (!tablet_enabled) {
-                    this->sa = anchor;
+                    sa = anchor;
                 }
-                this->_setStartpoint(p);
+                _setStartpoint(p);
                 ret = true;
                 break;
         }
 
         set_high_motion_precision();
-        this->_is_drawing = true;
+        _is_drawing = true;
     }
     return ret;
 }
 
-bool PencilTool::_handleMotionNotify(GdkEventMotion const &mevent) {
-    if ((mevent.state & GDK_CONTROL_MASK) && (mevent.state & GDK_BUTTON1_MASK)) {
+bool PencilTool::_handleMotionNotify(MotionEvent const &event) {
+    if ((event.modifiers & GDK_CONTROL_MASK) && (event.modifiers & GDK_BUTTON1_MASK)) {
         // mouse was accidentally moved during Ctrl+click;
         // ignore the motion and create a single point
-        this->_is_drawing = false;
+        _is_drawing = false;
         return true;
     }
-    bool ret = false;
 
-    if ((mevent.state & GDK_BUTTON2_MASK)) {
+    if ((event.modifiers & GDK_BUTTON2_MASK)) {
         // allow scrolling
-        return ret;
+        return false;
     }
 
     /* Test whether we hit any anchor. */
     SPDrawAnchor *anchor = spdc_test_inside(this, pencil_drag_origin_w);
     if (this->pressure == 0.0 && tablet_enabled && !anchor) {
         // tablet event was accidentally fired without press;
-        return ret;
+        return false;
     }
     
-    if ( ( mevent.state & GDK_BUTTON1_MASK ) && this->_is_drawing) {
+    if ( ( event.modifiers & GDK_BUTTON1_MASK ) && this->_is_drawing) {
         /* Grab mouse, so release will not pass unnoticed */
         grabCanvasEvents();
     }
 
     /* Find desktop coordinates */
-    Geom::Point p = _desktop->w2d(Geom::Point(mevent.x, mevent.y));
+    Geom::Point p = _desktop->w2d(event.pos);
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     if (pencil_within_tolerance) {
         gint const tolerance = prefs->getIntLimited("/options/dragtolerance/value", 0, 0, 100);
-        if ( Geom::LInfty( Geom::Point(mevent.x,mevent.y) - pencil_drag_origin_w ) < tolerance ) {
+        if ( Geom::LInfty(event.pos - pencil_drag_origin_w ) < tolerance ) {
             return false;   // Do not drag if we're within tolerance from origin.
         }
     }
@@ -289,12 +278,14 @@ bool PencilTool::_handleMotionNotify(GdkEventMotion const &mevent) {
     // motion notify coordinates as given (no snapping back to origin)
     pencil_within_tolerance = false;
     
-    anchor = spdc_test_inside(this, Geom::Point(mevent.x,mevent.y));
+    anchor = spdc_test_inside(this, event.pos);
+
+    bool ret = false;
 
     switch (this->_state) {
         case SP_PENCIL_CONTEXT_ADDLINE:
             if (is_tablet) {
-                this->_state = SP_PENCIL_CONTEXT_FREEHAND;
+                _state = SP_PENCIL_CONTEXT_FREEHAND;
                 return false;
             }
             /* Set red endpoint */
@@ -302,69 +293,69 @@ bool PencilTool::_handleMotionNotify(GdkEventMotion const &mevent) {
                 p = anchor->dp;
             } else {
                 Geom::Point ptnr(p);
-                this->_endpointSnap(ptnr, mevent.state);
+                _endpointSnap(ptnr, event.modifiers);
                 p = ptnr;
             }
-            this->_setEndpoint(p);
+            _setEndpoint(p);
             ret = true;
             break;
         default:
             /* We may be idle or already freehand */
-            if ( (mevent.state & GDK_BUTTON1_MASK) && this->_is_drawing ) {
-                if (this->_state == SP_PENCIL_CONTEXT_IDLE) {
-                    this->discard_delayed_snap_event();
+            if ( (event.modifiers & GDK_BUTTON1_MASK) && _is_drawing ) {
+                if (_state == SP_PENCIL_CONTEXT_IDLE) {
+                    discard_delayed_snap_event();
                 }
-                this->_state = SP_PENCIL_CONTEXT_FREEHAND;
+                _state = SP_PENCIL_CONTEXT_FREEHAND;
 
-                if ( !this->sa && !this->green_anchor ) {
+                if ( !sa && !green_anchor ) {
                     /* Create green anchor */
-                    this->green_anchor.reset(new SPDrawAnchor(this, this->green_curve.get(), TRUE, this->p[0]));
+                    green_anchor = std::make_unique<SPDrawAnchor>(this, green_curve, true, p_array[0]);
                 }
                 if (anchor) {
                     p = anchor->dp;
                 }
-                if ( this->_npoints != 0) { // buttonpress may have happened before we entered draw context!
-                    if (this->ps.empty()) {
-                        // Only in freehand mode we have to add the first point also to this->ps (apparently)
+                if ( _npoints != 0) { // buttonpress may have happened before we entered draw context!
+                    if (ps.empty()) {
+                        // Only in freehand mode we have to add the first point also to ps (apparently)
                         // - We cannot add this point in spdc_set_startpoint, because we only need it for freehand
                         // - We cannot do this in the button press handler because at that point we don't know yet
                         //   whether we're going into freehand mode or not
-                        this->ps.push_back(this->p[0]);
+                        ps.push_back(p_array[0]);
                         if (tablet_enabled) {
-                            this->_wps.emplace_back(0, 0);
+                            _wps.emplace_back(0, 0);
                         }
                     }
-                    this->_addFreehandPoint(p, mevent.state, false);
+                    _addFreehandPoint(p, event.modifiers, false);
                     ret = true;
                 }
-                if (anchor && !this->anchor_statusbar) {
-                    this->message_context->set(Inkscape::NORMAL_MESSAGE, _("<b>Release</b> here to close and finish the path."));
-                    this->anchor_statusbar = true;
-                    this->ea = anchor;
-                } else if (!anchor && this->anchor_statusbar) {
-                    this->message_context->clear();
-                    this->anchor_statusbar = false;
-                    this->ea = nullptr;
+                if (anchor && !anchor_statusbar) {
+                    message_context->set(Inkscape::NORMAL_MESSAGE, _("<b>Release</b> here to close and finish the path."));
+                    anchor_statusbar = true;
+                    ea = anchor;
+                } else if (!anchor && anchor_statusbar) {
+                    message_context->clear();
+                    anchor_statusbar = false;
+                    ea = nullptr;
                 } else if (!anchor) {
-                    this->message_context->set(Inkscape::NORMAL_MESSAGE, _("Drawing a freehand path"));
-                    this->ea = nullptr;
+                    message_context->set(Inkscape::NORMAL_MESSAGE, _("Drawing a freehand path"));
+                    ea = nullptr;
                 }
 
             } else {
-                if (anchor && !this->anchor_statusbar) {
-                    this->message_context->set(Inkscape::NORMAL_MESSAGE, _("<b>Drag</b> to continue the path from this point."));
-                    this->anchor_statusbar = true;
-                } else if (!anchor && this->anchor_statusbar) {
-                    this->message_context->clear();
-                    this->anchor_statusbar = false;
+                if (anchor && !anchor_statusbar) {
+                    message_context->set(Inkscape::NORMAL_MESSAGE, _("<b>Drag</b> to continue the path from this point."));
+                    anchor_statusbar = true;
+                } else if (!anchor && anchor_statusbar) {
+                    message_context->clear();
+                    anchor_statusbar = false;
                 }
             }
 
             // Show the pre-snap indicator to communicate to the user where we would snap to if he/she were to
             // a) press the mousebutton to start a freehand drawing, or
             // b) release the mousebutton to finish a freehand drawing
-            if (!tablet_enabled && !this->sp_event_context_knot_mouseover()) {
-                SnapManager &m = _desktop->namedview->snap_manager;
+            if (!tablet_enabled && !sp_event_context_knot_mouseover()) {
+                SnapManager &m = _desktop->getNamedView()->snap_manager;
                 m.setup(_desktop, true);
                 m.preSnap(Inkscape::SnapCandidatePoint(p, Inkscape::SNAPSOURCE_NODE_HANDLE));
                 m.unSetup();
@@ -374,40 +365,41 @@ bool PencilTool::_handleMotionNotify(GdkEventMotion const &mevent) {
     return ret;
 }
 
-bool PencilTool::_handleButtonRelease(GdkEventButton const &revent) {
+bool PencilTool::_handleButtonRelease(ButtonReleaseEvent const &event) {
+
     bool ret = false;
 
     set_high_motion_precision(false);
 
-    if ( revent.button == 1 && this->_is_drawing) {
-        this->_is_drawing = false;
+    if (event.button == 1 && _is_drawing) {
+        _is_drawing = false;
 
         /* Find desktop coordinates */
-        Geom::Point p = _desktop->w2d(Geom::Point(revent.x, revent.y));
+        Geom::Point p = _desktop->w2d(event.pos);
 
         /* Test whether we hit any anchor. */
-        SPDrawAnchor *anchor = spdc_test_inside(this, Geom::Point(revent.x, revent.y));
+        SPDrawAnchor *anchor = spdc_test_inside(this, event.pos);
 
-        switch (this->_state) {
+        switch (_state) {
             case SP_PENCIL_CONTEXT_IDLE:
                 /* Releasing button in idle mode means single click */
                 /* We have already set up start point/anchor in button_press */
-                if (!(revent.state & GDK_CONTROL_MASK) && !is_tablet) {
+                if (!(event.modifiers & GDK_CONTROL_MASK) && !is_tablet) {
                     // Ctrl+click creates a single point so only set context in ADDLINE mode when Ctrl isn't pressed
-                    this->_state = SP_PENCIL_CONTEXT_ADDLINE;
+                    _state = SP_PENCIL_CONTEXT_ADDLINE;
                 }
                 /*Or select the down item if we are in tablet mode*/
                 if (is_tablet) {
                     using namespace Inkscape::LivePathEffect;
-                    SPItem *item = sp_event_context_find_item(_desktop, Geom::Point(revent.x, revent.y), FALSE, FALSE);
-                    if (item && (!this->white_item || item != white_item)) {
-                        if (SP_IS_LPE_ITEM(item)) {
-                            Effect* lpe = SP_LPE_ITEM(item)->getCurrentLPE();
+                    SPItem *item = sp_event_context_find_item(_desktop, event.pos, false, false);
+                    if (item && (!white_item || item != white_item)) {
+                        if (is<SPLPEItem>(item)) {
+                            Effect* lpe = cast<SPLPEItem>(item)->getCurrentLPE();
                             if (lpe) {
                                 LPEPowerStroke* ps = static_cast<LPEPowerStroke*>(lpe);
                                 if (ps) {
-                                    _desktop->selection->clear();
-                                    _desktop->selection->add(item);
+                                    _desktop->getSelection()->clear();
+                                    _desktop->getSelection()->add(item);
                                 }
                             }
                         }
@@ -419,22 +411,22 @@ bool PencilTool::_handleButtonRelease(GdkEventButton const &revent) {
                 if (anchor) {
                     p = anchor->dp;
                 } else {
-                    this->_endpointSnap(p, revent.state);
+                    _endpointSnap(p, event.modifiers);
                 }
-                this->ea = anchor;
-                this->_setEndpoint(p);
-                this->_finishEndpoint();
-                this->_state = SP_PENCIL_CONTEXT_IDLE;
-                this->discard_delayed_snap_event();
+                ea = anchor;
+                _setEndpoint(p);
+                _finishEndpoint();
+                _state = SP_PENCIL_CONTEXT_IDLE;
+                discard_delayed_snap_event();
                 break;
             case SP_PENCIL_CONTEXT_FREEHAND:
-                if (revent.state & GDK_MOD1_MASK && !tablet_enabled) {
+                if (event.modifiers & GDK_MOD1_MASK && !tablet_enabled) {
                     /* sketch mode: interpolate the sketched path and improve the current output path with the new interpolation. don't finish sketch */
-                    this->_sketchInterpolate();
+                    _sketchInterpolate();
 
-                    this->green_anchor.reset();
+                    green_anchor.reset();
 
-                    this->_state = SP_PENCIL_CONTEXT_SKETCH;
+                    _state = SP_PENCIL_CONTEXT_SKETCH;
                 } else {
                     /* Finish segment now */
                     /// \todo fixme: Clean up what follows (Lauris)
@@ -443,21 +435,21 @@ bool PencilTool::_handleButtonRelease(GdkEventButton const &revent) {
                     } else {
                         Geom::Point p_end = p;
                         if (tablet_enabled) {
-                            this->_addFreehandPoint(p_end, revent.state, true);
-                            this->_pressure_curve->reset();
+                            _addFreehandPoint(p_end, event.modifiers, true);
+                            _pressure_curve.reset();
                         } else {
-                            this->_endpointSnap(p_end, revent.state);
+                            _endpointSnap(p_end, event.modifiers);
                             if (p_end != p) {
                                 // then we must have snapped!
-                                this->_addFreehandPoint(p_end, revent.state, true);
+                                _addFreehandPoint(p_end, event.modifiers, true);
                             }
                         }
                     }
 
-                    this->ea = anchor;
+                    ea = anchor;
                     /* Write curves to object */
                     _desktop->messageStack()->flash(Inkscape::NORMAL_MESSAGE, _("Finishing freehand"));
-                    this->_interpolate();
+                    _interpolate();
                     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
                     if (tablet_enabled) {
                         gint shapetype = prefs->getInt("/tools/freehand/pencil/shape", 0);
@@ -466,22 +458,22 @@ bool PencilTool::_handleButtonRelease(GdkEventButton const &revent) {
                         prefs->setInt("/tools/freehand/pencil/shape", 0);
                         prefs->setInt("/tools/freehand/pencil/simplify", 0);
                         prefs->setInt("/tools/freehand/pencil/freehand-mode", 0);
-                        spdc_concat_colors_and_flush(this, FALSE);
+                        spdc_concat_colors_and_flush(this, false);
                         prefs->setInt("/tools/freehand/pencil/freehand-mode", mode);
                         prefs->setInt("/tools/freehand/pencil/simplify", simplify);
                         prefs->setInt("/tools/freehand/pencil/shape", shapetype);
                     } else {
-                        spdc_concat_colors_and_flush(this, FALSE);
+                        spdc_concat_colors_and_flush(this, false);
                     }
-                    this->points.clear();
-                    this->sa = nullptr;
-                    this->ea = nullptr;
-                    this->ps.clear();
-                    this->_wps.clear();
-                    this->green_anchor.reset();
-                    this->_state = SP_PENCIL_CONTEXT_IDLE;
+                    points.clear();
+                    sa = nullptr;
+                    ea = nullptr;
+                    ps.clear();
+                    _wps.clear();
+                    green_anchor.reset();
+                    _state = SP_PENCIL_CONTEXT_IDLE;
                     // reset sketch mode too
-                    this->sketch_n = 0;
+                    sketch_n = 0;
                 }
                 break;
             case SP_PENCIL_CONTEXT_SKETCH:
@@ -499,60 +491,57 @@ bool PencilTool::_handleButtonRelease(GdkEventButton const &revent) {
 void PencilTool::_cancel() {
     ungrabCanvasEvents();
 
-    this->_is_drawing = false;
-    this->_state = SP_PENCIL_CONTEXT_IDLE;
-    this->discard_delayed_snap_event();
+    _is_drawing = false;
+    _state = SP_PENCIL_CONTEXT_IDLE;
+    discard_delayed_snap_event();
 
-    this->red_curve->reset();
-    this->red_bpath->set_bpath(red_curve.get());
+    red_curve.reset();
+    red_bpath->set_bpath(&red_curve);
 
-    for (auto path : this->green_bpaths) {
-        delete path;
-    }
-    this->green_bpaths.clear();
-    this->green_curve->reset();
-    this->green_anchor.reset();
+    green_bpaths.clear();
+    green_curve->reset();
+    green_anchor.reset();
 
-    this->message_context->clear();
-    this->message_context->flash(Inkscape::NORMAL_MESSAGE, _("Drawing cancelled"));
+    message_context->clear();
+    message_context->flash(Inkscape::NORMAL_MESSAGE, _("Drawing cancelled"));
 }
 
-bool PencilTool::_handleKeyPress(GdkEventKey const &event) {
+bool PencilTool::_handleKeyPress(KeyPressEvent const &event) {
     bool ret = false;
 
-    switch (get_latin_keyval(&event)) {
+    switch (get_latin_keyval(event)) {
         case GDK_KEY_Up:
         case GDK_KEY_Down:
         case GDK_KEY_KP_Up:
         case GDK_KEY_KP_Down:
             // Prevent the zoom field from activation.
-            if (!Inkscape::UI::held_only_control(event)) {
+            if (!state_held_only_ctrl(event.modifiers)) {
                 ret = true;
             }
             break;
         case GDK_KEY_Escape:
-            if (this->_npoints != 0) {
+            if (_npoints != 0) {
                 // if drawing, cancel, otherwise pass it up for deselecting
-                if (this->_state != SP_PENCIL_CONTEXT_IDLE) {
-                    this->_cancel();
+                if (_state != SP_PENCIL_CONTEXT_IDLE) {
+                    _cancel();
                     ret = true;
                 }
             }
             break;
         case GDK_KEY_z:
         case GDK_KEY_Z:
-            if (Inkscape::UI::held_only_control(event) && this->_npoints != 0) {
+            if (state_held_only_ctrl(event.modifiers) && _npoints != 0) {
                 // if drawing, cancel, otherwise pass it up for undo
-                if (this->_state != SP_PENCIL_CONTEXT_IDLE) {
-                    this->_cancel();
+                if (_state != SP_PENCIL_CONTEXT_IDLE) {
+                    _cancel();
                     ret = true;
                 }
             }
             break;
         case GDK_KEY_g:
         case GDK_KEY_G:
-            if (Inkscape::UI::held_only_shift(event)) {
-                _desktop->selection->toGuides();
+            if (state_held_only_shift(event.modifiers)) {
+                _desktop->getSelection()->toGuides();
                 ret = true;
             }
             break;
@@ -560,7 +549,7 @@ bool PencilTool::_handleKeyPress(GdkEventKey const &event) {
         case GDK_KEY_Alt_R:
         case GDK_KEY_Meta_L:
         case GDK_KEY_Meta_R:
-            if (this->_state == SP_PENCIL_CONTEXT_IDLE) {
+            if (_state == SP_PENCIL_CONTEXT_IDLE) {
                 _desktop->messageStack()->flash(Inkscape::NORMAL_MESSAGE, _("<b>Sketch mode</b>: holding <b>Alt</b> interpolates between sketched paths. Release <b>Alt</b> to finalize."));
             }
             break;
@@ -570,22 +559,22 @@ bool PencilTool::_handleKeyPress(GdkEventKey const &event) {
     return ret;
 }
 
-bool PencilTool::_handleKeyRelease(GdkEventKey const &event) {
+bool PencilTool::_handleKeyRelease(KeyReleaseEvent const &event) {
     bool ret = false;
 
-    switch (get_latin_keyval(&event)) {
+    switch (get_latin_keyval(event)) {
         case GDK_KEY_Alt_L:
         case GDK_KEY_Alt_R:
         case GDK_KEY_Meta_L:
         case GDK_KEY_Meta_R:
-            if (this->_state == SP_PENCIL_CONTEXT_SKETCH) {
-                spdc_concat_colors_and_flush(this, FALSE);
-                this->sketch_n = 0;
-                this->sa = nullptr;
-                this->ea = nullptr;
-                this->green_anchor.reset();
-                this->_state = SP_PENCIL_CONTEXT_IDLE;
-                this->discard_delayed_snap_event();
+            if (_state == SP_PENCIL_CONTEXT_SKETCH) {
+                spdc_concat_colors_and_flush(this, false);
+                sketch_n = 0;
+                sa = nullptr;
+                ea = nullptr;
+                green_anchor.reset();
+                _state = SP_PENCIL_CONTEXT_IDLE;
+                discard_delayed_snap_event();
                 _desktop->messageStack()->flash(Inkscape::NORMAL_MESSAGE, _("Finishing freehand sketch"));
                 ret = true;
             }
@@ -600,10 +589,10 @@ bool PencilTool::_handleKeyRelease(GdkEventKey const &event) {
  * Reset points and set new starting point.
  */
 void PencilTool::_setStartpoint(Geom::Point const &p) {
-    this->_npoints = 0;
-    this->red_curve_is_valid = false;
+    _npoints = 0;
+    red_curve_is_valid = false;
     if (in_svg_plane(p)) {
-        this->p[this->_npoints++] = p;
+        p_array[_npoints++] = p;
     }
 }
 
@@ -618,7 +607,7 @@ void PencilTool::_setStartpoint(Geom::Point const &p) {
  * We change RED curve.
  */
 void PencilTool::_setEndpoint(Geom::Point const &p) {
-    if (this->_npoints == 0) {
+    if (_npoints == 0) {
         return;
         /* May occur if first point wasn't in SVG plane (e.g. weird w2d transform, perhaps from bad
          * zoom setting).
@@ -626,20 +615,20 @@ void PencilTool::_setEndpoint(Geom::Point const &p) {
     }
     g_return_if_fail( this->_npoints > 0 );
 
-    this->red_curve->reset();
-    if ( ( p == this->p[0] )
+    red_curve.reset();
+    if ( ( p == p_array[0] )
          || !in_svg_plane(p) )
     {
-        this->_npoints = 1;
+        _npoints = 1;
     } else {
-        this->p[1] = p;
-        this->_npoints = 2;
+        p_array[1] = p;
+        _npoints = 2;
 
-        this->red_curve->moveto(this->p[0]);
-        this->red_curve->lineto(this->p[1]);
-        this->red_curve_is_valid = true;
+        red_curve.moveto(p_array[0]);
+        red_curve.lineto(p_array[1]);
+        red_curve_is_valid = true;
         if (!tablet_enabled) {
-            red_bpath->set_bpath(red_curve.get());
+            red_bpath->set_bpath(&red_curve);
         }
     }
 }
@@ -652,16 +641,16 @@ void PencilTool::_setEndpoint(Geom::Point const &p) {
  * Still not sure, how it will make most sense.
  */
 void PencilTool::_finishEndpoint() {
-    if (this->red_curve->is_unset() || 
-        this->red_curve->first_point() == this->red_curve->second_point())
+    if (this->red_curve.is_unset() ||
+        this->red_curve.first_point() == this->red_curve.second_point())
     {
-        this->red_curve->reset();
+        this->red_curve.reset();
         if (!tablet_enabled) {
             red_bpath->set_bpath(nullptr);
         }
     } else {
         /* Write curves to object. */
-        spdc_concat_colors_and_flush(this, FALSE);
+        spdc_concat_colors_and_flush(this, false);
         this->sa = nullptr;
         this->ea = nullptr;
     }
@@ -686,18 +675,17 @@ void PencilTool::addPowerStrokePencil()
         // worst case gives us a segment per point
         int max_segs = 4 * n_points;
         std::vector<Geom::Point> b(max_segs);
-        auto curvepressure = std::make_unique<SPCurve>();
+        SPCurve curvepressure;
         int const n_segs = Geom::bezier_fit_cubic_r(b.data(), this->ps.data(), n_points, tolerance_sq, max_segs);
         if (n_segs > 0) {
             /* Fit and draw and reset state */
-            curvepressure->moveto(b[0]);
+            curvepressure.moveto(b[0]);
             for (int c = 0; c < n_segs; c++) {
-                curvepressure->curveto(b[4 * c + 1], b[4 * c + 2], b[4 * c + 3]);
+                curvepressure.curveto(b[4 * c + 1], b[4 * c + 2], b[4 * c + 3]);
             }
         }
-        Geom::Affine transform_coordinate = currentLayer()->i2dt_affine().inverse();
-        curvepressure->transform(transform_coordinate);
-        Geom::Path path = curvepressure->get_pathvector()[0];
+        curvepressure.transform(currentLayer()->i2dt_affine().inverse());
+        Geom::Path path = curvepressure.get_pathvector()[0];
 
         if (!path.empty()) {
             Inkscape::XML::Document *xml_doc = document->getReprDoc();
@@ -707,8 +695,8 @@ void PencilTool::addPowerStrokePencil()
             pp->setAttribute("id", "power_stroke_preview");
             Inkscape::GC::release(pp);
 
-            SPShape *powerpreview = SP_SHAPE(currentLayer()->appendChildRepr(pp));
-            SPLPEItem *lpeitem = dynamic_cast<SPLPEItem *>(powerpreview);
+            auto powerpreview = cast<SPShape>(currentLayer()->appendChildRepr(pp));
+            auto lpeitem = powerpreview;
             if (!lpeitem) {
                 return;
             }
@@ -799,14 +787,14 @@ void PencilTool::addPowerStrokePencil()
  */
 void PencilTool::_addFreehandPoint(Geom::Point const &p, guint /*state*/, bool last)
 {
-    g_assert( this->_npoints > 0 );
-    g_return_if_fail(unsigned(this->_npoints) < G_N_ELEMENTS(this->p));
+    g_assert(_npoints > 0 );
+    g_return_if_fail(unsigned(_npoints) < G_N_ELEMENTS(p_array));
 
     double distance = 0;
-    if ( ( p != this->p[ this->_npoints - 1 ] )
+    if ( ( p != p_array[_npoints - 1 ] )
          && in_svg_plane(p) )
     {
-        this->p[this->_npoints++] = p;
+        p_array[_npoints++] = p;
         this->_fitAndSplit();
         if (tablet_enabled) {
             distance = Geom::distance(p, this->ps.back()) + this->_wps.back()[Geom::X];
@@ -821,11 +809,11 @@ void PencilTool::_addFreehandPoint(Geom::Point const &p, guint /*state*/, bool l
             min = max;
         }
         double dezoomify_factor = 0.05 * 1000 / _desktop->current_zoom();
-        double const pressure_shrunk = pressure * (max - min) + min; // C++20 -> use std::lerp()
+        double const pressure_shrunk = std::lerp(min, max, pressure);
         double pressure_computed = std::abs(pressure_shrunk * dezoomify_factor);
         double pressure_computed_scaled = std::abs(pressure_computed * _desktop->getDocument()->getDocumentScale().inverse()[Geom::X]);
-        if (p != this->p[this->_npoints - 1]) {
-            this->_wps.emplace_back(distance, pressure_computed_scaled);
+        if (p != p_array[_npoints - 1]) {
+            _wps.emplace_back(distance, pressure_computed_scaled);
         }
         if (pressure_computed) {
             Geom::Circle pressure_dot(p, pressure_computed);
@@ -833,12 +821,12 @@ void PencilTool::_addFreehandPoint(Geom::Point const &p, guint /*state*/, bool l
             pressure_piecewise.push_cut(0);
             pressure_piecewise.push(pressure_dot.toSBasis(), 1);
             Geom::PathVector pressure_path = Geom::path_from_piecewise(pressure_piecewise, 0.1);
-            Geom::PathVector previous_presure = this->_pressure_curve->get_pathvector();
+            Geom::PathVector previous_presure = _pressure_curve.get_pathvector();
             if (!pressure_path.empty() && !previous_presure.empty()) {
                 pressure_path = sp_pathvector_boolop(pressure_path, previous_presure, bool_op_union, fill_nonZero, fill_nonZero);
             }
-            this->_pressure_curve->set_pathvector(pressure_path);
-            red_bpath->set_bpath(_pressure_curve.get());
+            _pressure_curve = SPCurve(std::move(pressure_path));
+            red_bpath->set_bpath(&_pressure_curve);
         }
         if (last) {
             this->addPowerStrokePencil();
@@ -934,7 +922,7 @@ void PencilTool::_interpolate() {
         tol = std::min(tol,tol2);
     }
     this->green_curve->reset();
-    this->red_curve->reset();
+    this->red_curve.reset();
     this->red_curve_is_valid = false;
 
     double tolerance_sq = 0.02 * square(_desktop->w2d().descrim() * tol) * exp(0.2 * tol - 2);
@@ -957,9 +945,7 @@ void PencilTool::_interpolate() {
             // if we are in BSpline we modify the trace to create adhoc nodes 
             if (mode == 2) {
                 Geom::Point point_at1 = b[4 * c + 0] + (1./3) * (b[4 * c + 3] - b[4 * c + 0]);
-                point_at1 = Geom::Point(point_at1[X] + HANDLE_CUBIC_GAP, point_at1[Y] + HANDLE_CUBIC_GAP);
                 Geom::Point point_at2 = b[4 * c + 3] + (1./3) * (b[4 * c + 0] - b[4 * c + 3]);
-                point_at2 = Geom::Point(point_at2[X] + HANDLE_CUBIC_GAP, point_at2[Y] + HANDLE_CUBIC_GAP);
                 this->green_curve->curveto(point_at1,point_at2,b[4*c+3]);
             } else {
                 if (!tablet_enabled || c != n_segs - 1) {
@@ -986,14 +972,14 @@ void PencilTool::_interpolate() {
         {
             Geom::Curve const * last_seg = this->green_curve->last_segment();
             g_assert( last_seg );      // Relevance: validity of (*last_seg)
-            this->p[0] = last_seg->finalPoint();
-            this->_npoints = 1;
+            p_array[0] = last_seg->finalPoint();
+            _npoints = 1;
             Geom::Curve *last_seg_reverse = last_seg->reverse();
             Geom::Point const req_vec( -last_seg_reverse->unitTangentAt(0) );
             delete last_seg_reverse;
-            this->_req_tangent = ( ( Geom::is_zero(req_vec) || !in_svg_plane(req_vec) )
-                                ? Geom::Point(0, 0)
-                                : Geom::unit_vector(req_vec) );
+            _req_tangent = ( ( Geom::is_zero(req_vec) || !in_svg_plane(req_vec) )
+                             ? Geom::Point(0, 0)
+                             : Geom::unit_vector(req_vec) );
         }
     }
 }
@@ -1018,7 +1004,7 @@ void PencilTool::_sketchInterpolate() {
 
     g_assert(is_zero(this->_req_tangent) || is_unit_vector(this->_req_tangent));
 
-    this->red_curve->reset();
+    this->red_curve.reset();
     this->red_curve_is_valid = false;
 
     int n_points = this->ps.size();
@@ -1078,14 +1064,14 @@ void PencilTool::_sketchInterpolate() {
         {
             Geom::Curve const * last_seg = this->green_curve->last_segment();
             g_assert( last_seg );      // Relevance: validity of (*last_seg)
-            this->p[0] = last_seg->finalPoint();
-            this->_npoints = 1;
+            p_array[0] = last_seg->finalPoint();
+            _npoints = 1;
             Geom::Curve *last_seg_reverse = last_seg->reverse();
             Geom::Point const req_vec( -last_seg_reverse->unitTangentAt(0) );
             delete last_seg_reverse;
-            this->_req_tangent = ( ( Geom::is_zero(req_vec) || !in_svg_plane(req_vec) )
-                                ? Geom::Point(0, 0)
-                                : Geom::unit_vector(req_vec) );
+            _req_tangent = ( ( Geom::is_zero(req_vec) || !in_svg_plane(req_vec) )
+                             ? Geom::Point(0, 0)
+                             : Geom::unit_vector(req_vec) );
         }
     }
 
@@ -1095,7 +1081,7 @@ void PencilTool::_sketchInterpolate() {
 }
 
 void PencilTool::_fitAndSplit() {
-    g_assert( this->_npoints > 1 );
+    g_assert(_npoints > 1 );
 
     double const tolerance_sq = 0;
 
@@ -1104,54 +1090,51 @@ void PencilTool::_fitAndSplit() {
              || is_unit_vector(this->_req_tangent));
     Geom::Point const tHatEnd(0, 0);
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    int const n_segs = Geom::bezier_fit_cubic_full(b, nullptr, this->p, this->_npoints,
-                                                this->_req_tangent, tHatEnd,
+    int const n_segs = Geom::bezier_fit_cubic_full(b, nullptr, p_array, _npoints,
+                                                _req_tangent, tHatEnd,
                                                 tolerance_sq, 1);
     if ( n_segs > 0
-         && unsigned(this->_npoints) < G_N_ELEMENTS(this->p) )
+         && unsigned(_npoints) < G_N_ELEMENTS(p_array) )
     {
         /* Fit and draw and reset state */
 
-        this->red_curve->reset();
-        this->red_curve->moveto(b[0]);
+        this->red_curve.reset();
+        this->red_curve.moveto(b[0]);
         using Geom::X;
         using Geom::Y;
             // if we are in BSpline we modify the trace to create adhoc nodes
         guint mode = prefs->getInt("/tools/freehand/pencil/freehand-mode", 0);
         if(mode == 2){
             Geom::Point point_at1 = b[0] + (1./3)*(b[3] - b[0]);
-            point_at1 = Geom::Point(point_at1[X] + HANDLE_CUBIC_GAP, point_at1[Y] + HANDLE_CUBIC_GAP);
             Geom::Point point_at2 = b[3] + (1./3)*(b[0] - b[3]);
-            point_at2 = Geom::Point(point_at2[X] + HANDLE_CUBIC_GAP, point_at2[Y] + HANDLE_CUBIC_GAP);
-            this->red_curve->curveto(point_at1,point_at2,b[3]);
+            this->red_curve.curveto(point_at1,point_at2,b[3]);
         }else{
-            this->red_curve->curveto(b[1], b[2], b[3]);
+            this->red_curve.curveto(b[1], b[2], b[3]);
         }
         if (!tablet_enabled) {
-            red_bpath->set_bpath(red_curve.get());
+            red_bpath->set_bpath(&red_curve);
         }
         this->red_curve_is_valid = true;
     } else {
         /* Fit and draw and copy last point */
 
-        g_assert(!this->red_curve->is_empty());
+        g_assert(!this->red_curve.is_empty());
 
         /* Set up direction of next curve. */
         {
-            Geom::Curve const * last_seg = this->red_curve->last_segment();
+            Geom::Curve const * last_seg = this->red_curve.last_segment();
             g_assert( last_seg );      // Relevance: validity of (*last_seg)
-            this->p[0] = last_seg->finalPoint();
-            this->_npoints = 1;
+            p_array[0] = last_seg->finalPoint();
+            _npoints = 1;
             Geom::Curve *last_seg_reverse = last_seg->reverse();
             Geom::Point const req_vec( -last_seg_reverse->unitTangentAt(0) );
             delete last_seg_reverse;
-            this->_req_tangent = ( ( Geom::is_zero(req_vec) || !in_svg_plane(req_vec) )
-                                ? Geom::Point(0, 0)
-                                : Geom::unit_vector(req_vec) );
+            _req_tangent = ( ( Geom::is_zero(req_vec) || !in_svg_plane(req_vec) )
+                             ? Geom::Point(0, 0)
+                             : Geom::unit_vector(req_vec) );
         }
 
-        green_curve->append_continuous(*red_curve);
-        auto curve = this->red_curve->copy();
+        green_curve->append_continuous(red_curve);
 
         /// \todo fixme:
 
@@ -1163,19 +1146,17 @@ void PencilTool::_fitAndSplit() {
             this->green_color = this->highlight_color;
         }
 
-        auto cshape = new Inkscape::CanvasItemBpath(_desktop->getCanvasSketch(), curve.get(), true);
+        auto cshape = new Inkscape::CanvasItemBpath(_desktop->getCanvasSketch(), red_curve.get_pathvector(), true);
         cshape->set_stroke(green_color);
         cshape->set_fill(0x0, SP_WIND_RULE_NONZERO);
 
-        this->green_bpaths.push_back(cshape);
+        this->green_bpaths.emplace_back(cshape);
 
         this->red_curve_is_valid = false;
     }
 }
 
-}
-}
-}
+} // namespace Inkscape::UI::Tools
 
 /*
   Local Variables:

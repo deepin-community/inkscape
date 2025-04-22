@@ -9,58 +9,74 @@
 
 #include "export-lists.h"
 
-#include <glibmm/convert.h>
 #include <glibmm/i18n.h>
-#include <glibmm/miscutils.h>
-#include <gtkmm.h>
-#include <png.h>
+#include <glibmm/convert.h>   // filename_from_utf8
+#include <glibmm/ustring.h>
+#include <gtkmm/builder.h>
+#include <gtkmm/menubutton.h>
+#include <gtkmm/popover.h>
+#include <gtkmm/spinbutton.h>
+#include <gtkmm/viewport.h>
 
-#include "desktop.h"
-#include "document-undo.h"
-#include "document.h"
 #include "extension/db.h"
 #include "extension/output.h"
 #include "file.h"
 #include "helper/png-write.h"
-#include "inkscape-window.h"
-#include "inkscape.h"
-#include "io/resource.h"
 #include "io/sys.h"
-#include "message-stack.h"
-#include "object/object-set.h"
-#include "object/sp-namedview.h"
-#include "object/sp-page.h"
-#include "object/sp-root.h"
-#include "page-manager.h"
 #include "preferences.h"
-#include "selection-chemistry.h"
-#include "ui/dialog-events.h"
-#include "ui/dialog/dialog-notebook.h"
-#include "ui/dialog/filedialog.h"
 #include "ui/icon-loader.h"
-#include "ui/interface.h"
 #include "ui/widget/scrollprotected.h"
-#include "ui/widget/unit-menu.h"
+#include "ui/builder-utils.h"
+#include "util/units.h"
 
-using Inkscape::Util::unit_table;
-
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
+namespace Inkscape::UI::Dialog {
 
 ExtensionList::ExtensionList()
 {
-    Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    _watch_pref = prefs->createObserver("/dialogs/export/show_all_extensions", [=]() { setup(); });
+    init();
 }
 
 ExtensionList::ExtensionList(BaseObjectType *cobject, const Glib::RefPtr<Gtk::Builder> &refGlade)
     : Inkscape::UI::Widget::ScrollProtected<Gtk::ComboBoxText>(cobject, refGlade)
 {
-    // This duplication is silly, but needed because C++ can't
-    // both deligate the constructor, and construct for glade
+    init();
+}
+
+ExtensionList::~ExtensionList() = default;
+
+void ExtensionList::init()
+{
+    _builder = create_builder("dialog-export-prefs.glade");
+    _pref_button  = &get_widget<Gtk::MenuButton>(_builder, "pref_button");
+    _pref_popover = &get_widget<Gtk::Popover>   (_builder, "pref_popover");
+    _pref_holder  = &get_widget<Gtk::Viewport>  (_builder, "pref_holder");
+
+    _popover_signal = _pref_popover->signal_show().connect([=, this]() {
+        _pref_holder->remove();
+        if (auto ext = getExtension()) {
+            if (auto gui = ext->autogui(nullptr, nullptr)) {
+                _pref_holder->add(*gui);
+                _pref_popover->grab_focus();
+            }
+        }
+    });
+
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
-    _watch_pref = prefs->createObserver("/dialogs/export/show_all_extensions", [=]() { setup(); });
+    _watch_pref = prefs->createObserver("/dialogs/export/show_all_extensions", [this]() { setup(); });
+    // limit size of the combobox
+    auto cell_renderer = dynamic_cast<Gtk::CellRendererText*>(get_first_cell());
+    cell_renderer->set_fixed_size(125, -1);
+    cell_renderer->property_wrap_mode().set_value(Pango::WRAP_WORD);
+    cell_renderer->property_wrap_width().set_value(5);
+}
+
+void ExtensionList::on_changed()
+{
+    bool has_prefs = false;
+    if (auto ext = getExtension()) {
+        has_prefs = (ext->widget_visible_count() > 0);
+    }
+    _pref_button->set_sensitive(has_prefs);
 }
 
 void ExtensionList::setup()
@@ -102,10 +118,10 @@ Inkscape::Extension::Output *ExtensionList::getExtension()
 /**
  * Returns the file extension (file ending) of the currently selected extension.
  */
-Glib::ustring ExtensionList::getFileExtension()
+std::string ExtensionList::getFileExtension()
 {
     if (auto ext = getExtension()) {
-        return ext->get_extension();
+        return Glib::filename_from_utf8(ext->get_extension());
     }
     return "";
 }
@@ -113,7 +129,7 @@ Glib::ustring ExtensionList::getFileExtension()
 /**
  * Removes the file extension, *if* it's one of the extensions in the list.
  */
-void ExtensionList::removeExtension(Glib::ustring &filename)
+void ExtensionList::removeExtension(std::string &filename)
 {
     auto ext = Inkscape::IO::get_file_extension(filename);
     if (ext_to_mod[ext]) {
@@ -121,11 +137,13 @@ void ExtensionList::removeExtension(Glib::ustring &filename)
     }
 }
 
-void ExtensionList::setExtensionFromFilename(Glib::ustring const &filename)
+void ExtensionList::setExtensionFromFilename(std::string const &filename)
 {
     auto ext = Inkscape::IO::get_file_extension(filename);
-    if (auto omod = ext_to_mod[ext]) {
-        this->set_active_id(omod->get_id());
+    if (ext != getFileExtension()) {
+        if (auto omod = ext_to_mod[ext]) {
+            this->set_active_id(omod->get_id());
+        }
     }
 }
 
@@ -138,36 +156,36 @@ void ExportList::setup()
     prefs = Inkscape::Preferences::get();
     default_dpi = prefs->getDouble("/dialogs/export/defaultxdpi/value", DPI_BASE);
 
-    Gtk::Button *add_button = Gtk::manage(new Gtk::Button());
+    auto const add_button = Gtk::make_managed<Gtk::Button>();
     Glib::ustring label = _("Add Export");
     add_button->set_label(label);
-    this->attach(*add_button, 0, 0, 4, 1);
+    this->attach(*add_button, 0, 0, 5, 1);
 
     this->insert_row(0);
 
-    Gtk::Label *suffix_label = Gtk::manage(new Gtk::Label(_("Suffix")));
+    auto const suffix_label = Gtk::make_managed<Gtk::Label>(_("Suffix"));
     this->attach(*suffix_label, _suffix_col, 0, 1, 1);
-    suffix_label->show();
+    suffix_label->set_visible(true);
 
-    Gtk::Label *extension_label = Gtk::manage(new Gtk::Label(_("Format")));
-    this->attach(*extension_label, _extension_col, 0, 1, 1);
-    extension_label->show();
+    auto const extension_label = Gtk::make_managed<Gtk::Label>(_("Format"));
+    this->attach(*extension_label, _extension_col, 0, 2, 1);
+    extension_label->set_visible(true);
 
-    Gtk::Label *dpi_label = Gtk::manage(new Gtk::Label(_("DPI")));
+    auto const dpi_label = Gtk::make_managed<Gtk::Label>(_("DPI"));
     this->attach(*dpi_label, _dpi_col, 0, 1, 1);
-    dpi_label->show();
+    dpi_label->set_visible(true);
 
     append_row();
 
     add_button->signal_clicked().connect(sigc::mem_fun(*this, &ExportList::append_row));
     add_button->set_hexpand(true);
-    add_button->show();
+    add_button->set_visible(true);
 
     this->set_row_spacing(5);
     this->set_column_spacing(2);
 }
 
-void ExportList::removeExtension(Glib::ustring &filename)
+void ExportList::removeExtension(std::string &filename)
 {
     ExtensionList *extension_cb = dynamic_cast<ExtensionList *>(this->get_child_at(_extension_col, 1));
     if (extension_cb) {
@@ -181,19 +199,20 @@ void ExportList::append_row()
     int current_row = _num_rows + 1; // because we have label row at top
     this->insert_row(current_row);
 
-    Gtk::Entry *suffix = Gtk::manage(new Gtk::Entry());
+    auto const suffix = Gtk::make_managed<Gtk::Entry>();
     this->attach(*suffix, _suffix_col, current_row, 1, 1);
     suffix->set_width_chars(2);
     suffix->set_hexpand(true);
     suffix->set_placeholder_text(_("Suffix"));
-    suffix->show();
+    suffix->set_visible(true);
 
-    ExtensionList *extension = Gtk::manage(new ExtensionList());
-    SpinButton *dpi_sb = Gtk::manage(new SpinButton());
+    auto const extension = Gtk::make_managed<ExtensionList>();
+    auto const dpi_sb = Gtk::make_managed<SpinButton>();
 
     extension->setup();
-    extension->show();
+    extension->set_visible(true);
     this->attach(*extension, _extension_col, current_row, 1, 1);
+    this->attach(*extension->getPrefButton(), _prefs_col, current_row, 1, 1);
 
     // Disable DPI when not using a raster image output
     extension->signal_changed().connect([=]() {
@@ -209,11 +228,11 @@ void ExportList::append_row()
     dpi_sb->set_sensitive(true);
     dpi_sb->set_width_chars(6);
     dpi_sb->set_max_width_chars(6);
-    dpi_sb->show();
+    dpi_sb->set_visible(true);
     this->attach(*dpi_sb, _dpi_col, current_row, 1, 1);
 
-    Gtk::Image *pIcon = Gtk::manage(sp_get_icon_image("window-close", Gtk::ICON_SIZE_SMALL_TOOLBAR));
-    Gtk::Button *delete_btn = Gtk::manage(new Gtk::Button());
+    auto const pIcon = Gtk::manage(sp_get_icon_image("window-close", Gtk::ICON_SIZE_SMALL_TOOLBAR));
+    auto const delete_btn = Gtk::make_managed<Gtk::Button>();
     delete_btn->set_relief(Gtk::RELIEF_NONE);
     delete_btn->add(*pIcon);
     delete_btn->show_all();
@@ -236,28 +255,29 @@ void ExportList::delete_row(Gtk::Widget *widget)
     this->remove_row(row);
     _num_rows--;
     if (_num_rows <= 1) {
-        Gtk::Widget *d_button_0 = dynamic_cast<Gtk::Widget *>(this->get_child_at(_delete_col, 1));
+        auto const d_button_0 = this->get_child_at(_delete_col, 1);
         if (d_button_0) {
-            d_button_0->hide();
+            d_button_0->set_visible(false);
         }
     }
 }
 
-Glib::ustring ExportList::get_suffix(int row)
+std::string ExportList::get_suffix(int row)
 {
-    Glib::ustring suffix = "";
+    std::string suffix = "";
     Gtk::Entry *entry = dynamic_cast<Gtk::Entry *>(this->get_child_at(_suffix_col, row + 1));
     if (entry == nullptr) {
         return suffix;
     }
-    suffix = entry->get_text();
+    suffix = Glib::filename_from_utf8(entry->get_text());
     return suffix;
 }
 Inkscape::Extension::Output *ExportList::getExtension(int row)
 {
     ExtensionList *extension_cb = dynamic_cast<ExtensionList *>(this->get_child_at(_extension_col, row + 1));
-    return extension_cb ? extension_cb->getExtension() : nullptr;
+    return extension_cb->getExtension();
 }
+
 double ExportList::get_dpi(int row)
 {
     double dpi = default_dpi;
@@ -269,11 +289,7 @@ double ExportList::get_dpi(int row)
     return dpi;
 }
 
-
-
-} // namespace Dialog
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Dialog
 
 /*
   Local Variables:

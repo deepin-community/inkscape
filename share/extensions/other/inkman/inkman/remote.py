@@ -19,10 +19,7 @@
 Searching for external packages and getting meta data about them.
 """
 
-import re
 import os
-import json
-import logging
 import requests
 
 try:
@@ -32,16 +29,15 @@ try:
 except (ImportError, ModuleNotFoundError):
     CacheControl = None
 
-from inkex.command import CommandNotFound, ProgramRunError, call
-from collections import defaultdict
-
 from .utils import INKSCAPE_VERSION, CACHE_DIR
-from .package import DEFAULT_ICON, PackageItem
+from .package import PackageItem
 
 PYTHON_VERSION = "py3"
 
+
 class SearchError(IOError):
     pass
+
 
 class LocalFile(object):
     """Same API as RemoteFile, but for locals"""
@@ -58,6 +54,9 @@ class LocalFile(object):
 
     def filepath(self):
         return os.path.join(self.basedir, self.url)
+
+    def normpath(self):
+        return os.path.normpath(self.filepath())
 
     def as_local_file(self):
         filename = self.filepath()
@@ -105,13 +104,17 @@ class RemoteArchive(object):
         self.url = self.URL.format(category=category)
         self.session = requests.session()
         if CacheControl is not None:
-            self.session.mount(
-                "https://",
-                CacheControlAdapter(
-                    cache=FileCache(CACHE_DIR),
-                    heuristic=ExpiresAfter(days=1),
-                ),
-            )
+            try:
+                self.session.mount(
+                    "https://",
+                    CacheControlAdapter(
+                        cache=FileCache(CACHE_DIR),
+                        heuristic=ExpiresAfter(days=1),
+                    ),
+                )
+            except ImportError:
+                # This happens when python-lockfile is missing
+                pass
 
     def _remote_file(self, url):
         return RemoteFile(self.session, url)
@@ -120,7 +123,11 @@ class RemoteArchive(object):
         """Search for extension packages"""
         for info in self._search(query):
             item = PackageItem(info, remote=self._remote_file)
-            if not filtered or not self.version or self.version in item.targets:
+            if (
+                not filtered
+                or not self.version
+                or self.version in item.targets
+            ):
                 yield item
 
     def _search(self, query, tags=[]):

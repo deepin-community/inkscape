@@ -19,6 +19,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -30,23 +31,26 @@
 
 #include "toolbar.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Toolbar {
+namespace Gtk {
+class Builder;
+}
+
+namespace Inkscape::UI::Toolbar {
 
 /**
  * \brief A toolbar for controlling the zoom
  */
-class ZoomToolbar {
-protected:
-    ZoomToolbar(SPDesktop *desktop) {};
-
+class ZoomToolbar : public Toolbar
+{
 public:
-    static GtkWidget * create(SPDesktop *desktop);
+    ZoomToolbar(SPDesktop *desktop);
+    ~ZoomToolbar() override;
+
+private:
+    Glib::RefPtr<Gtk::Builder> _builder;
 };
-}
-}
-}
+
+} // namespace Inkscape::UI::Toolbar
 
 #endif /* !SEEN_ZOOM_TOOLBAR_H */
 

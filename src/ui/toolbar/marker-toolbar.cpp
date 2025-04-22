@@ -5,30 +5,25 @@
  * Authors:
  * see git history
  * Rachana Podaralla <rpodaralla3@gatech.edu>
+ * Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2018 Authors
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <glibmm/i18n.h>
 #include "marker-toolbar.h"
-#include "document-undo.h"
-#include "preferences.h"
-#include "desktop.h"
-#include "ui/widget/canvas.h"
-namespace Inkscape {
-namespace UI {
-namespace Toolbar {
+
+#include <gtkmm/box.h>
+
+#include "ui/builder-utils.h"
+
+namespace Inkscape::UI::Toolbar {
 
 MarkerToolbar::MarkerToolbar(SPDesktop *desktop)
     : Toolbar(desktop)
+    , _builder(create_builder("toolbar-marker.ui"))
 {
+    _toolbar = &get_widget<Gtk::Box>(_builder, "marker-toolbar");
 }
 
-GtkWidget* MarkerToolbar::create(SPDesktop *desktop)
-{
-    auto toolbar = Gtk::manage(new MarkerToolbar(desktop));
-    return GTK_WIDGET(toolbar->gobj());
-}
-
-}}}
+} // namespace Inkscape::UI::Toolbar

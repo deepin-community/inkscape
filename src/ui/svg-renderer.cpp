@@ -11,18 +11,32 @@
  */
 
 #include "svg-renderer.h"
-#include "io/file.h"
-#include "xml/repr.h"
-#include "object/sp-root.h"
+
+#include <stdexcept>
+#include <utility>
+#include <vector>
+
+#include <cairomm/surface.h>
+#include <glibmm/ustring.h>
+#include <giomm/file.h>
+#include <gdkmm/pixbuf.h>
+#include <gdkmm/rgba.h>
+
+#include "document.h"
+
 #include "display/cairo-utils.h"
 #include "helper/pixbuf-ops.h"
+#include "io/file.h"
+#include "object/sp-root.h"
+#include "util/safe-printf.h"
 #include "util/units.h"
+#include "xml/repr.h"
 
 namespace Inkscape {
 
 Glib::ustring rgba_to_css_color(double r, double g, double b) {
     char buffer[16];
-    sprintf(buffer, "#%02x%02x%02x",
+    safeprintf(buffer, "#%02x%02x%02x",
         static_cast<int>(r * 0xff + 0.5),
         static_cast<int>(g * 0xff + 0.5),
         static_cast<int>(b * 0xff + 0.5)
@@ -43,16 +57,23 @@ Glib::ustring rgba_to_css_color(const SPColor& color) {
 Glib::ustring double_to_css_value(double value) {
     char buffer[32];
     // arbitrarily chosen precision
-    sprintf(buffer, "%.4f", value);
+    safeprintf(buffer, "%.4f", value);
     return Glib::ustring(buffer);
 }
 
-svg_renderer::svg_renderer(const char* svg_file_path) {
-
+std::shared_ptr<SPDocument> load_document(const char* svg_file_path) {
     auto file = Gio::File::create_for_path(svg_file_path);
+    return std::shared_ptr<SPDocument>(ink_file_open(file, nullptr));
+}
 
-    _document.reset(ink_file_open(file, nullptr));
+svg_renderer::svg_renderer(const char * const svg_file_path)
+: svg_renderer(load_document(svg_file_path))
+{
+}
 
+svg_renderer::svg_renderer(std::shared_ptr<SPDocument> document)
+    : _document{std::move(document)}
+{
     if (_document) {
         _root = _document->getRoot();
     }
@@ -80,13 +101,14 @@ double svg_renderer::get_height_px() const {
     return _document->getHeight().value("px");
 }
 
-Inkscape::Pixbuf* svg_renderer::do_render(double scale) {
-    auto w = _document->getWidth().value("px");
-    auto h = _document->getHeight().value("px");
-    auto dpi = 96 * scale;
-    auto area = Geom::Rect(0, 0, w, h);
+Inkscape::Pixbuf* svg_renderer::do_render(double device_scale) {
+    if (!_document) return nullptr;
 
-    return sp_generate_internal_bitmap(_document.get(), area, dpi);
+    auto dpi = 96 * device_scale * _scale;
+    auto area = *(_document->preferredBounds());
+
+    auto checkerboard_ptr = _checkerboard ? &*_checkerboard : nullptr;
+    return sp_generate_internal_bitmap(_document.get(), area, dpi, {}, false, checkerboard_ptr, device_scale);
 }
 
 Glib::RefPtr<Gdk::Pixbuf> svg_renderer::render(double scale) {
@@ -99,14 +121,35 @@ Glib::RefPtr<Gdk::Pixbuf> svg_renderer::render(double scale) {
     return raw;
 }
 
-Cairo::RefPtr<Cairo::Surface> svg_renderer::render_surface(double scale) {
+Cairo::RefPtr<Cairo::ImageSurface> svg_renderer::render_surface(double scale) {
     auto pixbuf = do_render(scale);
-    if (!pixbuf) return Cairo::RefPtr<Cairo::Surface>();
+    if (!pixbuf) return Cairo::RefPtr<Cairo::ImageSurface>();
 
     // ref it by saying that we have no reference
-    auto surface = Cairo::RefPtr<Cairo::Surface>(new Cairo::Surface(pixbuf->getSurfaceRaw(), false));
+    auto surface = Cairo::RefPtr<Cairo::ImageSurface>(new Cairo::ImageSurface(pixbuf->getSurfaceRaw(), false));
     delete pixbuf;
     return surface;
 }
 
-} // namespace
+void svg_renderer::set_checkerboard_color(unsigned int rgba) {
+    _checkerboard.emplace(rgba);
+}
+
+void svg_renderer::set_scale(double scale) {
+    if (scale > 0) {
+        _scale = scale;
+    }
+}
+
+} // namespace Inkscape
+
+/*
+  Local Variables:
+  mode:c++
+  c-file-style:"stroustrup"
+  c-file-offsets:((innamespace . 0)(inline-open . 0)(case-label . +))
+  indent-tabs-mode:nil
+  fill-column:99
+  End:
+*/
+// vim:filetype=cpp:expandtab:shiftwidth=4:tabstop=8:softtabstop=4:fileencoding=utf-8:textwidth=99:

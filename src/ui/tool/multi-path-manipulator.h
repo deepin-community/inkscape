@@ -9,20 +9,18 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef SEEN_UI_TOOL_MULTI_PATH_MANIPULATOR_H
-#define SEEN_UI_TOOL_MULTI_PATH_MANIPULATOR_H
+#ifndef INKSCAPE_UI_TOOL_MULTI_PATH_MANIPULATOR_H
+#define INKSCAPE_UI_TOOL_MULTI_PATH_MANIPULATOR_H
 
 #include <cstddef>
 #include <sigc++/connection.h>
 #include <2geom/path-sink.h>
-#include "node.h"
 #include "commit-events.h"
 #include "manipulator.h"
 #include "modifier-tracker.h"
 #include "node-types.h"
 #include "shape-record.h"
-
-struct SPCanvasGroup;
+#include "ui/tool/path-manipulator.h"
 
 namespace Inkscape {
 namespace UI {
@@ -34,14 +32,16 @@ struct PathSharedData;
 /**
  * Manipulator that manages multiple path manipulators active at the same time.
  */
-class MultiPathManipulator : public PointManipulator {
+class MultiPathManipulator : public PointManipulator
+{
 public:
     MultiPathManipulator(PathSharedData &data, sigc::connection &chg);
     ~MultiPathManipulator() override;
-    bool event(Inkscape::UI::Tools::ToolBase *, GdkEvent *event) override;
 
-    bool empty() { return _mmap.empty(); }
-    unsigned size() { return _mmap.size(); }
+    bool event(Inkscape::UI::Tools::ToolBase *tool, CanvasEvent const &event) override;
+
+    bool empty() const { return _mmap.empty(); }
+    size_t size() const { return _mmap.size(); }
     void setItems(std::set<ShapeRecord> const &);
     void clear() { _mmap.clear(); }
     void cleanup();
@@ -61,7 +61,8 @@ public:
     void copySelectedPath(Geom::PathBuilder *builder);
     void joinNodes();
     void breakNodes();
-    void deleteNodes(bool keep_shape = true);
+    void deleteNodes(NodeDeleteMode mode);
+    void deleteNodes(bool keep_shape);
     void joinSegments();
     void deleteSegments();
     void alignNodes(Geom::Dim2 d, AlignTargetNode target = AlignTargetNode::MID_NODE);
@@ -78,11 +79,12 @@ public:
     void updateHandles();
     void updatePaths();
     
-    sigc::signal<void> signal_coords_changed; /// Emitted whenever the coordinates
-        /// shown in the status bar need updating
+    /// Emitted whenever the coordinates shown in the status bar need updating.
+    sigc::signal<void ()> signal_coords_changed;
+
 private:
-    typedef std::pair<ShapeRecord, std::shared_ptr<PathManipulator> > MapPair;
-    typedef std::map<ShapeRecord, std::shared_ptr<PathManipulator> > MapType;
+    using MapPair = std::pair<ShapeRecord, std::shared_ptr<PathManipulator>>;
+    using MapType = std::map<ShapeRecord, std::shared_ptr<PathManipulator>>;
 
     template <typename R>
     void invokeForAll(R (PathManipulator::*method)()) {
@@ -126,8 +128,10 @@ private:
     guint32 _getOutlineColor(ShapeRole role, SPObject *object);
 
     MapType _mmap;
+
 public:
     PathSharedData const &_path_data;
+
 private:
     sigc::connection &_changed;
     ModifierTracker _tracker;
@@ -143,7 +147,7 @@ private:
 } // namespace UI
 } // namespace Inkscape
 
-#endif
+#endif // INKSCAPE_UI_TOOL_MULTI_PATH_MANIPULATOR_H
 
 /*
   Local Variables:

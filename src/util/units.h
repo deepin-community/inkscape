@@ -26,8 +26,10 @@
 
 namespace std {
 template <>
-struct hash<Glib::ustring> : public std::unary_function<Glib::ustring, std::size_t> {
-    std::size_t operator()(Glib::ustring const &s) const {
+struct hash<Glib::ustring>
+{
+    std::size_t operator()(Glib::ustring const &s) const
+    {
         return hash<std::string>()(s.raw());
     }
 };
@@ -200,6 +202,8 @@ public:
     /* * Saves the current UnitTable to the given file. */
     //bool    save(std::string const &filename);
 
+    static UnitTable &get();
+
 protected:
     UnitCodeMap         _unit_map;
     Glib::ustring       _primary_unit[UNIT_TYPE_QTY];
@@ -212,8 +216,6 @@ private:
     UnitTable operator=(UnitTable const &t);
 
 };
-
-extern UnitTable unit_table;
 
 } // namespace Util
 } // namespace Inkscape

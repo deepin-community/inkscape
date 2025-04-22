@@ -10,7 +10,10 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "inkscape.h"
+#include <cassert>
+#include <cstddef>                                         // for size_t
+#include <glib.h>                                          // for g_assert
+
 #include "snap-preferences.h"
 
 Inkscape::SnapPreferences::SnapPreferences() :
@@ -50,12 +53,13 @@ void Inkscape::SnapPreferences::set_simple_snap(Inkscape::SimpleSnap option, boo
 
 bool Inkscape::SnapPreferences::isAnyDatumSnappable() const
 {
-    return isTargetSnappable(SNAPTARGET_GUIDE, SNAPTARGET_GRID, SNAPTARGET_PAGE_BORDER);
+    return isTargetSnappable(SNAPTARGET_GUIDE, SNAPTARGET_GRID, SNAPTARGET_PAGE_EDGE_BORDER, SNAPTARGET_PAGE_MARGIN_BORDER, SNAPTARGET_PAGE_BLEED_BORDER);
 }
 
 bool Inkscape::SnapPreferences::isAnyCategorySnappable() const
 {
-    return isTargetSnappable(SNAPTARGET_NODE_CATEGORY, SNAPTARGET_BBOX_CATEGORY, SNAPTARGET_OTHERS_CATEGORY) || isTargetSnappable(SNAPTARGET_GUIDE, SNAPTARGET_GRID, SNAPTARGET_PAGE_BORDER);
+    return isTargetSnappable(SNAPTARGET_NODE_CATEGORY, SNAPTARGET_BBOX_CATEGORY, SNAPTARGET_OTHERS_CATEGORY)
+        || isTargetSnappable(SNAPTARGET_GUIDE, SNAPTARGET_GRID, SNAPTARGET_PAGE_EDGE_BORDER, SNAPTARGET_PAGE_MARGIN_BORDER, SNAPTARGET_PAGE_BLEED_BORDER);
 }
 
 void Inkscape::SnapPreferences::_mapTargetToArrayIndex(Inkscape::SnapTargetType &target, bool &always_on, bool &group_on) const
@@ -115,10 +119,20 @@ void Inkscape::SnapPreferences::_mapTargetToArrayIndex(Inkscape::SnapTargetType 
             case SNAPTARGET_GUIDE_PERPENDICULAR:
                 target = SNAPTARGET_GUIDE;
                 break;
-            case SNAPTARGET_PAGE_CORNER:
-            case SNAPTARGET_PAGE_CENTER:
-                target = SNAPTARGET_PAGE_BORDER;
+            case SNAPTARGET_PAGE_EDGE_CORNER:
+            case SNAPTARGET_PAGE_EDGE_CENTER:
+                target = SNAPTARGET_PAGE_EDGE_BORDER;
                 break;
+
+            case SNAPTARGET_PAGE_MARGIN_CORNER:
+            case SNAPTARGET_PAGE_MARGIN_CENTER:
+                target = SNAPTARGET_PAGE_MARGIN_BORDER;
+                break;
+
+            case SNAPTARGET_PAGE_BLEED_CORNER:
+                target = SNAPTARGET_PAGE_BLEED_BORDER;
+                break;
+
 
             // Some snap targets cannot be toggled at all, and are therefore always enabled
             case SNAPTARGET_GRID_GUIDE_INTERSECTION:
@@ -127,8 +141,11 @@ void Inkscape::SnapPreferences::_mapTargetToArrayIndex(Inkscape::SnapTargetType 
 
             // These are only listed for completeness
             case SNAPTARGET_GRID:
+            case SNAPTARGET_GRID_LINE:
             case SNAPTARGET_GUIDE:
-            case SNAPTARGET_PAGE_BORDER:
+            case SNAPTARGET_PAGE_EDGE_BORDER:
+            case SNAPTARGET_PAGE_MARGIN_BORDER:
+            case SNAPTARGET_PAGE_BLEED_BORDER:
             case SNAPTARGET_DATUMS_CATEGORY:
                 break;
             default:
@@ -368,9 +385,9 @@ Inkscape::SnapTargetType Inkscape::SnapPreferences::source2target(Inkscape::Snap
             return SNAPTARGET_GRID;
 
         case SNAPSOURCE_PAGE_CORNER:
-            return SNAPTARGET_PAGE_CORNER;
+            return SNAPTARGET_PAGE_EDGE_CORNER;
         case SNAPSOURCE_PAGE_CENTER:
-            return SNAPTARGET_PAGE_CENTER;
+            return SNAPTARGET_PAGE_EDGE_CENTER;
 
         case SNAPSOURCE_ALIGNMENT_CATEGORY:
             return SNAPTARGET_ALIGNMENT_CATEGORY;
@@ -381,9 +398,9 @@ Inkscape::SnapTargetType Inkscape::SnapPreferences::source2target(Inkscape::Snap
         case SNAPSOURCE_ALIGNMENT_BBOX_EDGE_MIDPOINT:
             return SNAPTARGET_ALIGNMENT_BBOX_EDGE_MIDPOINT;
         case SNAPSOURCE_ALIGNMENT_PAGE_CENTER:
-            return SNAPTARGET_ALIGNMENT_PAGE_CENTER;
+            return SNAPTARGET_ALIGNMENT_PAGE_EDGE_CENTER;
         case SNAPSOURCE_ALIGNMENT_PAGE_CORNER:
-            return SNAPTARGET_ALIGNMENT_PAGE_CORNER;
+            return SNAPTARGET_ALIGNMENT_PAGE_EDGE_CORNER;
         case Inkscape::SNAPSOURCE_ALIGNMENT_HANDLE:
             return SNAPTARGET_ALIGNMENT_HANDLE;
 

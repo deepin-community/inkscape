@@ -45,7 +45,12 @@ MODULES = (
             "simpletransform",
         ),
     ),
-    ("Unusual", "Unusual modules being used {names}", "Warning", ("argparse",)),
+    (
+        "Unusual",
+        "Unusual modules being used {names}",
+        "Warning",
+        ("argparse",),
+    ),
     ("Ignored", None, None, ("os", "sys", "lxml")),
 )
 
@@ -112,7 +117,9 @@ class IncludeFile(object):
 class GeneratePackage(object):
     """A generated package based on data"""
 
-    def __init__(self, inx_files, template=os.path.join(DATA_DIR, "setup.template")):
+    def __init__(
+        self, inx_files, template=os.path.join(DATA_DIR, "setup.template")
+    ):
         with open(template, "r") as fhl:
             self._template = fhl.read()
         self.files = []
@@ -145,7 +152,7 @@ class GeneratePackage(object):
 
     def _add_dep(self, name):
         """Try and find the package associated with this name"""
-        for (list_name, warning, level, mod_list) in MODULES:
+        for list_name, warning, level, mod_list in MODULES:
             if name in mod_list:
                 self.warnings[list_name].append(name)
                 return
@@ -169,7 +176,7 @@ class GeneratePackage(object):
             "requires": self.generate_requires(),
             "classifiers": "",  # TODO
         }
-        return self_template.format(**args)
+        return self._template.format(**args)
 
     def generate_ident(self):
         """Generate the ident from the text entry"""
@@ -181,7 +188,7 @@ class GeneratePackage(object):
     def generate_datafiles(self):
         """Generate a list of datafile and their install location"""
         result = ""
-        template = "        ('{target}', ['{file}']),\n"
+        template = "        ('{target}', ['{file}']),\n"  # noqa: F841
         # 2. Loop through all the file objects in the list
         # 3. Add them to the final result
         return result.strip()

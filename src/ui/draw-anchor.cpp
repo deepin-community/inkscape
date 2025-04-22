@@ -21,33 +21,24 @@
 #include "display/control/canvas-item-ctrl.h"
 #include "display/curve.h"
 
-const guint32 FILL_COLOR_NORMAL    = 0xffffff7f;
-const guint32 FILL_COLOR_MOUSEOVER = 0xff0000ff;
-
 /**
  * Creates an anchor object and initializes it.
  */
-SPDrawAnchor::SPDrawAnchor(Inkscape::UI::Tools::FreehandBase *dc, SPCurve *curve, bool start, Geom::Point delta)
-    : dc(dc), curve(curve->ref()), start(start), active(FALSE), dp(delta),
+SPDrawAnchor::SPDrawAnchor(Inkscape::UI::Tools::FreehandBase *dc, std::shared_ptr<SPCurve> curve, bool start, Geom::Point delta)
+    : dc(dc), curve(std::move(curve)), start(start), active(FALSE), dp(delta),
       ctrl(
-        new Inkscape::CanvasItemCtrl(
+        make_canvasitem<Inkscape::CanvasItemCtrl>(
           dc->getDesktop()->getCanvasControls(),
           Inkscape::CANVAS_ITEM_CTRL_TYPE_ANCHOR
         )
       )
 {
     ctrl->set_name("CanvasItemCtrl:DrawAnchor");
-    ctrl->set_fill(FILL_COLOR_NORMAL);
     ctrl->set_position(delta);
     ctrl->set_pickable(false); // We do our own checking. (TODO: Should be fixed!)
 }
 
-SPDrawAnchor::~SPDrawAnchor()
-{
-    if (ctrl) {
-        delete (ctrl);
-    }
-}
+SPDrawAnchor::~SPDrawAnchor() = default;
 
 /**
  * Test if point is near anchor, if so fill anchor on canvas and return
@@ -55,20 +46,19 @@ SPDrawAnchor::~SPDrawAnchor()
  */
 SPDrawAnchor *SPDrawAnchor::anchorTest(Geom::Point w, bool activate)
 {
-    if ( activate && this->ctrl->contains(w)) {
-        
-        if (!this->active) {
-            this->ctrl->set_size_extra(4);
-            this->ctrl->set_fill(FILL_COLOR_MOUSEOVER);
-            this->active = TRUE;
+    if (activate && ctrl->contains(w)) {
+        if (!active) {
+            ctrl->set_hover();
+            ctrl->set_size(Inkscape::HandleSize::LARGE);
+            active = TRUE;
         }
         return this;
     }
 
-    if (this->active) {
-        this->ctrl->set_size_extra(0);
-        this->ctrl->set_fill(FILL_COLOR_NORMAL);
-        this->active = FALSE;
+    if (active) {
+        ctrl->set_normal();
+        ctrl->set_size(Inkscape::HandleSize::NORMAL);
+        active = FALSE;
     }
 
     return nullptr;

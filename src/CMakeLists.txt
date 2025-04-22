@@ -22,12 +22,10 @@ set(inkscape_SRC
   desktop-events.cpp
   desktop-style.cpp
   desktop.cpp
-  device-manager.cpp
   distribution-snapper.cpp
   document-subset.cpp
   document-undo.cpp
   document.cpp
-  ege-color-prof-tracker.cpp
   event-log.cpp
   extract-uri.cpp
   file.cpp
@@ -39,6 +37,7 @@ set(inkscape_SRC
   gradient-chemistry.cpp
   gradient-drag.cpp
   guide-snapper.cpp
+  grid-snapper.cpp
   id-clash.cpp
   inkscape.cpp
   inkscape-version-info.cpp
@@ -51,6 +50,7 @@ set(inkscape_SRC
   mod360.cpp
   object-hierarchy.cpp
   object-snapper.cpp
+  oklab.cpp
   page-manager.cpp
   path-chemistry.cpp
   path-prefix.cpp
@@ -94,9 +94,6 @@ set(inkscape_SRC
   auto-save.h
   axis-manip.h
   bad-uri-exception.h
-  cms-color-types.h
-  cms-system.h
-  color-profile-cms-fns.h
   color-rgba.h
   hsluv.h
   color.h
@@ -109,12 +106,10 @@ set(inkscape_SRC
   desktop-events.h
   desktop-style.h
   desktop.h
-  device-manager.h
   distribution-snapper.h
   document-subset.h
   document-undo.h
   document.h
-  ege-color-prof-tracker.h
   enums.h
   event-log.h
   event.h
@@ -128,7 +123,7 @@ set(inkscape_SRC
   gradient-chemistry.h
   gradient-drag.h
   guide-snapper.h
-  helper-fns.h
+  grid-snapper.h
   id-clash.h
   inkscape-version.h
   inkscape-version-info.h
@@ -144,9 +139,14 @@ set(inkscape_SRC
   number-opt-number.h
   object-hierarchy.h
   object-snapper.h
+  oklab.h
   page-manager.h
   path-chemistry.h
   path-prefix.h
+  pattern-manager.cpp
+  pattern-manager.h
+  pattern-manipulation.cpp
+  pattern-manipulation.h
   perspective-line.h
   preferences-skeleton.h
   preferences.h
@@ -226,6 +226,8 @@ set(inkscape_SRC
   actions/actions-file.cpp
   actions/actions-helper.h
   actions/actions-helper.cpp
+  actions/actions-helper-gui.h
+  actions/actions-helper-gui.cpp
   actions/actions-help-url.h
   actions/actions-help-url.cpp
   actions/actions-hide-lock.h
@@ -266,11 +268,16 @@ set(inkscape_SRC
   actions/actions-window.cpp
   actions/actions-pages.h
   actions/actions-pages.cpp
+  actions/actions-svg-processing.h
+  actions/actions-svg-processing.cpp
 
   inkview-application.h
   inkview-application.cpp
   inkview-window.h
   inkview-window.cpp
+
+  manipulation/copy-resource.h
+  manipulation/copy-resource.cpp
 )
   
 # -----------------------------------------------------------------------------
@@ -301,6 +308,8 @@ list(APPEND inkscape_SRC
 # All folders for internal inkscape
 # these call add_inkscape_source
 add_subdirectory(actions)
+add_subdirectory(async)
+add_subdirectory(color)
 add_subdirectory(debug)
 add_subdirectory(display)
 add_subdirectory(extension)
@@ -369,24 +378,22 @@ if(WIN32)
   set_target_properties(inkscape_com
                         PROPERTIES
                           LINK_FLAGS "-mconsole"
-                          OUTPUT_NAME "inkscape"
-                          SUFFIX ".com")
+                          OUTPUT_NAME "inkscape.com"
+                          SUFFIX "")
   add_executable(inkview_com ${view_SRC})
   set_target_properties(inkview_com
                         PROPERTIES
                           LINK_FLAGS "-mconsole"
-                          OUTPUT_NAME "inkview"
-                          SUFFIX ".com")
+                          OUTPUT_NAME "inkview.com"
+                          SUFFIX "")
 endif()
 
 
 set(INKSCAPE_TARGET_LIBS
         # order from automake
         #sp_LIB
-        #nrtype_LIB
         #inkscape_LIB
         #sp_LIB # annoying, we need both!
-        nrtype_LIB # annoying, we need both!
         croco_LIB
         avoid_LIB
         cola_LIB
@@ -401,16 +408,13 @@ set(INKSCAPE_TARGET_LIBS
 
 # Build everything except main and inkview.c in a shared library.
 add_library(inkscape_base ${inkscape_SRC} ${sp_SRC})
+set_target_properties(inkscape_base PROPERTIES SOVERSION "${INKSCAPE_VERSION_MAJOR}.${INKSCAPE_VERSION_MINOR}.${INKSCAPE_VERSION_PATCH}.0")
 
 # added so that locally installed inkscape can find lib2geom if it's not installed systemwide
 if(NOT APPLE)
     set_target_properties(inkscape_base PROPERTIES INSTALL_RPATH "$ORIGIN/..")
 else()
     set_target_properties(inkscape_base PROPERTIES INSTALL_RPATH "@loader_path/..")
-endif()
-
-if(WITH_INTERNAL_CAIRO)
-add_dependencies(inkscape_base cairo_ext)
 endif()
 
 target_link_libraries(inkscape_base PUBLIC Boost::filesystem)
@@ -438,7 +442,8 @@ endif()
 #Define the installation
 install(TARGETS inkscape inkview RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(WIN32)
-    install(TARGETS inkscape_com inkview_com)
+    install(TARGETS inkscape_com)
+    install(TARGETS inkview_com)
 endif()
 if(BUILD_SHARED_LIBS)
     install(TARGETS inkscape_base LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/inkscape")

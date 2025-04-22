@@ -1,6 +1,7 @@
 """
 Useful decorators for tests.
 """
+
 import pytest
 from inkex.command import is_inkscape_available
 

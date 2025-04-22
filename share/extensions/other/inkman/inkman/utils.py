@@ -140,7 +140,9 @@ def parse_metadata(data):
 def clean_author(data):
     """Clean the author so it has consistant keys"""
     for contact in (
-        data.get("extensions", {}).get("python.details", {}).get("contacts", [])
+        data.get("extensions", {})
+        .get("python.details", {})
+        .get("contacts", [])
     ):
         if contact["role"] == "author":
             data["author"] = contact["name"]

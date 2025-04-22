@@ -25,22 +25,28 @@ Provide extra utility to each svg element type specific to its type.
 This is useful for having a common interface for each element which can
 give path, transform, and property access easily.
 """
+
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Tuple, Optional, overload, TypeVar, List
+from typing import Any, Tuple, Optional, overload, TypeVar, List, Callable
 from lxml import etree
+import re
 
 from ..interfaces.IElement import IBaseElement, ISVGDocumentElement
 
 from ..base import SvgOutputMixin
 from ..paths import Path
-from ..styles import Style, Classes
+from ..styles import Style, Classes, StyleValue
 from ..transforms import Transform, BoundingBox
 from ..utils import FragmentError
 from ..units import convert_unit, render_unit, parse_unit
 from ._utils import ChildToProperty, NSS, addNS, removeNS, splitNS
-from ..properties import BaseStyleValue, all_properties
+from ..properties import (
+    _ShorthandValueConverter,
+    _get_tokens_from_value,
+    all_properties,
+)
 from ._selected import ElementList
 from ._parser import NodeBasedLookup, SVG_PARSER
 
@@ -123,10 +129,13 @@ class BaseElement(IBaseElement):
     
     .. versionadded:: 1.1"""
 
+    _root: Optional[ISVGDocumentElement] = None
+
     def __getattr__(self, name):
         """Get the attribute, but load it if it is not available yet"""
         if name in self.wrapped_props:
             (attr, cls) = self.wrapped_props[name]
+
             # The reason we do this here and not in _init is because lxml
             # is inconsistant about when elements are initialised.
             # So we make this a lazy property.
@@ -137,9 +146,7 @@ class BaseElement(IBaseElement):
                     self.attrib.pop(attr, None)  # pylint: disable=no-member
 
             # pylint: disable=no-member
-            value = cls(self.attrib.get(attr, None), callback=_set_attr)
-            if name == "style":
-                value.element = self
+            value = cls(self.attrib.get(attr, None), callback=_set_attr, element=self)
             setattr(self, name, value)
             return value
         raise AttributeError(f"Can't find attribute {self.typename}.{name}")
@@ -165,12 +172,22 @@ class BaseElement(IBaseElement):
             value = getattr(self, prop, None)
             # We check the boolean nature of the value, because empty
             # transformations and style attributes are equiv to not-existing
-            ret = str(value) if value else (default or None)
+            ret = str(value) if value else default
             return ret
         return super().get(addNS(attr), default)
 
     def set(self, attr, value):
         """Set element attribute named, with addNS support"""
+        if attr == "id" and value is not None:
+            try:
+                oldid = self.get("id", None)
+                if oldid is not None and oldid in self.root.ids:
+                    self.root.ids.pop(oldid)
+                if value in self.root.ids:
+                    raise ValueError(f"ID {value} already exists in this document")
+                self.root.ids[value] = self
+            except FragmentError:  # element is unrooted
+                pass
         if attr in self.wrapped_attrs:
             # Always keep the local wrapped class up to date.
             (prop, cls) = self.wrapped_attrs[attr]
@@ -211,12 +228,10 @@ class BaseElement(IBaseElement):
     @overload
     def add(
         self, child1: BaseElement, child2: BaseElement, *children: BaseElement
-    ) -> Tuple[BaseElement]:
-        ...
+    ) -> Tuple[BaseElement]: ...
 
     @overload
-    def add(self, child: T) -> T:
-        ...
+    def add(self, child: T) -> T: ...
 
     def add(self, *children):
         """
@@ -342,14 +357,19 @@ class BaseElement(IBaseElement):
                 elem.style.update_urls(old_id, new_id)
 
     @property
-    def root(self):
+    def root(self) -> ISVGDocumentElement:
         """Get the root document element from any element descendent"""
+        if self._root is not None:
+            return self._root
+
         root, parent = self, self
         while parent is not None:
             root, parent = parent, parent.getparent()
 
         if not isinstance(root, ISVGDocumentElement):
             raise FragmentError("Element fragment does not have a document root!")
+
+        self._root = root
         return root
 
     def get_or_create(self, xpath, nodeclass=None, prepend=False):
@@ -405,7 +425,10 @@ class BaseElement(IBaseElement):
             ElementList: list of ancestors
         """
 
-        return ElementList(self.root, self._ancestors(elem=elem, stop_at=stop_at))
+        try:
+            return ElementList(self.root, self._ancestors(elem=elem, stop_at=stop_at))
+        except FragmentError:
+            return ElementList(self, self._ancestors(elem=elem, stop_at=stop_at))
 
     def _ancestors(self, elem, stop_at):
         if isinstance(elem, BaseElement):
@@ -434,9 +457,7 @@ class BaseElement(IBaseElement):
         """Wrap xpath call and add svg namespaces"""
         return super().xpath(pattern, namespaces=namespaces)
 
-    def findall(
-        self, pattern, namespaces=NSS
-    ):  # pylint: disable=dangerous-default-value
+    def findall(self, pattern, namespaces=NSS):  # pylint: disable=dangerous-default-value
         """Wrap findall call and add svg namespaces"""
         return super().findall(pattern, namespaces=namespaces)
 
@@ -461,12 +482,12 @@ class BaseElement(IBaseElement):
 
     def replace_with(self, elem):
         """Replace this element with the given element"""
-        self.addnext(elem)
+        self.getparent().replace(self, elem)
+
         if not elem.get("id") and self.get("id"):
             elem.set("id", self.get("id"))
         if not elem.label and self.label:
             elem.label = self.label
-        self.delete()
         return elem
 
     def copy(self):
@@ -498,7 +519,7 @@ class BaseElement(IBaseElement):
 
         .. versionchanged:: 1.1
             A setter for href was added."""
-        ref = self.get("xlink:href")
+        ref = self.get("href") or self.get("xlink:href")
         if not ref:
             return None
         return self.root.getElementById(ref.strip("#"))
@@ -508,7 +529,10 @@ class BaseElement(IBaseElement):
         """Set the href object"""
         if isinstance(elem, BaseElement):
             elem = elem.get_id()
-        self.set("xlink:href", "#" + elem)
+        if self.get("href"):
+            self.set("href", "#" + elem)
+        else:
+            self.set("xlink:href", "#" + elem)
 
     @property
     def label(self):
@@ -625,16 +649,33 @@ class BaseElement(IBaseElement):
         """
         return Style.specified_style(self)
 
+    def get_computed_style(self, key):
+        """Returns the computed style value with respect to
+         n element, i.e. the cascaded style +
+        inheritance, see https://www.w3.org/TR/CSS22/cascade.html#computed-value.
+
+        This is more efficient if only few style values per element are queried. If
+        many attributes are queried, use :func:`specified_style`.
+
+        .. versionadded:: 1.4
+        """
+        return Style._get_style(key, self)
+
     def presentation_style(self):
         """Return presentation attributes of an element as style
 
         .. versionadded:: 1.2"""
         style = Style()
         for key in self.keys():
-            if key in all_properties and all_properties[key][2]:
-                style[key] = BaseStyleValue.factory(
-                    declaration=key + ": " + self.attrib[key]
+            if (
+                key in all_properties
+                # Shorthands cannot be set by presentation attributes
+                and not isinstance(
+                    all_properties[key].converter, _ShorthandValueConverter
                 )
+                and all_properties[key].presentation
+            ):
+                style[key] = StyleValue(_get_tokens_from_value(self.attrib[key]))
         return style
 
     def composed_transform(self, other=None):
@@ -642,9 +683,92 @@ class BaseElement(IBaseElement):
         if none specified the transform is to the root document element
         """
         parent = self.getparent()
-        if parent is not None and isinstance(parent, BaseElement):
-            return parent.composed_transform() @ self.transform
+        if parent is not other and isinstance(parent, BaseElement):
+            return parent.composed_transform(other) @ self.transform
         return self.transform
+
+    def _add_to_tree_callback(self, element):
+        try:
+            element._root = self._root
+            self.root.add_to_tree_callback(element)
+        except (FragmentError, AttributeError):
+            pass
+
+    @staticmethod
+    def _remove_from_tree_callback(oldtree, element):
+        try:
+            oldtree.root.remove_from_tree_callback(element)
+        except (FragmentError, AttributeError):
+            pass
+
+    def __element_adder(
+        self, element: BaseElement, add_func: Callable[[BaseElement], None]
+    ):
+        BaseElement._remove_from_tree_callback(element, element)
+        # Make sure that we have an ID cache before adding the element,
+        # otherwise we will try to add this element twice to the cache
+        try:
+            self.root.ids
+        except FragmentError:
+            pass
+        try:
+            add_func(element)
+        except Exception as err:
+            BaseElement._add_to_tree_callback(element, element)
+            raise err
+        self._add_to_tree_callback(element)
+
+    # Overrides to keep track of styles and IDs
+    def addnext(self, element):
+        self.__element_adder(element, super(etree.ElementBase, self).addnext)
+
+    def addprevious(self, element):
+        self.__element_adder(element, super(etree.ElementBase, self).addprevious)
+
+    def append(self, element):
+        self.__element_adder(element, super(etree.ElementBase, self).append)
+
+    def clear(self, keep_tail=False):
+        subelements = iter(self)
+        old_id = self.get("id", None)
+        super().clear(keep_tail)
+        for element in subelements:
+            BaseElement._remove_from_tree_callback(self, element)
+        if old_id is not None and old_id in self.root.ids:
+            self.root.ids.pop(old_id)
+
+    def extend(self, elements):
+        for element in elements:
+            BaseElement._remove_from_tree_callback(element, element)
+        try:
+            self.root.ids
+        except FragmentError:
+            pass
+        try:
+            super().extend(elements)
+        except Exception as err:
+            for element in elements:
+                BaseElement._add_to_tree_callback(element, element)
+            raise err
+        for element in elements:
+            self._add_to_tree_callback(element)
+
+    def insert(self, index, element):
+        self.__element_adder(
+            element,
+            lambda element: super(etree.ElementBase, self).insert(index, element),
+        )
+
+    def remove(self, element):
+        super().remove(element)
+        BaseElement._remove_from_tree_callback(self, element)
+
+    def replace(self, old_element, new_element):
+        def replacer(new_element):
+            super(etree.ElementBase, self).replace(old_element, new_element)
+            BaseElement._remove_from_tree_callback(self, old_element)
+
+        self.__element_adder(new_element, replacer)
 
 
 NodeBasedLookup.default = BaseElement
@@ -654,9 +778,9 @@ class ShapeElement(BaseElement):
     """Elements which have a visible representation on the canvas"""
 
     @property
-    def path(self):
+    def path(self) -> Path:
         """Gets the outline or path of the element, this may be a simple bounding box"""
-        return Path(self.get_path())
+        return self.get_path()
 
     @path.setter
     def path(self, path):
@@ -664,13 +788,10 @@ class ShapeElement(BaseElement):
 
     @property
     def clip(self):
-        """Gets the clip path element (if any)
+        """Gets the clip path element (if any). May be set through CSS.
 
         .. versionadded:: 1.1"""
-        ref = self.get("clip-path")
-        if not ref:
-            return None
-        return self.root.getElementById(ref)
+        return self.get_computed_style("clip-path")
 
     @clip.setter
     def clip(self, elem):
@@ -731,13 +852,43 @@ class ShapeElement(BaseElement):
         return path.bounding_box()
 
     def is_visible(self):
-        """Returns false if the css says this object is invisible
+        """Returns false if this object is invisible
+
+        .. versionchanged:: 1.3
+            rely on cascaded_style() to include CSS and presentation attributes
+            include `visibility` attribute with check for inherit
+            include ancestors
 
         .. versionadded:: 1.1"""
-        if self.style.get("display", "") == "none":
-            return False
-        if not float(self.style.get("opacity", 1.0)):
-            return False
+        return self._is_visible()
+
+    def _is_visible(self, inherit_visibility=True):
+        # iterate over self and ancestors
+        # This does not use :func:`get_computed_style` but its own iteration
+        # logic to avoid duplicate evaluation of styles: a child is also invisible
+        # if the parent has opacity:0, but opacity is not inherited - so we need
+        # to check the specified style of all parents and ignore inheritance
+        # altogether
+        for element in [self] + list(self.ancestors()):
+            get_style = element.cascaded_style().get
+            # case display:none
+            if get_style("display", "inline") == "none":
+                return False
+            # case opacity:0
+            if not float(get_style("opacity", 1.0)):
+                return False
+            # only check if childs visibility is inherited
+            if inherit_visibility:
+                # case visibility:hidden
+                if get_style("visibility", "inherit") in (
+                    "hidden",
+                    "collapse",
+                ):
+                    return False
+                # case visibility: not inherit
+                elif get_style("visibility", "inherit") != "inherit":
+                    inherit_visibility = False
+
         return True
 
     def get_line_height_uu(self):
@@ -753,3 +904,22 @@ class ShapeElement(BaseElement):
         if parsed[1] == "%":
             return font_size * parsed[0] * 0.01
         return self.to_dimensionless(line_height)
+
+
+class ViewboxMixin:
+    """Mixin for elements with viewboxes, such as <svg>, <marker>"""
+
+    def parse_viewbox(self, vbox: Optional[str]) -> Optional[List[float]]:
+        """Parses a viewbox. If an error occurs during parsing,
+        (0, 0, 0, 0) is returned. If the viewbox is None, None is returned.
+
+        .. versionadded:: 1.3"""
+        if vbox is not None and isinstance(vbox, str):
+            try:
+                result = [float(unit) for unit in re.split(r",\s*|\s+", vbox)]
+            except ValueError:
+                result = []
+            if len(result) != 4:
+                result = [0, 0, 0, 0]
+            return result
+        return None

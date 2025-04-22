@@ -8,18 +8,18 @@
  *
  */
 
-#include <iostream>
+#include "actions-transform.h"
 
-#include <giomm.h>  // Not <gtkmm.h>! To eventually allow a headless version!
+#include <giomm.h> // Not <gtkmm.h>! To eventually allow a headless version!
 #include <glibmm/i18n.h>
 
-#include "actions-transform.h"
 #include "actions-helper.h"
 #include "document-undo.h"
 #include "inkscape-application.h"
-
-#include "inkscape.h"             // Inkscape::Application
-#include "selection.h"            // Selection
+#include "preferences.h"
+#include "selection.h" // Selection
+#include "page-manager.h"
+#include "ui/icon-names.h"
 
 void
 transform_translate(const Glib::VariantBase& value, InkscapeApplication *app)
@@ -28,7 +28,7 @@ transform_translate(const Glib::VariantBase& value, InkscapeApplication *app)
 
     std::vector<Glib::ustring> tokens = Glib::Regex::split_simple(",", s.get());
     if (tokens.size() != 2) {
-        std::cerr << "action:transform_translate: requires two comma separated numbers" << std::endl;
+        show_output("action:transform_translate: requires two comma separated numbers");
         return;
     }
     double dx = 0;
@@ -38,7 +38,7 @@ transform_translate(const Glib::VariantBase& value, InkscapeApplication *app)
         dx = std::stod(tokens[0]);
         dy = std::stod(tokens[1]);
     } catch (...) {
-        std::cerr << "action:transform-move: invalid arguments" << std::endl;
+        show_output("action:transform-move: invalid arguments");
         return;
     }
 
@@ -107,9 +107,24 @@ transform_remove(InkscapeApplication *app)
     Inkscape::DocumentUndo::done(app->get_active_document(), "ActionTransformRemoveTransform", "");
 }
 
-// SHOULD REALLY BE DOC LEVEL ACTIONS
-std::vector<std::vector<Glib::ustring>> raw_data_transform =
+void transform_reapply(InkscapeApplication *app)
 {
+    auto selection = app->get_active_selection();
+    selection->reapplyAffine();
+    Inkscape::DocumentUndo::maybeDone(app->get_active_document(), "reapply-transform", _("Reapply Transforms"),
+                                      INKSCAPE_ICON("tool-pointer"));
+}
+
+void page_rotate(const Glib::VariantBase& value, InkscapeApplication *app)
+{
+    auto document = app->get_active_document();
+    Glib::Variant<int> i = Glib::VariantBase::cast_dynamic<Glib::Variant<int> >(value);
+    document->getPageManager().rotatePage(i.get());
+    Inkscape::DocumentUndo::done(document, "Rotate Page", INKSCAPE_ICON("tool-pages"));
+}
+
+// SHOULD REALLY BE DOC LEVEL ACTIONS
+std::vector<std::vector<Glib::ustring>> raw_data_transform = {
     // clang-format off
     {"app.transform-translate",   N_("Translate"),          "Transform",  N_("Translate selected objects (dx,dy)")},
     {"app.transform-rotate",      N_("Rotate"),             "Transform",  N_("Rotate selected objects by degrees")},
@@ -118,6 +133,8 @@ std::vector<std::vector<Glib::ustring>> raw_data_transform =
     {"app.transform-grow-step",   N_("Grow/Shrink Step"),   "Transform",  N_("Grow/shrink selected objects by multiple of step value")},
     {"app.transform-grow-screen", N_("Grow/Shrink Screen"), "Transform",  N_("Grow/shrink selected objects relative to zoom level")},
     {"app.transform-remove",      N_("Remove Transforms"),  "Transform",  N_("Remove any transforms from selected objects")},
+    {"app.transform-reapply",     N_("Reapply Transforms"), "Transform",  N_("Reapply the last transformation to the selection")},
+    {"app.page-rotate",           N_("Rotate Page 90°"),    "Transform",  N_("Rotate page by 90-degree rotation steps")},
     // clang-format on
 };
 
@@ -130,6 +147,7 @@ std::vector<std::vector<Glib::ustring>> hint_data_transform =
     {"app.transform-grow",          N_("Enter positive or negative number to grow/shrink selection")},
     {"app.transform-grow-step",     N_("Enter positive or negative number to grow or shrink selection relative to preference step value")},
     {"app.transform-grow-screen",   N_("Enter positive or negative number to grow or shrink selection relative to zoom level")},
+    {"app.page-rotate",             N_("Enter number of 90-degree rotation steps")},
     // clang-format on
 };
 
@@ -144,13 +162,15 @@ add_actions_transform(InkscapeApplication* app)
     auto *gapp = app->gio_app();
 
     // clang-format off
-    gapp->add_action_with_parameter( "transform-translate",      String, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&transform_translate),       app));
-    gapp->add_action_with_parameter( "transform-rotate",         Double, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&transform_rotate),          app));
-    gapp->add_action_with_parameter( "transform-scale",          Double, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&transform_scale),           app));
-    gapp->add_action_with_parameter( "transform-grow",           Double, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&transform_grow),            app));
-    gapp->add_action_with_parameter( "transform-grow-step",      Double, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&transform_grow_step),       app));
-    gapp->add_action_with_parameter( "transform-grow-screen",    Double, sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&transform_grow_screen),     app));
-    gapp->add_action(                "transform-remove",                 sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&transform_remove),          app));
+    gapp->add_action_with_parameter( "transform-translate",      String, sigc::bind(sigc::ptr_fun(&transform_translate),       app));
+    gapp->add_action_with_parameter( "transform-rotate",         Double, sigc::bind(sigc::ptr_fun(&transform_rotate),          app));
+    gapp->add_action_with_parameter( "transform-scale",          Double, sigc::bind(sigc::ptr_fun(&transform_scale),           app));
+    gapp->add_action_with_parameter( "transform-grow",           Double, sigc::bind(sigc::ptr_fun(&transform_grow),            app));
+    gapp->add_action_with_parameter( "transform-grow-step",      Double, sigc::bind(sigc::ptr_fun(&transform_grow_step),       app));
+    gapp->add_action_with_parameter( "transform-grow-screen",    Double, sigc::bind(sigc::ptr_fun(&transform_grow_screen),     app));
+    gapp->add_action(                "transform-remove",                 sigc::bind(sigc::ptr_fun(&transform_remove),          app));
+    gapp->add_action(                "transform-reapply",                sigc::bind(sigc::ptr_fun(&transform_reapply),         app));
+    gapp->add_action_with_parameter( "page-rotate",              Int,    sigc::bind(sigc::ptr_fun(&page_rotate),               app));
     // clang-format on
 
     app->get_action_extra_data().add_data(raw_data_transform);

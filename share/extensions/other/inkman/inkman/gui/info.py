@@ -16,18 +16,17 @@
 #
 """Information about a package"""
 
-import os
-import sys
+from dataclasses import dataclass
 
 from inkex.gui import ChildWindow, TreeView
 
 
-class ExtensionTreeItem(object):
+@dataclass
+class ExtensionTreeItem:
     """Shows the name of the item in the extensions tree"""
 
-    def __init__(self, name, kind="debug", parent=None):
-        self.kind = kind
-        self.name = str(name)
+    name: str
+    kind: str
 
 
 class ExtensionTreeView(TreeView):
@@ -38,31 +37,34 @@ class ExtensionTreeView(TreeView):
         self.parents = {}
         self.menus = {}
 
-    def setup(self, *args, **kwargs):
-        self.ViewColumn("Name", expand=True, text="name")
-        self.ViewSort(data=lambda item: item.name, ascending=True)
+    def setup(self):
+        column = self.create_column("Name", expand=True)
+        column.add_text_renderer("name")
+        self.create_sort(data=lambda item: item.name)
+        super().setup()
 
-    def get_menu(self, parent, *remain):
+    def get_menu(self, parent, remain):
         menu_id = "::".join([str(r) for r in remain])
-        if menu_id in self.menus:
-            return self.menus[menu_id]
+        if menu_id not in self.menus:
+            if len(remain) > 1:
+                parent = self.get_menu(parent, remain[:-1])
 
-        if remain[:-1]:
-            parent = self.get_menu(parent, *remain[:-1])
+            row = [ExtensionTreeItem(remain[-1], kind="menu")]
+            self.menus[menu_id] = self.get_iter(
+                self._add_item(row, parent=parent)
+            )
 
-        menu = self._add_item([ExtensionTreeItem(remain[-1])], parent=parent)
-        self.menus[menu_id] = menu
-        return menu
+        return self.menus[menu_id]
 
     def add_item(self, item, parent=None):
-        if not item or not item.name:
-            return None
         if item.kind not in self.parents:
-            tree_item = ExtensionTreeItem(item.kind.title())
-            self.parents[item.kind] = self._add_item([tree_item], parent=None)
+            row = [ExtensionTreeItem(item.kind.title(), kind="category")]
+            self.parents[item.kind] = self.get_iter(
+                self._add_item(row, parent=None)
+            )
         parent = self.parents[item.kind]
         if item.kind == "effect" and len(item.menu) > 1:
-            parent = self.get_menu(parent, *item.menu[:-1])
+            parent = self.get_menu(parent, item.menu[:-1])
         return self._add_item([item], parent)
 
 
@@ -73,7 +75,9 @@ class MoreInformation(ChildWindow):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.inx = ExtensionTreeView(self.widget("inx"), selected=self.select_inx)
+        self.inx = ExtensionTreeView(
+            self.widget("inx"), selected=self.select_inx
+        )
 
     def load_widgets(self, pixmaps, item):
         """Initialise the information"""
@@ -92,14 +96,14 @@ class MoreInformation(ChildWindow):
         self.widget("info_license").set_label(item.license)
         self.widget("info_author").set_label(f"{item.author}")
         try:
-            self.widget("info_image").set_from_pixbuf(pixmaps.get(item.get_icon()))
+            self.widget("info_image").set_from_pixbuf(
+                pixmaps.get(item.get_icon())
+            )
         except Exception:
             pass
 
         self.inx.clear()
-        if hasattr(item, "get_files"):
-            for fn in item.get_files(filters=("*.inx",)):
-                self.inx.add([ExtensionTreeItem(fn, kind="lost-and-found")])
+        self.inx.add(item.get_inx_files())
 
     def select_inx(self, item):
         pass

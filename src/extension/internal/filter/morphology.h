@@ -62,7 +62,7 @@ public:
               "<param name=\"type\" gui-text=\"" N_("Type:") "\" type=\"optiongroup\" appearance=\"combo\">\n"
                 "<option value=\"in\">" N_("Inner") "</option>\n"
                 "<option value=\"over\">" N_("Outer") "</option>\n"
-                "<option value=\"xor\">" N_("Open") "</option>\n"
+                "<option value=\"xor\">" N_("Open (XOR)") "</option>\n"
               "</param>\n"
               "<param name=\"width\" gui-text=\"" N_("Width") "\" type=\"float\" appearance=\"full\" precision=\"2\" min=\"0.01\" max=\"30.\">10</param>\n"
               "<param name=\"level\" gui-text=\"" N_("Level") "\" type=\"float\" appearance=\"full\" precision=\"2\" min=\"0.2\" max=\"2\">1</param>\n"
@@ -80,7 +80,7 @@ public:
                 "</effects-menu>\n"
                 "<menu-tip>" N_("Smooth edges and angles of shapes") "</menu-tip>\n"
               "</effect>\n"
-            "</inkscape-extension>\n", new Crosssmooth());
+            "</inkscape-extension>\n", std::make_unique<Crosssmooth>());
         // clang-format on
     };
 
@@ -211,7 +211,7 @@ public:
                 "</effects-menu>\n"
                 "<menu-tip>" N_("Adds a colorizable outline") "</menu-tip>\n"
               "</effect>\n"
-            "</inkscape-extension>\n", new Outline());
+            "</inkscape-extension>\n", std::make_unique<Outline>());
         // clang-format on
     };
 

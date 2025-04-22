@@ -5,25 +5,20 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 #include <vector>
-
 #include <2geom/bezier-to-sbasis.h>
 
 #include "live_effects/lpe-patternalongpath.h"
 #include "live_effects/lpeobject.h"
-
 #include "display/curve.h"
-
 #include "object/sp-shape.h"
-
 #include "ui/knot/knot-holder.h"
 #include "ui/knot/knot-holder-entity.h"
 
 // TODO due to internal breakage in glibmm headers, this must be last:
 #include <glibmm/i18n.h>
-
 
 /* Theory in e-mail from J.F. Barraud
 Let B be the skeleton path, and P the pattern (the path to be deformed).
@@ -56,7 +51,7 @@ namespace WPAP {
         ~KnotHolderEntityWidthPatternAlongPath() override
         {
             LPEPatternAlongPath *lpe = dynamic_cast<LPEPatternAlongPath *> (_effect);
-            lpe->_knot_entity = nullptr;
+            lpe->_knotholder = nullptr;
         }
         void knot_set(Geom::Point const &p, Geom::Point const &origin, guint state) override;
         Geom::Point knot_get() const override;
@@ -111,13 +106,16 @@ LPEPatternAlongPath::LPEPatternAlongPath(LivePathEffectObject *lpeobject) :
     registerParameter(&fuse_tolerance);
     prop_scale.param_set_digits(3);
     prop_scale.param_set_increments(0.01, 0.10);
-    _knot_entity = nullptr;
+    _knotholder = nullptr;
     _provides_knotholder_entities = true;
-
 }
 
-LPEPatternAlongPath::~LPEPatternAlongPath()
-= default;
+LPEPatternAlongPath::~LPEPatternAlongPath() {
+    if (_knotholder) {
+        _knotholder->clear();
+        _knotholder =  nullptr;
+    }
+}
 
 bool 
 LPEPatternAlongPath::doOnOpen(SPLPEItem const *lpeitem)
@@ -147,14 +145,14 @@ LPEPatternAlongPath::doBeforeEffect (SPLPEItem const* lpeitem)
     if (is_load) {
         pattern.reload();
     }
-    if (_knot_entity) {
+    if (_knotholder && !_knotholder->entity.empty()) {
         if (hide_knot) {
             helper_path.clear();
-            _knot_entity->knot->hide();
+            _knotholder->entity.front()->knot->hide();
         } else {
-            _knot_entity->knot->show();
+            _knotholder->entity.front()->knot->show();
         }
-        _knot_entity->update_knot();
+        _knotholder->update_knots();
     }
 }
 
@@ -300,13 +298,14 @@ LPEPatternAlongPath::addCanvasIndicators(SPLPEItem const */*lpeitem*/, std::vect
 void 
 LPEPatternAlongPath::addKnotHolderEntities(KnotHolder *knotholder, SPItem *item)
 {
-    _knot_entity = new WPAP::KnotHolderEntityWidthPatternAlongPath(this);
-    _knot_entity->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:PatternAlongPath",
+    _knotholder = knotholder;
+    KnotHolderEntity * knot_entity = new WPAP::KnotHolderEntityWidthPatternAlongPath(this);
+    knot_entity->create(nullptr, item, knotholder, Inkscape::CANVAS_ITEM_CTRL_TYPE_LPE, "LPE:PatternAlongPath",
                          _("Change the width"));
-    knotholder->add(_knot_entity);
+    _knotholder->add(knot_entity);
     if (hide_knot) {
-        _knot_entity->knot->hide();
-        _knot_entity->update_knot();
+        knot_entity->knot->hide();
+        knot_entity->update_knot();
     }
 }
 
@@ -318,11 +317,11 @@ KnotHolderEntityWidthPatternAlongPath::knot_set(Geom::Point const &p, Geom::Poin
     LPEPatternAlongPath *lpe = dynamic_cast<LPEPatternAlongPath *> (_effect);
 
     Geom::Point const s = snap_knot_position(p, state);
-    SPShape const *sp_shape = dynamic_cast<SPShape const *>(SP_LPE_ITEM(item));
+    SPShape const *sp_shape = cast<SPShape>(cast<SPLPEItem>(item));
     if (sp_shape && lpe->original_height) {
-        auto curve_before = SPCurve::copy(sp_shape->curveForEdit());
-        if (curve_before) {
-            Geom::Path const *path_in = curve_before->first_path();
+        if (auto c = sp_shape->curveForEdit()) {
+            auto curve_before = *c;
+            Geom::Path const *path_in = curve_before.first_path();
             Geom::Point ptA = path_in->pointAt(Geom::PathTime(0, 0.0));
             Geom::Point B = path_in->pointAt(Geom::PathTime(1, 0.0));
             Geom::Curve const *first_curve = &path_in->curveAt(Geom::PathTime(0, 0.0));
@@ -346,18 +345,17 @@ KnotHolderEntityWidthPatternAlongPath::knot_set(Geom::Point const &p, Geom::Poin
         Inkscape::Preferences *prefs = Inkscape::Preferences::get();
         prefs->setDouble("/live_effects/skeletal/width", lpe->prop_scale);
     }
-    sp_lpe_item_update_patheffect (SP_LPE_ITEM(item), false, true);
+    sp_lpe_item_update_patheffect (cast<SPLPEItem>(item), false, true);
 }
 
 Geom::Point 
 KnotHolderEntityWidthPatternAlongPath::knot_get() const
 {
     LPEPatternAlongPath *lpe = dynamic_cast<LPEPatternAlongPath *> (_effect);
-    SPShape const *sp_shape = dynamic_cast<SPShape const *>(SP_LPE_ITEM(item));
-    if (sp_shape) {
-        auto curve_before = SPCurve::copy(sp_shape->curveForEdit());
-        if (curve_before) {
-            Geom::Path const *path_in = curve_before->first_path();
+    if (auto const sp_shape = cast<SPShape>(cast<SPLPEItem>(item))) {
+        if (auto c = sp_shape->curveForEdit()) {
+            auto curve_before = *c;
+            Geom::Path const *path_in = curve_before.first_path();
             Geom::Point ptA = path_in->pointAt(Geom::PathTime(0, 0.0));
             Geom::Point B = path_in->pointAt(Geom::PathTime(1, 0.0));
             Geom::Curve const *first_curve = &path_in->curveAt(Geom::PathTime(0, 0.0));

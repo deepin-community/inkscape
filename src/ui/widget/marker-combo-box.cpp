@@ -15,28 +15,34 @@
 
 #include "marker-combo-box.h"
 
+#include <chrono>
+#include <optional>
+#include <sstream>
+#include <utility>
+
 #include <glibmm/fileutils.h>
 #include <glibmm/i18n.h>
-#include <gtkmm/icontheme.h>
+#include <glibmm/main.h>
+#include <gtkmm/button.h>
+#include <gtkmm/checkbutton.h>
+#include <gtkmm/flowbox.h>
+#include <gtkmm/grid.h>
+#include <gtkmm/image.h>
+#include <gtkmm/label.h>
 #include <gtkmm/menubutton.h>
+#include <gtkmm/radiobutton.h>
+#include <gtkmm/spinbutton.h>
+#include <gtkmm/window.h>
 
-#include "desktop-style.h"
 #include "helper/stock-items.h"
 #include "io/resource.h"
-#include "io/sys.h"
 #include "object/sp-defs.h"
 #include "object/sp-marker.h"
 #include "object/sp-root.h"
-#include "path-prefix.h"
-#include "style.h"
 #include "ui/builder-utils.h"
-#include "ui/cache/svg_preview_cache.h"
-#include "ui/dialog-events.h"
-#include "ui/icon-loader.h"
 #include "ui/svg-renderer.h"
 #include "ui/util.h"
-#include "ui/widget/spinbutton.h"
-#include "ui/widget/stroke-style.h"
+#include "util/object-renderer.h"
 
 #define noTIMING_INFO 1;
 
@@ -44,12 +50,10 @@ using Inkscape::UI::get_widget;
 using Inkscape::UI::create_builder;
 
 // size of marker image in a list
-static const int ITEM_WIDTH = 40;
-static const int ITEM_HEIGHT = 32;
+static constexpr int ITEM_WIDTH  = 40;
+static constexpr int ITEM_HEIGHT = 32;
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 // separator for FlowBox widget
 static cairo_surface_t* create_separator(double alpha, int width, int height, int device_scale) {
@@ -128,9 +132,9 @@ MarkerComboBox::MarkerComboBox(Glib::ustring id, int l) :
 
     _marker_store = Gio::ListStore<MarkerItem>::create();
     _marker_list.bind_list_store(_marker_store, [=](const Glib::RefPtr<MarkerItem>& item){
-        auto image = Gtk::make_managed<Gtk::Image>(item->pix);
-        image->show();
-        auto box = Gtk::make_managed<Gtk::FlowBoxChild>();
+        auto const image = Gtk::make_managed<Gtk::Image>(item->pix);
+        image->set_visible(true);
+        auto const box = Gtk::make_managed<Gtk::FlowBoxChild>();
         box->add(*image);
         if (item->separator) {
             image->set_sensitive(false);
@@ -145,10 +149,13 @@ MarkerComboBox::MarkerComboBox(Glib::ustring id, int l) :
         }
         _widgets_to_markers[image] = item;
         box->set_size_request(item->width, item->height);
+        // removing ability to focus from all items to prevent crash when user edits "Offset Y" and presses tab key
+        // to move to the next widget; not ideal, as it limits navigation, but lesser evil
+        box->set_can_focus(false);
         return box;
     });
 
-    _sandbox = ink_markers_preview_doc(_combo_id);
+    _sandbox = Inkscape::ink_markers_preview_doc(_combo_id);
 
     set_sensitive(true);
 
@@ -180,6 +187,7 @@ MarkerComboBox::MarkerComboBox(Glib::ustring id, int l) :
 
     auto set_scale = [=](bool changeWidth) {
         if (_update.pending()) return;
+
         if (auto marker = get_current()) {
             auto sx = _scale_x.get_value();
             auto sy = _scale_y.get_value();
@@ -202,6 +210,23 @@ MarkerComboBox::MarkerComboBox(Glib::ustring id, int l) :
         }
     };
 
+    // delay setting scale to idle time; if invoked by focus change due to new marker selection
+    // it leads to marker list rebuild and apparent flowbox content corruption
+    auto idle_set_scale = [=](bool changeWidth) {
+        if (_update.pending()) return;
+
+        if (auto orig_marker = get_current()) {
+            _idle = Glib::signal_idle().connect([=](){
+                if (auto marker = get_current()) {
+                    if (marker == orig_marker) {
+                        set_scale(changeWidth);
+                    }
+                }
+                return false; // don't call again
+            });
+        }
+    };
+
     _link_scale.signal_clicked().connect([=](){
         if (_update.pending()) return;
         _scale_linked = !_scale_linked;
@@ -209,8 +234,8 @@ MarkerComboBox::MarkerComboBox(Glib::ustring id, int l) :
         update_scale_link();
     });
 
-    _scale_x.signal_value_changed().connect([=]() { set_scale(true); });
-    _scale_y.signal_value_changed().connect([=]() { set_scale(false); });
+    _scale_x.signal_value_changed().connect([=]() { idle_set_scale(true); });
+    _scale_y.signal_value_changed().connect([=]() { idle_set_scale(false); });
 
     _scale_with_stroke.signal_toggled().connect([=](){
         if (_update.pending()) return;
@@ -225,28 +250,20 @@ MarkerComboBox::MarkerComboBox(Glib::ustring id, int l) :
     _offset_y.signal_value_changed().connect([=]() { set_offset(); });
 
     // request to edit marker on canvas; close popup to get it out of the way and call marker edit tool
-    _edit_marker.signal_clicked().connect([=]() { _menu_btn.get_popover()->popdown(); edit_signal(); });
+    _edit_marker.signal_clicked().connect([this]{ _menu_btn.get_popover()->popdown(); _signal_edit(); });
 
     // before showing popover refresh marker attributes
     _menu_btn.get_popover()->signal_show().connect([=](){ update_ui(get_current(), false); }, false);
 
     update_scale_link();
     _current_img.set(g_image_none);
-    show();
-}
-
-MarkerComboBox::~MarkerComboBox() {
-    if (_document) {
-        modified_connection.disconnect();
-    }
+    set_visible(true);
 }
 
 void MarkerComboBox::update_widgets_from_marker(SPMarker* marker) {
     _input_grid.set_sensitive(marker != nullptr);
 
     if (marker) {
-        marker->updateRepr();
-
         _scale_x.set_value(get_attrib_num(marker, "markerWidth"));
         _scale_y.set_value(get_attrib_num(marker, "markerHeight"));
         auto units = get_attrib(marker, "markerUnits");
@@ -311,7 +328,7 @@ void MarkerComboBox::update_preview(Glib::RefPtr<MarkerItem> item) {
             _preview_no_alloc = true;
         }
         _sandbox->getRoot()->invoke_hide(visionkey);
-        label = item->label;
+        label = _(item->label.c_str());
     }
 
     _preview.set(surface);
@@ -340,8 +357,8 @@ SPMarker* find_marker(SPDocument* document, const Glib::ustring& marker_id) {
     if (!defs) return nullptr;
 
     for (auto& child : defs->children) {
-        if (SP_IS_MARKER(&child)) {
-            auto marker = SP_MARKER(&child);
+        if (is<SPMarker>(&child)) {
+            auto marker = cast<SPMarker>(&child);
             auto id = marker->getId();
             if (id && marker_id == id) {
                 // found it
@@ -449,10 +466,6 @@ void MarkerComboBox::refresh_after_markers_modified() {
 
     auto scoped(_update.block());
 
-    // collect orphaned markers, so they are not listed; if they are listed then
-    // they disappear upon selection leaving dangling URLs
-    if (_document) _document->collectOrphans();
-
     /*
      * Seems to be no way to get notified of changes just to markers,
      * so listen to changes in all defs and check if the number of markers has changed here
@@ -516,7 +529,7 @@ MarkerComboBox::init_combo()
  */
 void MarkerComboBox::set_current(SPObject *marker)
 {
-    auto sp_marker = dynamic_cast<SPMarker*>(marker);
+    auto sp_marker = cast<SPMarker>(marker);
 
     bool reselect = sp_marker != get_current();
 
@@ -557,7 +570,7 @@ std::string MarkerComboBox::get_active_marker_uri()
         bool stockid = item->stock;
 
         std::string markurn = stockid ? "urn:inkscape:marker:" + item->id : item->id;
-        auto mark = dynamic_cast<SPMarker*>(get_stock_item(markurn.c_str(), stockid));
+        auto mark = cast<SPMarker>(get_stock_item(markurn.c_str(), stockid));
 
         if (mark) {
             Inkscape::XML::Node* repr = mark->getRepr();
@@ -646,8 +659,8 @@ std::vector<SPMarker*> MarkerComboBox::get_marker_list(SPDocument* source)
     }
 
     for (auto& child: defs->children) {
-        if (SP_IS_MARKER(&child)) {
-            auto marker = SP_MARKER(&child);
+        if (is<SPMarker>(&child)) {
+            auto marker = cast<SPMarker>(&child);
             ml.push_back(marker);
         }
     }
@@ -716,10 +729,10 @@ auto old_time =  std::chrono::high_resolution_clock::now();
         item->height = ITEM_HEIGHT;
 
         if (history) {
-            _history_items.push_back(item);
+            _history_items.emplace_back(std::move(item));
         }
         else {
-            _stock_items.push_back(item);
+            _stock_items.emplace_back(std::move(item));
         }
     }
 
@@ -741,150 +754,16 @@ Cairo::RefPtr<Cairo::Surface>
 MarkerComboBox::create_marker_image(Geom::IntPoint pixel_size, gchar const *mname,
     SPDocument *source, Inkscape::Drawing &drawing, unsigned /*visionkey*/, bool checkerboard, bool no_clip, double scale)
 {
-    // Retrieve the marker named 'mname' from the source SVG document
-    SPObject const *marker = source->getObjectById(mname);
-    if (marker == nullptr) {
-        g_warning("bad mname: %s", mname);
-        return g_bad_marker;
+    std::optional<guint32> checkerboard_color;
+    if (checkerboard) {
+        checkerboard_color = _background_color;
     }
 
-    SPObject *oldmarker = _sandbox->getObjectById("sample");
-    if (oldmarker) {
-        oldmarker->deleteObject(false);
-    }
+    int device_scale = get_scale_factor();
+    auto const fg = get_foreground_color(get_style_context());
 
-    // Create a copy repr of the marker with id="sample"
-    Inkscape::XML::Document *xml_doc = _sandbox->getReprDoc();
-    Inkscape::XML::Node *mrepr = marker->getRepr()->duplicate(xml_doc);
-    mrepr->setAttribute("id", "sample");
-
-    // Replace the old sample in the sandbox by the new one
-    Inkscape::XML::Node *defsrepr = _sandbox->getObjectById("defs")->getRepr();
-
-    // TODO - This causes a SIGTRAP on windows
-    defsrepr->appendChild(mrepr);
-
-    Inkscape::GC::release(mrepr);
-
-    // If the marker color is a url link to a pattern or gradient copy that too
-    SPObject *mk = source->getObjectById(mname);
-    SPCSSAttr *css_marker = sp_css_attr_from_object(mk->firstChild(), SP_STYLE_FLAG_ALWAYS);
-    //const char *mfill = sp_repr_css_property(css_marker, "fill", "none");
-    const char *mstroke = sp_repr_css_property(css_marker, "fill", "none");
-
-    if (!strncmp (mstroke, "url(", 4)) {
-        SPObject *linkObj = getMarkerObj(mstroke, source);
-        if (linkObj) {
-            Inkscape::XML::Node *grepr = linkObj->getRepr()->duplicate(xml_doc);
-            SPObject *oldmarker = _sandbox->getObjectById(linkObj->getId());
-            if (oldmarker) {
-                oldmarker->deleteObject(false);
-            }
-            defsrepr->appendChild(grepr);
-            Inkscape::GC::release(grepr);
-
-            if (SP_IS_GRADIENT(linkObj)) {
-                SPGradient *vector = sp_gradient_get_forked_vector_if_necessary (SP_GRADIENT(linkObj), false);
-                if (vector) {
-                    Inkscape::XML::Node *grepr = vector->getRepr()->duplicate(xml_doc);
-                    SPObject *oldmarker = _sandbox->getObjectById(vector->getId());
-                    if (oldmarker) {
-                        oldmarker->deleteObject(false);
-                    }
-                    defsrepr->appendChild(grepr);
-                    Inkscape::GC::release(grepr);
-                }
-            }
-        }
-    }
-
-// Uncomment this to get the sandbox documents saved (useful for debugging)
-    // FILE *fp = fopen (g_strconcat(combo_id, mname, ".svg", nullptr), "w");
-    // sp_repr_save_stream(_sandbox->getReprDoc(), fp);
-    // fclose (fp);
-
-    // object to render; note that the id is the same as that of the combo we're building
-    SPObject *object = _sandbox->getObjectById(_combo_id);
-
-    if (object == nullptr || !SP_IS_ITEM(object)) {
-        g_warning("no obj: %s", _combo_id.c_str());
-        return g_bad_marker;
-    }
-
-    auto context = get_style_context();
-    Gdk::RGBA fg = context->get_color(get_state_flags());
-    auto fgcolor = rgba_to_css_color(fg);
-    fg.set_red(1 - fg.get_red());
-    fg.set_green(1 - fg.get_green());
-    fg.set_blue(1 - fg.get_blue());
-    auto bgcolor = rgba_to_css_color(fg);
-    auto objects = _sandbox->getObjectsBySelector(".colors");
-    for (auto el : objects) {
-        if (SPCSSAttr* css = sp_repr_css_attr(el->getRepr(), "style")) {
-            sp_repr_css_set_property(css, "fill", bgcolor.c_str());
-            sp_repr_css_set_property(css, "stroke", fgcolor.c_str());
-            el->changeCSS(css, "style");
-            sp_repr_css_attr_unref(css);
-        }
-    }
-
-    auto cross = _sandbox->getObjectsBySelector(".cross");
-    double stroke = 0.5;
-    for (auto el : cross) {
-        if (SPCSSAttr* css = sp_repr_css_attr(el->getRepr(), "style")) {
-            sp_repr_css_set_property(css, "display", checkerboard ? "block" : "none");
-            sp_repr_css_set_property_double(css, "stroke-width", stroke);
-            el->changeCSS(css, "style");
-            sp_repr_css_attr_unref(css);
-        }
-    }
-
-    SPDocument::install_reference_document scoped(_sandbox.get(), marker->document);
-
-    _sandbox->getRoot()->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
-    _sandbox->ensureUpToDate();
-
-    SPItem *item = SP_ITEM(object);
-    // Find object's bbox in document
-    Geom::OptRect dbox = item->documentVisualBounds();
-
-    if (!dbox) {
-        g_warning("no dbox");
-        return g_bad_marker;
-    }
-
-    if (auto measure = dynamic_cast<SPItem*>(_sandbox->getObjectById("measure-marker"))) {
-        if (auto box = measure->documentVisualBounds()) {
-            // check size of the marker applied to a path with stroke of 1px
-            auto size = std::max(box->width(), box->height());
-            const double small = 5.0;
-            // if too small, then scale up; clip needs to be enabled for scale to work
-            if (size > 0 && size < small) {
-                auto factor = 1 + small - size;
-                scale *= factor;
-                no_clip = false;
-
-                // adjust cross stroke
-                stroke /= factor;
-                for (auto el : cross) {
-                    if (SPCSSAttr* css = sp_repr_css_attr(el->getRepr(), "style")) {
-                        sp_repr_css_set_property_double(css, "stroke-width", stroke);
-                        el->changeCSS(css, "style");
-                        sp_repr_css_attr_unref(css);
-                    }
-                }
-
-                _sandbox->getRoot()->requestDisplayUpdate(SP_OBJECT_MODIFIED_FLAG);
-                _sandbox->ensureUpToDate();
-            }
-        }
-    }
-
-    /* Update to renderable state */
-    const double device_scale = get_scale_factor();
-    auto surface = render_surface(drawing, scale, *dbox, pixel_size, device_scale, checkerboard ? &_background_color : nullptr, no_clip);
-    cairo_surface_set_device_scale(surface, device_scale, device_scale);
-    return Cairo::RefPtr<Cairo::Surface>(new Cairo::Surface(surface, false));
+    return Inkscape::create_marker_image(_combo_id, _sandbox.get(), fg, pixel_size, mname, source,
+        drawing, checkerboard_color, no_clip, scale, device_scale);
 }
 
 // capture background color when styles change
@@ -892,7 +771,7 @@ void MarkerComboBox::on_style_updated() {
     auto background = _background_color;
     if (auto wnd = dynamic_cast<Gtk::Window*>(this->get_toplevel())) {
         auto sc = wnd->get_style_context();
-        auto color = get_background_color(sc);
+        auto const color = get_color_with_class(sc, "theme_bg_color");
         background =
             gint32(0xff * color.get_red()) << 24 |
             gint32(0xff * color.get_green()) << 16 |
@@ -900,8 +779,7 @@ void MarkerComboBox::on_style_updated() {
             0xff;
     }
 
-    auto context = get_style_context();
-    Gdk::RGBA color = context->get_color(get_state_flags());
+    auto const color = get_foreground_color(get_style_context());
     auto foreground =
         gint32(0xff * color.get_red()) << 24 |
         gint32(0xff * color.get_green()) << 16 |
@@ -915,111 +793,17 @@ void MarkerComboBox::on_style_updated() {
     }
 }
 
-/*TODO: background for custom markers
-      <filter id="softGlow" height="1.2" width="1.2" x="0.0" y="0.0">
-      <!-- <feMorphology operator="dilate" radius="1" in="SourceAlpha" result="thicken" id="feMorphology2" /> -->
-      <!-- Use a gaussian blur to create the soft blurriness of the glow -->
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3" result="blurred" id="feGaussianBlur4" />
-      <!-- Change the color -->
-      <feFlood flood-color="rgb(255,255,255)" result="glowColor" id="feFlood6" flood-opacity="0.70" />
-      <!-- Color in the glows -->
-      <feComposite in="glowColor" in2="blurred" operator="in" result="softGlow_colored" id="feComposite8" />
-      <!--	Layer the effects together -->
-      <feMerge id="feMerge14">
-        <feMergeNode in="softGlow_colored" id="feMergeNode10" />
-        <feMergeNode in="SourceGraphic" id="feMergeNode12" />
-      </feMerge>
-      </filter>
-*/
-
-/**
- * Returns a new document containing default start, mid, and end markers.
- * Note 1: group IDs are matched against "_combo_id" to render correct preview object.
- * Note 2: paths/lines are kept outside of groups, so they don't inflate visible bounds
- * Note 3: invisible rects inside groups keep visual bounds from getting too small, so we can see relative marker sizes
- */
-std::unique_ptr<SPDocument> MarkerComboBox::ink_markers_preview_doc(const Glib::ustring& group_id)
+sigc::connection MarkerComboBox::connect_changed(sigc::slot<void ()> slot)
 {
-gchar const *buffer = R"A(
-    <svg xmlns="http://www.w3.org/2000/svg"
-         xmlns:xlink="http://www.w3.org/1999/xlink"
-         id="MarkerSample">
-
-    <defs id="defs">
-      <filter id="softGlow" height="1.2" width="1.2" x="0.0" y="0.0">
-      <!-- <feMorphology operator="dilate" radius="1" in="SourceAlpha" result="thicken" id="feMorphology2" /> -->
-      <!-- Use a gaussian blur to create the soft blurriness of the glow -->
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3" result="blurred" id="feGaussianBlur4" />
-      <!-- Change the color -->
-      <feFlood flood-color="rgb(255,255,255)" result="glowColor" id="feFlood6" flood-opacity="0.70" />
-      <!-- Color in the glows -->
-      <feComposite in="glowColor" in2="blurred" operator="in" result="softGlow_colored" id="feComposite8" />
-      <!--	Layer the effects together -->
-      <feMerge id="feMerge14">
-        <feMergeNode in="softGlow_colored" id="feMergeNode10" />
-        <feMergeNode in="SourceGraphic" id="feMergeNode12" />
-      </feMerge>
-      </filter>
-    </defs>
-
-    <!-- cross at the end of the line to help position marker -->
-    <symbol id="cross" width="25" height="25" viewBox="0 0 25 25">
-      <path class="cross" style="mix-blend-mode:difference;stroke:#7ff;stroke-opacity:1;fill:none;display:block" d="M 0,0 M 25,25 M 10,10 15,15 M 10,15 15,10" />
-      <!-- <path class="cross" style="mix-blend-mode:difference;stroke:#7ff;stroke-width:1;stroke-opacity:1;fill:none;display:block;-inkscape-stroke:hairline" d="M 0,0 M 25,25 M 10,10 15,15 M 10,15 15,10" /> -->
-    </symbol>
-
-    <!-- very short path with 1px stroke used to measure size of marker -->
-    <path id="measure-marker" style="stroke-width:1.0;stroke-opacity:0.01;marker-start:url(#sample)" d="M 0,9999 m 0,0.1" />
-
-    <path id="line-marker-start" class="line colors" style="stroke-width:2;stroke-opacity:0.2" d="M 12.5,12.5 l 1000,0" />
-    <!-- <g id="marker-start" class="group" style="filter:url(#softGlow)"> -->
-    <g id="marker-start" class="group">
-      <path class="colors" style="stroke-width:2;stroke-opacity:0;marker-start:url(#sample)"
-       d="M 12.5,12.5 L 25,12.5"/>
-      <rect x="0" y="0" width="25" height="25" style="fill:none;stroke:none"/>
-      <use xlink:href="#cross" width="25" height="25" />
-    </g>
-
-    <path id="line-marker-mid" class="line colors" style="stroke-width:2;stroke-opacity:0.2" d="M -1000,12.5 L 1000,12.5" />
-    <g id="marker-mid" class="group">
-      <path class="colors" style="stroke-width:2;stroke-opacity:0;marker-mid:url(#sample)"
-       d="M 0,12.5 L 12.5,12.5 L 25,12.5"/>
-      <rect x="0" y="0" width="25" height="25" style="fill:none;stroke:none"/>
-      <use xlink:href="#cross" width="25" height="25" />
-    </g>
-
-    <path id="line-marker-end" class="line colors" style="stroke-width:2;stroke-opacity:0.2" d="M -1000,12.5 L 12.5,12.5" />
-    <g id="marker-end" class="group">
-      <path class="colors" style="stroke-width:2;stroke-opacity:0;marker-end:url(#sample)"
-       d="M 0,12.5 L 12.5,12.5"/>
-      <rect x="0" y="0" width="25" height="25" style="fill:none;stroke:none"/>
-      <use xlink:href="#cross" width="25" height="25" />
-    </g>
-
-  </svg>
-)A";
-
-    auto document = std::unique_ptr<SPDocument>(SPDocument::createNewDocFromMem(buffer, strlen(buffer), false));
-    // only leave requested group, so nothing else gets rendered
-    for (auto&& group : document->getObjectsByClass("group")) {
-        assert(group->getId());
-        if (group->getId() != group_id) {
-            group->deleteObject();
-        }
-    }
-    auto id = "line-" + group_id;
-    for (auto&& line : document->getObjectsByClass("line")) {
-        assert(line->getId());
-        if (line->getId() != id) {
-            line->deleteObject();
-        }
-    }
-    return document;
+    return _signal_changed.connect(std::move(slot));
 }
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+sigc::connection MarkerComboBox::connect_edit(sigc::slot<void ()> slot)
+{
+    return _signal_edit.connect(std::move(slot));
+}
+
+} // namespace Inkscape::UI::Widget
 
 /*
   Local Variables:

@@ -9,7 +9,6 @@ to provide list and read interface, removed PY2 support.
 """
 
 import os
-import sys
 import tarfile
 import zipfile
 

@@ -12,12 +12,14 @@
 
 #include "loader.h"
 
+#include <cstring>
+
 #include <gmodule.h>
 
-#include "system.h"
-#include <cstring>
 #include "dependency.h"
 #include "inkscape-version.h"
+#include "xml/document.h"         // for Document
+#include "xml/node.h"             // for Node
 
 namespace Inkscape {
 namespace Extension {
@@ -132,7 +134,7 @@ Implementation::Implementation *Loader::load_implementation(Inkscape::XML::Docum
   Local Variables:
   mode:c++
   c-file-style:"stroustrup"
-  c-file-offsets:((innamespace .0)(inline-open . 0)(case-label . +))
+  c-file-offsets:((innamespace . 0)(inline-open . 0)(case-label . +))
   indent-tabs-mode:nil
   fill-column:99
   End:

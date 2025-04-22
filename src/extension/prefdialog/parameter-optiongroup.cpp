@@ -18,15 +18,14 @@
 #include "parameter-optiongroup.h"
 
 #include <unordered_set>
-
 #include <gtkmm/box.h>
 #include <gtkmm/comboboxtext.h>
 #include <gtkmm/radiobutton.h>
 
-#include "xml/node.h"
 #include "extension/extension.h"
 #include "preferences.h"
-
+#include "ui/pack.h"
+#include "xml/node.h"
 
 namespace Inkscape {
 namespace Extension {
@@ -121,7 +120,7 @@ ParamOptionGroup::~ParamOptionGroup ()
  *
  * @param  in   The value to set.
  */
-const Glib::ustring& ParamOptionGroup::set(Glib::ustring in)
+const Glib::ustring &ParamOptionGroup::set(const Glib::ustring &in)
 {
     if (contains(in)) {
         _value = in;
@@ -151,6 +150,11 @@ std::string ParamOptionGroup::value_to_string() const
     return _value.raw();
 }
 
+void ParamOptionGroup::string_to_value(const std::string &in)
+{
+    _value = in;
+}
+
 /**
  * Returns the value for the options label parameter
  */
@@ -174,10 +178,10 @@ Glib::ustring ParamOptionGroup::value_from_label(const Glib::ustring label)
 class RadioWidget : public Gtk::RadioButton {
 private:
     ParamOptionGroup *_pref;
-    sigc::signal<void> *_changeSignal;
+    sigc::signal<void ()> *_changeSignal;
 public:
     RadioWidget(Gtk::RadioButtonGroup& group, const Glib::ustring& label,
-                ParamOptionGroup *pref, sigc::signal<void> *changeSignal)
+                ParamOptionGroup *pref, sigc::signal<void ()> *changeSignal)
         : Gtk::RadioButton(group, label)
         , _pref(pref)
         , _changeSignal(changeSignal)
@@ -186,7 +190,7 @@ public:
     };
 
     void add_changesignal() {
-        this->signal_toggled().connect(sigc::mem_fun(this, &RadioWidget::changed));
+        this->signal_toggled().connect(sigc::mem_fun(*this, &RadioWidget::changed));
     };
 
     void changed();
@@ -215,14 +219,14 @@ void RadioWidget::changed()
 class ComboWidget : public Gtk::ComboBoxText {
 private:
     ParamOptionGroup *_pref;
-    sigc::signal<void> *_changeSignal;
+    sigc::signal<void ()> *_changeSignal;
 
 public:
-    ComboWidget(ParamOptionGroup *pref, sigc::signal<void> *changeSignal)
+    ComboWidget(ParamOptionGroup *pref, sigc::signal<void ()> *changeSignal)
         : _pref(pref)
         , _changeSignal(changeSignal)
     {
-        this->signal_changed().connect(sigc::mem_fun(this, &ComboWidget::changed));
+        this->signal_changed().connect(sigc::mem_fun(*this, &ComboWidget::changed));
     }
 
     ~ComboWidget() override = default;
@@ -247,19 +251,19 @@ void ComboWidget::changed()
 /**
  * Creates the widget for the optiongroup parameter.
  */
-Gtk::Widget *ParamOptionGroup::get_widget(sigc::signal<void> *changeSignal)
+Gtk::Widget *ParamOptionGroup::get_widget(sigc::signal<void ()> *changeSignal)
 {
     if (_hidden) {
         return nullptr;
     }
 
-    auto hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, GUI_PARAM_WIDGETS_SPACING));
+    auto const hbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL, GUI_PARAM_WIDGETS_SPACING);
 
-    Gtk::Label *label = Gtk::manage(new Gtk::Label(_text, Gtk::ALIGN_START));
-    hbox->pack_start(*label, false, false);
+    auto const label = Gtk::make_managed<Gtk::Label>(_text, Gtk::ALIGN_START);
+    UI::pack_start(*hbox, *label, false, false);
 
     if (_mode == COMBOBOX) {
-        ComboWidget *combo = Gtk::manage(new ComboWidget(this, changeSignal));
+        auto const combo = Gtk::make_managed<ComboWidget>(this, changeSignal);
 
         for (auto choice : choices) {
             combo->append(choice->_text);
@@ -272,22 +276,22 @@ Gtk::Widget *ParamOptionGroup::get_widget(sigc::signal<void> *changeSignal)
             combo->set_active(0);
         }
 
-        hbox->pack_end(*combo, false, false);
+        UI::pack_end(*hbox, *combo, false, false);
     } else if (_mode == RADIOBUTTON) {
         label->set_valign(Gtk::ALIGN_START); // align label and first radio
 
-        Gtk::Box *radios = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 0));
+        auto const radios = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL, 0);
         Gtk::RadioButtonGroup group;
 
         for (auto choice : choices) {
-            RadioWidget *radio = Gtk::manage(new RadioWidget(group, choice->_text, this, changeSignal));
-            radios->pack_start(*radio, true, true);
+            auto const radio = Gtk::make_managed<RadioWidget>(group, choice->_text, this, changeSignal);
+            UI::pack_start(*radios, *radio, true, true);
             if (choice->_value == _value) {
                 radio->set_active();
             }
         }
 
-        hbox->pack_end(*radios, false, false);
+        UI::pack_end(*hbox, *radios, false, false);
     }
 
     hbox->show_all();

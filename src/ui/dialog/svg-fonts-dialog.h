@@ -12,16 +12,27 @@
 #ifndef INKSCAPE_UI_DIALOG_SVG_FONTS_H
 #define INKSCAPE_UI_DIALOG_SVG_FONTS_H
 
+#include <memory>
+#include <vector>
 #include <2geom/pathvector.h>
+#include <glibmm/property.h>
+#include <glibmm/propertyproxy.h>
+#include <glibmm/refptr.h>
+#include <glibmm/ustring.h>
 #include <gtkmm/box.h>
-#include <gtkmm/grid.h>
-#include <gtkmm/comboboxtext.h>
+#include <gtkmm/button.h>
+#include <gtkmm/cellrenderer.h>
+#include <gtkmm/combobox.h>
 #include <gtkmm/drawingarea.h>
 #include <gtkmm/entry.h>
+#include <gtkmm/grid.h>
 #include <gtkmm/iconview.h>
-#include <gtkmm/liststore.h>
+#include <gtkmm/label.h>
+#include <gtkmm/menubutton.h>
 #include <gtkmm/scrolledwindow.h>
+#include <gtkmm/treemodel.h>
 #include <gtkmm/treeview.h>
+#include <sigc++/signal.h>
 
 #include "attributes.h"
 #include "helper/auto-connection.h"
@@ -31,42 +42,57 @@
 #include "xml/helper-observer.h"
 
 namespace Gtk {
+class ListStore;
 class Scale;
-}
+} // namespace Gtk
 
 class SPGlyph;
 class SPGlyphKerning;
 class SvgFont;
 
-class SvgFontDrawingArea : Gtk::DrawingArea{
+class SvgFontDrawingArea final : public Gtk::DrawingArea {
 public:
     SvgFontDrawingArea();
+
     void set_text(Glib::ustring);
     void set_svgfont(SvgFont*);
     void set_size(int x, int y);
     void redraw();
+
 private:
-    int _x,_y;
-    SvgFont* _svgfont;
+    int _x = 0, _y = 0;
+    SvgFont *_svgfont = nullptr;
     Glib::ustring _text;
-    bool on_draw(const Cairo::RefPtr<Cairo::Context> &cr) override;
+    bool on_draw(const Cairo::RefPtr<Cairo::Context> &cr) final;
 };
 
 class SPFont;
 
-namespace Inkscape {
-namespace UI {
+namespace Inkscape::UI {
+
+namespace Widget {
+class PopoverMenu;
+class PopoverMenuItem;
+} // namespace Widget
+
 namespace Dialog {
 
-class GlyphComboBox : public Gtk::ComboBoxText {
+class GlyphMenuButton final : public Gtk::MenuButton {
 public:
-    GlyphComboBox();
-    void update(SPFont*);
+    GlyphMenuButton();
+    ~GlyphMenuButton() final;
+
+    void update(SPFont const *spfont);
+    [[nodiscard]] Glib::ustring get_active_text() const;
+
+private:
+    Gtk::Label _label;
+    std::unique_ptr<UI::Widget::PopoverMenu> _menu;
 };
 
 // cell text renderer for SVG font glyps (relying on Cairo "user font");
 // it can accept mouse clicks and report them via signal_clicked()
-class SvgGlyphRenderer : public Gtk::CellRenderer {
+class SvgGlyphRenderer final : public Gtk::CellRenderer {
 public:
     SvgGlyphRenderer() :
         Glib::ObjectBase(typeid(CellRenderer)),
@@ -77,8 +103,6 @@ public:
 
         property_mode() = Gtk::CELL_RENDERER_MODE_ACTIVATABLE;
     }
-
-    ~SvgGlyphRenderer() override = default;
 
     Glib::PropertyProxy<Glib::ustring> property_glyph() { return _property_glyph.get_proxy(); }
     Glib::PropertyProxy<bool> property_active() { return _property_active.get_proxy(); }
@@ -109,15 +133,25 @@ public:
         return _width;
     }
 
-    void render_vfunc(const Cairo::RefPtr<Cairo::Context>& cr, Gtk::Widget& widget, const Gdk::Rectangle& background_area, const Gdk::Rectangle& cell_area, Gtk::CellRendererState flags) override;
+    void render_vfunc(Cairo::RefPtr<Cairo::Context> const& cr,
+                      Gtk::Widget &widget,
+                      Gdk::Rectangle const &background_area,
+                      Gdk::Rectangle const &cell_area,
+                      Gtk::CellRendererState flags) final;
 
-    bool activate_vfunc(GdkEvent* event, Gtk::Widget& widget, const Glib::ustring& path, const Gdk::Rectangle& background_area, const Gdk::Rectangle& cell_area, Gtk::CellRendererState flags) override;
+    bool activate_vfunc(GdkEvent *event, Gtk::Widget &widget,
+                        Glib::ustring  const &path,
+                        Gdk::Rectangle const &background_area,
+                        Gdk::Rectangle const &cell_area,
+                        Gtk::CellRendererState flags) final;
 
-    void get_preferred_width_vfunc(Gtk::Widget& widget, int& min_w, int& nat_w) const override {
+    void get_preferred_width_vfunc(Gtk::Widget& widget, int& min_w, int& nat_w) const final
+    {
         min_w = nat_w = _width;
     }
 
-    void get_preferred_height_vfunc(Gtk::Widget& widget, int& min_h, int& nat_h) const override {
+    void get_preferred_height_vfunc(Gtk::Widget& widget, int& min_h, int& nat_h) const final
+    {
         min_h = nat_h = _height;
     }
 
@@ -134,23 +168,21 @@ private:
 };
 
 
-class SvgFontsDialog : public DialogBase
+class SvgFontsDialog final : public DialogBase
 {
 public:
     SvgFontsDialog();
-    ~SvgFontsDialog() override {};
+    ~SvgFontsDialog() final;
 
-    static SvgFontsDialog &getInstance() { return *new SvgFontsDialog(); }
+    void documentReplaced() final;
 
-    void documentReplaced() override;
-
+private:
     void update_fonts(bool document_replaced);
     SvgFont* get_selected_svgfont();
     SPFont* get_selected_spfont();
     SPGlyph* get_selected_glyph();
     SPGlyphKerning* get_selected_kerning_pair();
 
-    //TODO: these methods should be private, right?!
     void on_font_selection_changed();
     void on_kerning_pair_selection_changed();
     void on_preview_text_changed();
@@ -193,10 +225,9 @@ public:
 
     OperationBlocker _update;
 
-private:
     void update_glyphs(SPGlyph* changed_glyph = nullptr);
     void update_glyph(SPGlyph* glyph);
-    void set_glyph_row(const Gtk::TreeRow& row, SPGlyph& glyph);
+    void set_glyph_row(Gtk::TreeRow &row, SPGlyph &glyph);
     void refresh_svgfont();
     void update_sensitiveness();
     void update_global_settings_tab();
@@ -216,13 +247,13 @@ private:
 
     void add_kerning_pair();
 
-    void create_glyphs_popup_menu(Gtk::Widget& parent, sigc::slot<void> rem);
+    void create_glyphs_popup_menu(Gtk::Widget& parent, sigc::slot<void ()> rem);
     void glyphs_list_button_release(GdkEventButton* event);
 
-    void create_fonts_popup_menu(Gtk::Widget& parent, sigc::slot<void> rem);
+    void create_fonts_popup_menu(Gtk::Widget& parent, sigc::slot<void ()> rem);
     void fonts_list_button_release(GdkEventButton* event);
 
-    void create_kerning_pairs_popup_menu(Gtk::Widget& parent, sigc::slot<void> rem);
+    void create_kerning_pairs_popup_menu(Gtk::Widget& parent, sigc::slot<void ()> rem);
     void kerning_pairs_list_button_release(GdkEventButton* event);
 
     Gtk::TreeModel::iterator get_selected_glyph_iter();
@@ -239,28 +270,23 @@ private:
 
     // <font>
     Gtk::Label* _font_label;
-    AttrSpin*  _horiz_adv_x_spin;
-    AttrSpin*  _horiz_origin_x_spin;
-    AttrSpin*  _horiz_origin_y_spin;
+    std::unique_ptr<AttrSpin> _horiz_adv_x_spin;
+    std::unique_ptr<AttrSpin> _horiz_origin_x_spin;
+    std::unique_ptr<AttrSpin> _horiz_origin_y_spin;
 
     // <font-face>
     Gtk::Label* _font_face_label;
-    AttrEntry* _familyname_entry;
-    AttrSpin*  _units_per_em_spin;
-    AttrSpin*  _ascent_spin;
-    AttrSpin*  _descent_spin;
-    AttrSpin*  _cap_height_spin;
-    AttrSpin*  _x_height_spin;
+    std::unique_ptr<AttrEntry> _familyname_entry;
+    std::unique_ptr<AttrSpin> _units_per_em_spin;
+    std::unique_ptr<AttrSpin> _ascent_spin;
+    std::unique_ptr<AttrSpin> _descent_spin;
+    std::unique_ptr<AttrSpin> _cap_height_spin;
+    std::unique_ptr<AttrSpin> _x_height_spin;
 
     Gtk::Box* kerning_tab();
     Gtk::Box* glyphs_tab();
-    Gtk::Button _add;
-    Gtk::Button _remove;
-    Gtk::Button add_glyph_button;
-    Gtk::Button remove_glyph_button;
-    Gtk::Button glyph_from_path_button;
-    Gtk::Button missing_glyph_button;
-    Gtk::Button missing_glyph_reset_button;
+    Gtk::Button _font_add;
+    Gtk::Button _font_remove;
 
     class Columns : public Gtk::TreeModel::ColumnRecord
     {
@@ -280,6 +306,7 @@ private:
     Gtk::TreeView _FontsList;
     Gtk::ScrolledWindow _fonts_scroller;
 
+    /* Glyph Tab */
     class GlyphsColumns : public Gtk::TreeModel::ColumnRecord
     {
     public:
@@ -309,6 +336,7 @@ private:
     SvgGlyphRenderer* _glyph_renderer = nullptr;
     SvgGlyphRenderer* _glyph_cell_renderer = nullptr;
 
+    /* Kerning Tab */
     class KerningPairColumns : public Gtk::TreeModel::ColumnRecord
     {
     public:
@@ -340,12 +368,8 @@ private:
     bool _show_glyph_list = true;
     void set_glyphs_view_mode(bool list);
 
-    Gtk::Menu _FontsContextMenu;
-    Gtk::Menu _GlyphsContextMenu;
-    Gtk::Menu _KerningPairsContextMenu;
-
     SvgFontDrawingArea _font_da, kerning_preview;
-    GlyphComboBox first_glyph, second_glyph;
+    GlyphMenuButton first_glyph, second_glyph;
     SPGlyphKerning* kerning_pair;
     Inkscape::UI::Widget::SpinButton setwidth_spin;
     Gtk::Scale* kerning_slider;
@@ -369,10 +393,10 @@ private:
 };
 
 } // namespace Dialog
-} // namespace UI
-} // namespace Inkscape
 
-#endif //#ifndef INKSCAPE_UI_DIALOG_SVG_FONTS_H
+} // namespace Inkscape::UI
+
+#endif // INKSCAPE_UI_DIALOG_SVG_FONTS_H
 
 /*
   Local Variables:

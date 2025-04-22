@@ -1,8 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-
-#ifndef INK_DIALOG_BASE_H
-#define INK_DIALOG_BASE_H
-
 /** @file
  * @brief A base class for all dialogs.
  *
@@ -14,24 +10,26 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#ifndef INK_DIALOG_BASE_H
+#define INK_DIALOG_BASE_H
+
 #include <glibmm/ustring.h>
+#include <gtk/gtk.h> // GtkEventControllerKey
 #include <gtkmm/box.h>
 
 #include "inkscape-application.h"
 
 class SPDesktop;
 
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
+namespace Inkscape::UI::Dialog {
 
 /**
  * DialogBase is the base class for the dialog system.
  *
- * Each dialog has a reference to the application, in order to update it's inner focus
+ * Each dialog has a reference to the application, in order to update its inner focus
  * (be it of the active desktop, document, selection, etc.) in the update() method.
  *
- * DialogsBase derived classes' instances live in DialogNotebook classes and are managed by
+ * DialogBase derived classes' instances live in DialogNotebook classes and are managed by
  * DialogContainer classes. DialogContainer instances can have at most one type of dialog,
  * differentiated by the associated type.
  */
@@ -40,7 +38,9 @@ class DialogBase : public Gtk::Box
     using parent_type = Gtk::Box;
 
 public:
-    DialogBase(gchar const *prefs_path = nullptr, Glib::ustring dialog_type = "");
+    DialogBase(char const *prefs_path = nullptr, Glib::ustring dialog_type = {});
+    DialogBase(DialogBase const &) = delete;
+    DialogBase &operator=(DialogBase const &) = delete;
     ~DialogBase() override;
 
     /**
@@ -63,10 +63,9 @@ public:
      */
     void ensure_size();
 
-    // Getters and setters
-    Glib::ustring get_name() { return _name; };
-    const Glib::ustring& getPrefsPath() const { return _prefs_path; }
-    Glib::ustring const &get_type() const { return _dialog_type; }
+    Glib::ustring const &get_name    () const { return _name       ; }
+    Glib::ustring const &getPrefsPath() const { return _prefs_path ; }
+    Glib::ustring const &get_type    () const { return _dialog_type; }
 
     void blink();
     // find focusable widget to grab focus
@@ -78,6 +77,7 @@ public:
     void fix_inner_scroll(Gtk::Widget *child);
     // Too many dialogs have unprotected calls to ask for this data
     SPDesktop *getDesktop() const { return desktop; }
+
 protected:
     InkscapeApplication *getApp() const { return _app; }
     SPDocument *getDocument() const { return document; }
@@ -87,9 +87,11 @@ protected:
     Glib::ustring _name;             // Gtk widget name (must be set!)
     Glib::ustring const _prefs_path; // Stores characteristic path for loading/saving the dialog position.
     Glib::ustring const _dialog_type; // Type of dialog (we could just use _pref_path?).
+
 private:
     bool blink_off(); // timer callback
-    bool on_key_press_event(GdkEventKey* key_event) override;
+    gboolean on_window_key_pressed(GtkEventControllerKey const *controller,
+                               unsigned keyval, unsigned keycode, GdkModifierType state);
     // return if dialog is on visible tab
     bool _showing = true;
     void unsetDesktop();
@@ -101,8 +103,6 @@ private:
      */
     virtual void desktopReplaced() {}
     virtual void documentReplaced() {}
-    void selectionChanged_impl(Inkscape::Selection *selection);
-    void selectionModified_impl(Inkscape::Selection *selection, guint flags);
     virtual void selectionChanged(Inkscape::Selection *selection) {};
     virtual void selectionModified(Inkscape::Selection *selection, guint flags) {};
 
@@ -111,15 +111,17 @@ private:
     sigc::connection _select_changed;
     sigc::connection _select_modified;
 
+    int _modified_flags = 0;
+    bool _modified_while_hidden = false;
+    bool _changed_while_hidden = false;
+
     InkscapeApplication *_app; // Used for state management
-    SPDesktop *desktop;
-    SPDocument *document;
-    Selection *selection;
+    SPDesktop  *desktop   = nullptr;
+    SPDocument *document  = nullptr;
+    Selection  *selection = nullptr;
 };
 
-} // namespace Dialog
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Dialog
 
 #endif // INK_DIALOG_BASE_H
 

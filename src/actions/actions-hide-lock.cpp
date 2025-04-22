@@ -13,12 +13,15 @@
  */
 
 #include "actions-hide-lock.h"
+#include "actions-helper.h"
 
 #include <giomm.h>  // Not <gtkmm.h>! To eventually allow a headless version!
 #include <glibmm/i18n.h>
 
 #include "inkscape-application.h"
+#include "document.h"
 #include "document-undo.h"
+#include "selection.h"
 
 #include "object/sp-root.h"
 
@@ -33,7 +36,7 @@ hide_lock_recurse(bool (*f)(SPItem*, bool), SPItem *item, bool hide_or_lock)
     }
 
     for (auto& child : item->children) {
-        auto item = dynamic_cast<SPItem*>(&child);
+        auto item = cast<SPItem>(&child);
         if (item && hide_lock_recurse(f, item, hide_or_lock)) {
             changed = true;
         }
@@ -100,7 +103,7 @@ hide_lock_unhide_below(InkscapeApplication *app)
 {
     auto selection = app->get_active_selection();
     if (!selection) {
-        std::cerr << "hide_lock_unhide_below: no selection!" << std::endl;
+        show_output("hide_lock_unhide_below: no selection!");
         return;
     }
 
@@ -123,7 +126,7 @@ hide_lock_unlock_below(InkscapeApplication *app)
 {
     auto selection = app->get_active_selection();
     if (!selection) {
-        std::cerr << "hide_lock_unhide_below: no selection!" << std::endl;
+        show_output("hide_lock_unhide_below: no selection!");
         return;
     }
 
@@ -146,7 +149,7 @@ hide_lock_hide_selected(InkscapeApplication* app, bool hide)
 {
     auto selection = app->get_active_selection();
     if (!selection) {
-        std::cerr << "hide_lock_hide_selected: no selection!" << std::endl;
+        show_output("hide_lock_hide_selected: no selection!");
         return;
     }
 
@@ -170,7 +173,7 @@ hide_lock_lock_selected(InkscapeApplication* app, bool lock)
 {
     auto selection = app->get_active_selection();
     if (!selection) {
-        std::cerr << "hide_lock_lock_selected: no selection!" << std::endl;
+        show_output("hide_lock_lock_selected: no selection!");
         return;
     }
 
@@ -210,16 +213,16 @@ add_actions_hide_lock(InkscapeApplication* app)
     auto *gapp = app->gio_app();
 
     // clang-format off
-    gapp->add_action( "unhide-all",             sigc::bind<InkscapeApplication*>(      sigc::ptr_fun(&hide_lock_unhide_all),    app));
-    gapp->add_action( "unlock-all",             sigc::bind<InkscapeApplication*>(      sigc::ptr_fun(&hide_lock_unlock_all),    app));
+    gapp->add_action( "unhide-all",             sigc::bind(      sigc::ptr_fun(&hide_lock_unhide_all),    app));
+    gapp->add_action( "unlock-all",             sigc::bind(      sigc::ptr_fun(&hide_lock_unlock_all),    app));
 
-    gapp->add_action( "selection-hide",         sigc::bind<InkscapeApplication*, bool>(sigc::ptr_fun(&hide_lock_hide_selected), app, true ));
-    gapp->add_action( "selection-unhide",       sigc::bind<InkscapeApplication*, bool>(sigc::ptr_fun(&hide_lock_hide_selected), app, false));
-    gapp->add_action( "selection-unhide-below", sigc::bind<InkscapeApplication*>(      sigc::ptr_fun(&hide_lock_unhide_below),  app));
+    gapp->add_action( "selection-hide",         sigc::bind(sigc::ptr_fun(&hide_lock_hide_selected), app, true ));
+    gapp->add_action( "selection-unhide",       sigc::bind(sigc::ptr_fun(&hide_lock_hide_selected), app, false));
+    gapp->add_action( "selection-unhide-below", sigc::bind(      sigc::ptr_fun(&hide_lock_unhide_below),  app));
 
-    gapp->add_action( "selection-lock",         sigc::bind<InkscapeApplication*, bool>(sigc::ptr_fun(&hide_lock_lock_selected), app, true ));
-    gapp->add_action( "selection-unlock",       sigc::bind<InkscapeApplication*, bool>(sigc::ptr_fun(&hide_lock_lock_selected), app, false));
-    gapp->add_action( "selection-unlock-below", sigc::bind<InkscapeApplication*>(      sigc::ptr_fun(&hide_lock_unlock_below),  app));
+    gapp->add_action( "selection-lock",         sigc::bind(sigc::ptr_fun(&hide_lock_lock_selected), app, true ));
+    gapp->add_action( "selection-unlock",       sigc::bind(sigc::ptr_fun(&hide_lock_lock_selected), app, false));
+    gapp->add_action( "selection-unlock-below", sigc::bind(      sigc::ptr_fun(&hide_lock_unlock_below),  app));
     // clang-format on
 
     app->get_action_extra_data().add_data(raw_data_hide_lock);

@@ -18,30 +18,30 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <cstddef>                             // for size_t
+#include <deque>                               // for deque
+#include <map>                                 // for map
+#include <memory>                              // for unique_ptr, default_de...
+#include <queue>                               // for queue
+#include <string>                              // for string
+#include <vector>                              // for vector
 
-#include <cstddef>
-#include <deque>
-#include <map>
-#include <memory>
-#include <vector>
+#include <boost/ptr_container/ptr_list.hpp>    // for ptr_list
 
-#include <boost/ptr_container/ptr_list.hpp>
+#include <giomm/simpleactiongroup.h>           // for SimpleActionGroup
+#include <glib.h>                              // for GQuark, gboolean, gchar
+#include <glibmm/refptr.h>                     // for RefPtr
+#include <glibmm/ustring.h>                    // for ustring
+#include <sigc++/connection.h>                 // for connection
+#include <sigc++/signal.h>                     // for signal
 
-#include <glibmm/ustring.h>
-#include <giomm/simpleactiongroup.h>
-#include <sigc++/sigc++.h>
+#include <2geom/affine.h>                      // for Affine
+#include <2geom/rect.h>                        // for Rect, OptRect
+#include <2geom/transforms.h>                  // for Scale
 
-#include <2geom/affine.h>
-#include <2geom/forward.h>
+#include "3rdparty/libcroco/src/cr-cascade.h"  // for CRCascade
 
-#include "3rdparty/libcroco/cr-cascade.h"
-
-#include "document-undo.h"
-#include "event.h"
-#include "gc-anchored.h"
-#include "gc-finalized.h"
-
-#include "inkgc/gc-managed.h"
+#include "inkgc/gc-managed.h" // TODO: Remove for 1.5
 
 #include "composite-undo-stack-observer.h"
 // XXX only for testing!
@@ -55,7 +55,6 @@
 extern bool sp_no_convert_text_baseline_spacing;
 
 
-
 // This variable is introduced with 0.92.1
 // with the introduction of automatic fix 
 // for files detected to have been created 
@@ -64,47 +63,41 @@ extern bool sp_no_convert_text_baseline_spacing;
 extern bool sp_do_not_fix_pre_92;
 
 
-
 namespace Avoid {
 class Router;
 }
 
-class SPItem;
-class SPObject;
+class Persp3D;
+class Persp3DImpl;
+class SPDefs;
 class SPGroup;
-class SPRoot;
+class SPItem;
+class SPItemCtx;
 class SPNamedView;
+class SPObject;
+class SPRoot;
 
 namespace Inkscape {
-    class Selection; 
-    class UndoStackObserver;
+    class DocumentUndo;
+    class Event;
     class EventLog;
-    class ProfileManager;
     class PageManager;
+    class ProfileManager;
+    class Selection;
+    class UndoStackObserver;
     namespace XML {
         struct Document;
+        class Event;
         class Node;
-    }
+    } // namespace XML
     namespace Util {
         class Unit;
         class Quantity;
-    }
-}
-
-class SPDefs;
-class Persp3D;
-class Persp3DImpl;
-class SPItemCtx;
-
-namespace Proj {
-    class TransfMat3x4;
-}
+    } // namespace Util
+} // namespace Inkscape
 
 /// Typed SVG document implementation.
-class SPDocument : public Inkscape::GC::Managed<>,
-                   public Inkscape::GC::Finalized,
-                   public Inkscape::GC::Anchored
-{
+class SPDocument : public Inkscape::GC::Managed<Inkscape::GC::SCANNED, Inkscape::GC::MANUAL> {
 
 public:
     /// For sanity check in SPObject::requestDisplayUpdate
@@ -114,10 +107,11 @@ public:
 
     // Fundamental ------------------------
     SPDocument();
-    ~SPDocument() override;
+    ~SPDocument();
     SPDocument(SPDocument const &) = delete; // no copy
     void operator=(SPDocument const &) = delete; // no assign
 
+    static gint get_new_doc_number();
 
     // Document creation ------------------
     static SPDocument *createDoc(Inkscape::XML::Document *rdoc, char const *filename,
@@ -125,22 +119,25 @@ public:
             SPDocument *parent);
     static SPDocument *createNewDoc(char const *filename, bool keepalive,
             bool make_new = false, SPDocument *parent=nullptr );
-    static SPDocument *createNewDocFromMem(char const*buffer, int length, bool keepalive);
-           SPDocument *createChildDoc(std::string const &filename);
+    static SPDocument *createNewDocFromMem(char const *buffer, int length, bool keepalive,
+                                           Glib::ustring const &filename = "");
+    SPDocument *createChildDoc(std::string const &filename);
 
     void setPages(bool enabled);
+    void prunePages(const std::string &page_nums, bool invert = false);
 
     // Make a copy, you are responsible for the copy.
     std::unique_ptr<SPDocument> copy() const;
-
+    // Substitute doc root
+    void rebase(Inkscape::XML::Document * new_xmldoc, bool keep_namedview = true);
+    // Substitute doc root with a file
+    void rebase(const gchar * file, bool keep_namedview = true);
+    // Substitute doc root with file in disk
+    void rebase(bool keep_namedview = true);
     // Document status --------------------
     void setVirgin(bool Virgin) { virgin = Virgin; }
     bool getVirgin() { return virgin; }
     const SPDocument *getOriginalDocument() const { return _original_document; }
-
-    //! Increment reference count by one and return a self-dereferencing pointer.
-    std::unique_ptr<SPDocument> doRef();
-    std::unique_ptr<SPDocument const> doRef() const;
 
     bool isModifiedSinceSave() const { return modified_since_save; }
     bool isModifiedSinceAutoSave() const { return modified_since_autosave; }
@@ -157,13 +154,14 @@ public:
     bool addResource(char const *key, SPObject *object);
     bool removeResource(char const *key, SPObject *object);
     std::vector<SPObject *> const getResourceList(char const *key);
+    void process_pending_resource_changes();
 
     void do_change_filename(char const *const filename, bool const rebase);
     void changeFilenameAndHrefs(char const *filename);
     void setXMLDialogSelectedObject(SPObject *activexmltree) { _activexmltree = activexmltree; }
     SPObject *getXMLDialogSelectedObject() { return _activexmltree; }
 
-    Inkscape::EventLog* get_event_log() { return _event_log; }
+    Inkscape::EventLog *get_event_log() { return _event_log.get(); }
 
     Inkscape::PageManager& getPageManager() { return *_page_manager; }
     const Inkscape::PageManager& getPageManager() const { return *_page_manager; }
@@ -175,7 +173,13 @@ private:
 
     std::unique_ptr<Inkscape::PageManager> _page_manager;
 
+    std::queue<GQuark> pending_resource_changes;
+
+    // Find items by geometry --------------------
+    std::deque<SPItem*> const &get_flat_item_list(unsigned int dkey, bool into_groups, bool active_only) const;
+
 public:
+    void clearNodeCache() { _node_cache.clear(); }
     void importDefs(SPDocument *source);
 
     unsigned int vacuumDocument();
@@ -183,8 +187,8 @@ public:
     /******** Getters and Setters **********/
 
     // Document structure -----------------
-    Inkscape::ProfileManager* getProfileManager() const { return profileManager; }
-    Avoid::Router* getRouter() const { return router; }
+    Inkscape::ProfileManager &getProfileManager() const { return *_profileManager; }
+    Avoid::Router* getRouter() const { return _router.get(); }
 
     
     /** Returns our SPRoot */
@@ -208,7 +212,7 @@ public:
     SPDocument *getParent() { return _parent_document; }
     SPDocument const *getParent() const { return _parent_document; }
 
-    Inkscape::Selection *getSelection() { return _selection; }
+    Inkscape::Selection *getSelection() { return _selection.get(); }
 
     // Styling
     CRCascade    *getStyleCascade() { return style_cascade; }
@@ -232,7 +236,8 @@ public:
 
     void setDocumentScale( const double scaleX, const double scaleY );
     void setDocumentScale( const double scale );
-    Geom::Scale getDocumentScale() const;
+    Geom::Scale getDocumentScale(bool computed = true) const;
+    void scaleContentBy(Geom::Scale const &delta);
 
     void setWidthAndHeight(const Inkscape::Util::Quantity &width, const Inkscape::Util::Quantity &height, bool changeSize=true);
     Geom::Point getDimensions() const;
@@ -267,9 +272,9 @@ public:
 
     // Find items -----------------------------
     void bindObjectToId(char const *id, SPObject *object);
-    SPObject *getObjectById(Glib::ustring const &id) const;
+    SPObject *getObjectById(std::string const &id) const;
     SPObject *getObjectById(char const *id) const;
-    SPObject *getObjectByHref(Glib::ustring const &href) const;
+    SPObject *getObjectByHref(std::string const &href) const;
     SPObject *getObjectByHref(char const *href) const;
 
     void bindObjectToRepr(Inkscape::XML::Node *repr, SPObject *object);
@@ -278,6 +283,14 @@ public:
     std::vector<SPObject *> getObjectsByClass(Glib::ustring const &klass) const;
     std::vector<SPObject *> getObjectsByElement(Glib::ustring const &element, bool custom = false) const;
     std::vector<SPObject *> getObjectsBySelector(Glib::ustring const &selector) const;
+
+    /**
+     * @brief Generate a document-wide unique id.
+     *
+     * Generates an id string not in use by any object in the document.
+     * The generated string is based on the given prefix by appending a number.
+     */
+    std::string generate_unique_id(char const *prefix);
 
     /**
      * @brief Set the reference document object.
@@ -300,13 +313,10 @@ public:
         SPDocument* _parent;
     };
 
-    // Find items by geometry --------------------
-    void build_flat_item_list(unsigned int dkey, SPGroup *group, gboolean into_groups) const;
-
-    std::vector<SPItem*> getItemsInBox         (unsigned int dkey, Geom::Rect const &box, bool take_hidden = false, bool take_insensitive = false, bool take_groups = true, bool enter_groups = false) const;
-    std::vector<SPItem*> getItemsPartiallyInBox(unsigned int dkey, Geom::Rect const &box, bool take_hidden = false, bool take_insensitive = false, bool take_groups = true, bool enter_groups = false) const;
+    std::vector<SPItem*> getItemsInBox         (unsigned int dkey, Geom::Rect const &box, bool take_hidden = false, bool take_insensitive = false, bool take_groups = true, bool enter_groups = false, bool enter_layers = true) const;
+    std::vector<SPItem*> getItemsPartiallyInBox(unsigned int dkey, Geom::Rect const &box, bool take_hidden = false, bool take_insensitive = false, bool take_groups = true, bool enter_groups = false, bool enter_layers = true) const;
     SPItem *getItemAtPoint(unsigned int key, Geom::Point const &p, bool into_groups, SPItem *upto = nullptr) const;
-    std::vector<SPItem*> getItemsAtPoints(unsigned const key, std::vector<Geom::Point> points, bool all_layers = true, bool topmost_only = true, size_t limit = 0) const;
+    std::vector<SPItem*> getItemsAtPoints(unsigned const key, std::vector<Geom::Point> points, bool all_layers = true, bool topmost_only = true, size_t limit = 0, bool active_only = true) const;
     SPItem *getGroupAtPoint(unsigned int key,  Geom::Point const &p) const;
 
     /**
@@ -322,7 +332,7 @@ public:
      * perspective in the defs. If no perspective exists, returns NULL.
      */
     Persp3D * getCurrentPersp3D();
-
+    void update_lpobjs();
     void setCurrentPersp3DImpl(Persp3DImpl * const persp_impl) { current_persp3d_impl = persp_impl; }
     Persp3DImpl * getCurrentPersp3DImpl() { return current_persp3d_impl; }
 
@@ -341,11 +351,10 @@ public:
     void reset_key(void *dummy) { actionkey.clear(); }
     bool isSensitive() const { return sensitive; }
 
-
     // Garbage collecting ----------------------
     void queueForOrphanCollection(SPObject *object);
     void collectOrphans();
-    bool onungroup = false;
+
 
     // Actions ---------------------------------
     Glib::RefPtr<Gio::SimpleActionGroup> getActionGroup() { return action_group; }
@@ -354,9 +363,9 @@ public:
 private:
 
     // Document ------------------------------
-    Inkscape::ProfileManager* profileManager = nullptr;   // Color profile.
-    Avoid::Router *router = nullptr; // Instance of the connector router
-    Inkscape::Selection * _selection = nullptr;
+    std::unique_ptr<Inkscape::ProfileManager> _profileManager;   // Color profile.
+    std::unique_ptr<Avoid::Router> _router; // Instance of the connector router
+    std::unique_ptr<Inkscape::Selection> _selection;
 
     // Document status -----------------------
 
@@ -364,7 +373,6 @@ private:
     bool virgin ;   ///< Has the document never been touched?
     bool modified_since_save = false;
     bool modified_since_autosave = false;
-
     sigc::connection modified_connection;
     sigc::connection rerouting_connection;
 
@@ -378,7 +386,7 @@ private:
     boost::ptr_list<SPDocument> _child_documents;
     // Conversely this is a parent document because this is a child.
     SPDocument *_parent_document;
-    // When copying documents, this can refer to it's original
+    // When copying documents, this can refer to its original
     SPDocument const *_original_document;
     // Reference document to fall back to when getObjectById cannot find element in '*this' document
     SPDocument* _ref_document = nullptr;
@@ -399,8 +407,7 @@ private:
     std::map<Inkscape::XML::Node *, SPObject *> reprdef;
 
     // Find items by geometry --------------------
-    mutable std::deque<SPItem*> _node_cache; // Used to speed up search.
-    mutable bool _node_cache_valid;
+    mutable std::map<unsigned long, std::deque<SPItem*>> _node_cache; // Used to speed up search.
 
     // Box tool ----------------------------
     Persp3D *current_persp3d; /**< Currently 'active' perspective (to which, e.g., newly created boxes are attached) */
@@ -408,7 +415,7 @@ private:
 
     // Document undo/redo ----------------------
     friend Inkscape::DocumentUndo;
-    Inkscape::EventLog *_event_log = nullptr;
+    std::unique_ptr<Inkscape::EventLog> _event_log;
 
     /* Undo/Redo state */
     bool sensitive; /* If we save actions to undo stack */
@@ -416,7 +423,6 @@ private:
     int history_size;
     std::vector<Inkscape::Event *> undo; /* Undo stack of reprs */
     std::vector<Inkscape::Event *> redo; /* Redo stack of reprs */
-
     /* Undo listener */
     Inkscape::CompositeUndoStackObserver undoStackObservers;
 
@@ -426,6 +432,7 @@ private:
     bool seeking; // Related to undo/redo/unique id
     unsigned long _serial; // Unique document number (used by undo/redo).
     Glib::ustring actionkey; // Last action key, used to combine actions in undo.
+    unsigned long object_id_counter; // Steadily-incrementing counter used to assign unique ids to objects.
 
     // Garbage collecting ----------------------
 
@@ -436,15 +443,15 @@ private:
 
     /*********** Signals **************/
 
-    typedef sigc::signal<void, SPObject *> IDChangedSignal;
-    typedef sigc::signal<void> ResourcesChangedSignal;
-    typedef sigc::signal<void, unsigned> ModifiedSignal;
-    typedef sigc::signal<void, char const *> FilenameSetSignal;
-    typedef sigc::signal<void, double, double> ResizedSignal;
-    typedef sigc::signal<void> ReconstructionStart;
-    typedef sigc::signal<void> ReconstructionFinish;
-    typedef sigc::signal<void> CommitSignal;
-    typedef sigc::signal<void> BeforeCommitSignal; // allow to add actions berfore commit to include in undo
+    typedef sigc::signal<void (SPObject *)> IDChangedSignal;
+    typedef sigc::signal<void ()> ResourcesChangedSignal;
+    typedef sigc::signal<void (unsigned)> ModifiedSignal;
+    typedef sigc::signal<void (char const *)> FilenameSetSignal;
+    typedef sigc::signal<void (double, double)> ResizedSignal;
+    typedef sigc::signal<void ()> ReconstructionStart;
+    typedef sigc::signal<void ()> ReconstructionFinish;
+    typedef sigc::signal<void ()> CommitSignal;
+    typedef sigc::signal<void ()> BeforeCommitSignal; // allow to add actions berfore commit to include in undo
 
     typedef std::map<GQuark, SPDocument::IDChangedSignal> IDChangedSignalMap;
     typedef std::map<GQuark, SPDocument::ResourcesChangedSignal> ResourcesChangedSignalMap;
@@ -459,20 +466,20 @@ private:
     SPDocument::CommitSignal commit_signal; // Used by friend Inkscape::DocumentUndo
     SPDocument::BeforeCommitSignal before_commit_signal; // Used by friend Inkscape::DocumentUndo
 
-    bool oldSignalsConnected;
-
-    sigc::connection _selection_changed_connection;
     sigc::connection _desktop_activated_connection;
-    sigc::connection selChangeConnection;
-    sigc::connection desktopActivatedConnection;
 
-    sigc::signal<void> destroySignal;
+    sigc::signal<void ()> destroySignal;
 
 public:
+    /**
+     * @brief Add the observer to the document's undo listener
+     * The caller is in charge of freeing any memory allocated to the observer
+     * @param observer
+     */
     void addUndoObserver(Inkscape::UndoStackObserver& observer);
     void removeUndoObserver(Inkscape::UndoStackObserver& observer);
 
-    sigc::connection connectDestroy(sigc::signal<void>::slot_type slot);
+    sigc::connection connectDestroy(sigc::signal<void ()>::slot_type slot);
     sigc::connection connectModified(ModifiedSignal::slot_type slot);
     sigc::connection connectFilenameSet(FilenameSetSignal::slot_type slot);
     sigc::connection connectCommit(CommitSignal::slot_type slot);
@@ -491,12 +498,6 @@ public:
     void emitReconstructionFinish();
 };
 
-namespace std {
-template <>
-struct default_delete<SPDocument> {
-    void operator()(SPDocument *ptr) const { Inkscape::GC::release(ptr); }
-};
-}; // namespace std
 
 /*
  * Ideas: How to overcome style invalidation nightmare

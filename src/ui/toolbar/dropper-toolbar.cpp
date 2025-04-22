@@ -16,6 +16,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -25,35 +26,34 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <glibmm/i18n.h>
-
 #include "dropper-toolbar.h"
-#include "document-undo.h"
-#include "preferences.h"
-#include "desktop.h"
 
+#include <glibmm/i18n.h>
+#include <gtkmm/togglebutton.h>
+
+#include "desktop.h"
+#include "preferences.h"
+#include "ui/builder-utils.h"
 #include "ui/widget/canvas.h" // Grab focus
 
-namespace Inkscape {
-namespace UI {
-namespace Toolbar {
+namespace Inkscape::UI::Toolbar {
 
 void DropperToolbar::on_pick_alpha_button_toggled()
 {
-    auto active = _pick_alpha_button->get_active();
+    auto active = _pick_alpha_btn.get_active();
 
     auto prefs = Inkscape::Preferences::get();
     prefs->setInt( "/tools/dropper/pick", active );
 
-    _set_alpha_button->set_sensitive(active);
-    _desktop->canvas->grab_focus();
+    _set_alpha_btn.set_sensitive(active);
+    _desktop->getCanvas()->grab_focus();
 }
 
 void DropperToolbar::on_set_alpha_button_toggled()
 {
     auto prefs = Inkscape::Preferences::get();
-    prefs->setBool( "/tools/dropper/setalpha", _set_alpha_button->get_active( ) );
-    _desktop->canvas->grab_focus();
+    prefs->setBool("/tools/dropper/setalpha", _set_alpha_btn.get_active());
+    _desktop->getCanvas()->grab_focus();
 }
 
 /*
@@ -63,15 +63,13 @@ void DropperToolbar::on_set_alpha_button_toggled()
  */
 DropperToolbar::DropperToolbar(SPDesktop *desktop)
     : Toolbar(desktop)
+    , _builder(create_builder("toolbar-dropper.ui"))
+    , _pick_alpha_btn(get_widget<Gtk::ToggleButton>(_builder, "_pick_alpha_btn"))
+    , _set_alpha_btn(get_widget<Gtk::ToggleButton>(_builder, "_set_alpha_btn"))
 {
-    // Add widgets to toolbar
-    add_label(_("Opacity:"));
-    _pick_alpha_button = add_toggle_button(_("Pick"),
-                                           _("Pick both the color and the alpha (transparency) under cursor; "
-                                             "otherwise, pick only the visible color premultiplied by alpha"));
-    _set_alpha_button = add_toggle_button(_("Assign"),
-                                          _("If alpha was picked, assign it to selection "
-                                            "as fill or stroke transparency"));
+    _toolbar = &get_widget<Gtk::Box>(_builder, "dropper-toolbar");
+
+    add(*_toolbar);
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
 
@@ -79,31 +77,25 @@ DropperToolbar::DropperToolbar(SPDesktop *desktop)
     auto pickAlpha = prefs->getInt( "/tools/dropper/pick", 1 );
     auto setAlpha  = prefs->getBool( "/tools/dropper/setalpha", true);
 
-    _pick_alpha_button->set_active(pickAlpha);
-    _set_alpha_button->set_active(setAlpha);
+    _pick_alpha_btn.set_active(pickAlpha);
+    _set_alpha_btn.set_active(setAlpha);
 
     // Make sure the set-alpha button is disabled if we're not picking alpha
-    _set_alpha_button->set_sensitive(pickAlpha);
+    _set_alpha_btn.set_sensitive(pickAlpha);
 
     // Connect signal handlers
     auto pick_alpha_button_toggled_cb = sigc::mem_fun(*this, &DropperToolbar::on_pick_alpha_button_toggled);
     auto set_alpha_button_toggled_cb  = sigc::mem_fun(*this, &DropperToolbar::on_set_alpha_button_toggled);
 
-    _pick_alpha_button->signal_toggled().connect(pick_alpha_button_toggled_cb);
-    _set_alpha_button->signal_toggled().connect(set_alpha_button_toggled_cb);
+    _pick_alpha_btn.signal_toggled().connect(pick_alpha_button_toggled_cb);
+    _set_alpha_btn.signal_toggled().connect(set_alpha_button_toggled_cb);
 
     show_all();
 }
 
-GtkWidget *
-DropperToolbar::create(SPDesktop *desktop)
-{
-    auto toolbar = Gtk::manage(new DropperToolbar(desktop));
-    return GTK_WIDGET(toolbar->gobj());
-}
-}
-}
-}
+DropperToolbar::~DropperToolbar() = default;
+
+} // namespace Inkscape::UI::Toolbar
 
 /*
   Local Variables:

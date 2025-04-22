@@ -1,12 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-/*
- * Author:
- *   Tavmjong Bah <tavmjong@free.fr>
- *
- * Copyright (C) 2018 Tavmong Bah
- *
- * Released under GNU GPL v2+, read the file 'COPYING' for more information.
- *
+/**
+ * @file
  *
  * The routines here create and manage a font selector widget with three parts,
  * one each for font-family, font-style, and font-size.
@@ -25,23 +19,36 @@
  *   Emit a signal when any change is made so that the Text Preview can be updated.
  *   Provide the currently selected values.
  */
+/*
+ * Author:
+ *   Tavmjong Bah <tavmjong@free.fr>
+ *
+ * Copyright (C) 2018 Tavmong Bah
+ *
+ * Released under GNU GPL v2+, read the file 'COPYING' for more information.
+ */
 
 #ifndef INKSCAPE_UI_WIDGET_FONT_SELECTOR_H
 #define INKSCAPE_UI_WIDGET_FONT_SELECTOR_H
 
-#include <gtkmm/grid.h>
-#include <gtkmm/frame.h>
-#include <gtkmm/scrolledwindow.h>
-#include <gtkmm/treeview.h>
-#include <gtkmm/label.h>
+#include <gtkmm/cellrenderertext.h>
 #include <gtkmm/comboboxtext.h>
+#include <gtkmm/frame.h>
+#include <gtkmm/grid.h>
+#include <gtkmm/label.h>
+#include <gtkmm/scrolledwindow.h>
+#include <gtkmm/treemodel.h>
+#include <gtkmm/treeview.h>
+#include <sigc++/connection.h>
+#include <memory>
+#include <sigc++/signal.h>
 
+#include "helper/auto-connection.h"
+#include "ui/widget/font-selector-interface.h"
 #include "ui/widget/font-variations.h"
 #include "ui/widget/scrollprotected.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 /**
  * A container of widgets for selecting font faces.
@@ -58,16 +65,18 @@ namespace Widget {
  *     best match to the original font style (as not all fonts have the same style options).
  *   Emit a signal when any change is made to a child widget.
  */
-class FontSelector : public Gtk::Grid
+class FontSelector : public Gtk::Grid, public FontSelectorInterface
 {
-
 public:
+    static std::unique_ptr<FontSelectorInterface> create_font_selector();
 
     /**
      * Constructor
      */
     FontSelector (bool with_size = true, bool with_variations = true);
+    void hide_others();
 
+    ~FontSelector() override = default;
 protected:
 
     // Font family
@@ -93,13 +102,13 @@ protected:
     FontVariations      font_variations;
 
 private:
-
     // Set sizes in font size combobox.
     void set_sizes();
     void set_fontsize_tooltip();
 
     // Use font style when listing style names.
-    void style_cell_data_func (Gtk::CellRenderer *renderer, Gtk::TreeIter const &iter);
+    void style_cell_data_func(Gtk::CellRenderer *renderer,
+                              Gtk::TreeModel::const_iterator const &iter);
 
     // Signal handlers
     void on_family_changed();
@@ -108,24 +117,45 @@ private:
     void on_variations_changed();
 
     // Signals
-    sigc::signal<void, Glib::ustring> signal_changed;
+    sigc::signal<void (Glib::ustring)> _signal_changed;
+    sigc::signal<void ()> _signal_apply;
     void changed_emit();
     bool signal_block;
 
+    auto_connection _idle_connection;
+
     // Variables
     double font_size;
+
     bool initial = true;
 
     // control font variations update and UI element size
     void update_variations(const Glib::ustring& fontspec);
 
-public:
+    bool set_cell_markup();
+    void on_realize_list();
+    // For drag and drop.
+    void on_drag_start(const Glib::RefPtr<Gdk::DragContext> &context);
+    void on_drag_data_get(Glib::RefPtr<Gdk::DragContext> const &context, Gtk::SelectionData &selection_data, guint info, guint time) override;
 
+    // font selector interface
+    Gtk::Widget* box() override { return this; }
+    Glib::ustring get_fontspec() const override { return const_cast<FontSelector*>(this)->get_fontspec(true); }
+    double get_fontsize() const override { return font_size; };
+    void set_current_font(const Glib::ustring& family, const Glib::ustring& face) override { update_font(); }
+    void set_current_size(double size) override { update_size(size); };
+    sigc::signal<void ()>& signal_changed() override { return dummy; }
+    sigc::signal<void ()>& signal_apply() override { return _signal_apply; }
+    sigc::signal<void ()> dummy;
+
+public:
     /**
      * Update GUI based on fontspec
      */
     void update_font ();
     void update_size (double size);
+    void unset_model() override;
+    void set_model() override;
 
     /**
      * Get fontspec based on current settings. (Does not handle size, yet.)
@@ -141,15 +171,12 @@ public:
      * Let others know that user has changed GUI settings.
      * (Used to enable 'Apply' and 'Default' buttons.)
      */
-    sigc::connection connectChanged(sigc::slot<void, Glib::ustring> slot) {
-        return signal_changed.connect(slot);
+    sigc::connection connectChanged(sigc::slot<void (Glib::ustring)> slot) {
+        return _signal_changed.connect(slot);
     }
 };
 
- 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 #endif // INKSCAPE_UI_WIDGET_FONT_SETTINGS_H
 

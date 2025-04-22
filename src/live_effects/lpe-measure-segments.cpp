@@ -5,8 +5,9 @@
  * Some code and ideas migrated from dimensioning.py by
  * Johannes B. Rutzmoser, johannes.rutzmoser (at) googlemail (dot) com
  * https://github.com/Rutzmoser/inkscape_dimensioning
+ *
  * Copyright (C) 2014 Author(s)
-
+ *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
@@ -14,20 +15,26 @@
 
 #include <cmath>
 #include <iomanip>
-#include <libnrtype/font-lister.h>
+
+#include <glibmm/i18n.h>
+#include <gtkmm/box.h>
+#include <gtkmm/notebook.h>
+
+#include <2geom/affine.h>
+#include <2geom/angle.h>
+#include <2geom/point.h>
+#include <2geom/ray.h>
+
 #include <pangomm/fontdescription.h>
 
-#include "2geom/affine.h"
-#include "2geom/angle.h"
-#include "2geom/point.h"
-#include "2geom/ray.h"
-#include "display/curve.h"
-#include "document-undo.h"
 #include "document.h"
+#include "document-undo.h"
+#include "preferences.h"
+
+#include "display/curve.h"
 #include "helper/geom.h"
-#include "inkscape.h"
 #include "libnrtype/Layout-TNG.h"
-#include "live_effects/lpeobject-reference.h"
+#include "libnrtype/font-lister.h"
 #include "live_effects/lpeobject.h"
 #include "live_effects/parameter/satellite-reference.h"
 #include "object/sp-defs.h"
@@ -38,20 +45,16 @@
 #include "object/sp-root.h"
 #include "object/sp-shape.h"
 #include "object/sp-text.h"
-#include "path-chemistry.h"
-#include "preferences.h"
-#include "style.h"
 #include "svg/stringstream.h"
 #include "svg/svg-color.h"
-#include "svg/svg-length.h"
 #include "svg/svg.h"
 #include "text-editing.h"
+#include "ui/pack.h"
+#include "util/safe-printf.h"
 #include "util/units.h"
 #include "xml/node.h"
 #include "xml/sp-css-attr.h"
 
-// TODO due to internal breakage in glibmm headers, this must be last:
-#include <glibmm/i18n.h>
 
 using namespace Geom;
 namespace Inkscape {
@@ -77,7 +80,7 @@ LPEMeasureSegments::LPEMeasureSegments(LivePathEffectObject *lpeobject) :
     text_top_bottom(_("Label position"), _("Distance of the labels from the dimension line"), "text_top_bottom", &wr, this, 0),
     helpline_distance(_("Help line distance"), _("Distance of the perpendicular lines from the path"), "helpline_distance", &wr, this, 0.0),
     helpline_overlap(_("Help line elongation"), _("Distance of the perpendicular lines' ends from the dimension line"), "helpline_overlap", &wr, this, 2.0),
-    line_width(_("Line width"), _("Dimension line width. DIN standard: 0.25 or 0.35 mm"), "line_width", &wr, this, 0.25),
+    line_width(_("Line width"), _("Dimension line width in mm. DIN standard: 0.25 or 0.35 mm"), "line_width", &wr, this, 0.25),
     scale(_("Scale"), _("Scaling factor"), "scale", &wr, this, 1.0),
     
     // TRANSLATORS: Don't translate "{measure}" and "{unit}" variables.
@@ -95,7 +98,7 @@ LPEMeasureSegments::LPEMeasureSegments(LivePathEffectObject *lpeobject) :
     // active for 1.1
     smallx100(_("Multiply values &lt; 1"), _("Multiply values smaller than 1 by 100 and leave out the unit"), "smallx100", &wr, this, false),
     linked_items(_("Linked objects:"), _("Objects whose nodes are projected onto the path and generate new measurements"), "linked_items", &wr, this, true),
-    distance_projection(_("Distance"), _("Distance of the dimension lines from the outermost node"), "distance_projection", &wr, this, 20.0),
+    distance_projection(_("Distance"), _("Distance of the dimension lines from the outermost node (mm)"), "distance_projection", &wr, this, 20.0),
     angle_projection(_("Angle of projection"), _("Angle of projection in 90° steps"), "angle_projection", &wr, this, 0.0),
     active_projection(_("Activate projection"), _("Activate projection mode"), "active_projection", &wr, this, false),
     avoid_overlapping(_("Avoid label overlap"), _("Rotate labels if the segment is shorter than the label"), "avoid_overlapping", &wr, this, true),
@@ -190,62 +193,36 @@ LPEMeasureSegments::LPEMeasureSegments(LivePathEffectObject *lpeobject) :
     fontsize = 0;
     rgb32 = 0;
     arrow_gap = 0;
-    //TODO: add newlines for 1.1 (not easy)
-    helpdata.param_update_default(_("<b><big>General</big></b>\n"
-                    "Display and position dimension lines and labels\n\n"
-                    "<b><big>Projection</big></b>\n"
-                    "Show a line with measurements based on the selected items\n\n"
-                    "<b><big>Options</big></b>\n"
-                    "Options for color, precision, label formatting and display\n\n"
-                    "<b><big>Tips</big></b>\n"
-                    "<b><i>Custom styling:</i></b> To further customize the styles, "
-                    "use the XML editor to find out the class or ID, then use the "
-                    "Style dialog to apply a new style.\n"
-                    "<b><i>Blacklists:</i></b> allow to hide some segments or projection steps.\n"
-                    "<b><i>Multiple Measure LPEs:</i></b> In the same object, in conjunction with blacklists,"
-                    "this allows for labels and measurements with different orientations or additional projections.\n"
-                    "<b><i>Set Defaults:</i></b> For every LPE, default values can be set at the bottom."));
-}
-
-LPEMeasureSegments::~LPEMeasureSegments() {
-    keep_paths = false;
-    doOnRemove(nullptr);
 }
 
 Gtk::Widget *
 LPEMeasureSegments::newWidget()
 {
     // use manage here, because after deletion of Effect object, others might still be pointing to this widget.
-    Gtk::Box * vbox = Gtk::manage( new Gtk::Box(Gtk::ORIENTATION_VERTICAL) );
-    vbox->set_border_width(0);
-    vbox->set_homogeneous(false);
-    vbox->set_spacing(0);
-    Gtk::Box *vbox0 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
-    vbox0->set_border_width(5);
-    vbox0->set_homogeneous(false);
-    vbox0->set_spacing(2);
-    Gtk::Box *vbox1 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
-    vbox1->set_border_width(5);
-    vbox1->set_homogeneous(false);
-    vbox1->set_spacing(2);
-    Gtk::Box *vbox2 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
-    vbox2->set_border_width(5);
-    vbox2->set_homogeneous(false);
-    vbox2->set_spacing(2);
+    auto const vbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
+
+    auto const vbox0 = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL, 2);
+    vbox0->property_margin().set_value(5);
+
+    auto const vbox1 = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL, 2);
+    vbox1->property_margin().set_value(5);
+
+    auto const vbox2 = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL, 2);
+    vbox2->property_margin().set_value(5);
+
     //Help page
-    Gtk::Box *vbox3 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
-    vbox3->set_border_width(5);
-    vbox3->set_homogeneous(false);
-    vbox3->set_spacing(2);
+    auto const vbox3 = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL, 2);
+    vbox3->property_margin().set_value(5);
+
     std::vector<Parameter *>::iterator it = param_vector.begin();
     while (it != param_vector.end()) {
         if ((*it)->widget_is_visible) {
             Parameter * param = *it;
             Gtk::Widget * widg = param->param_newWidget();
-            Glib::ustring * tip = param->param_getTooltip();
+
             if (widg) {
                 if (       param->param_key == "linked_items") {
-                    vbox1->pack_start(*widg, true, true, 2);
+                    UI::pack_start(*vbox1, *widg, true, true, 2);
                 } else if (param->param_key == "active_projection"   ||
                            param->param_key == "distance_projection" ||
                            param->param_key == "angle_projection"    ||
@@ -254,7 +231,7 @@ LPEMeasureSegments::newWidget()
                            param->param_key == "bboxonly"            ||
                            param->param_key == "onbbox"                )
                 {
-                    vbox1->pack_start(*widg, false, true, 2);
+                    UI::pack_start(*vbox1, *widg, false, true, 2);
                 } else if (param->param_key == "precision"     ||
                            param->param_key == "coloropacity"  ||
                            param->param_key == "font"          ||
@@ -265,15 +242,15 @@ LPEMeasureSegments::newWidget()
                            param->param_key == "local_locale"  ||
                            param->param_key == "hide_arrows"     )
                 {
-                    vbox2->pack_start(*widg, false, true, 2);
+                    UI::pack_start(*vbox2, *widg, false, true, 2);
                 } else if (param->param_key == "helpdata") {
-                    vbox3->pack_start(*widg, false, true, 2);
+                    UI::pack_start(*vbox3, *widg, false, true, 2);
                 } else {
-                    vbox0->pack_start(*widg, false, true, 2);
+                    UI::pack_start(*vbox0, *widg, false, true, 2);
                 }
 
-                if (tip) {
-                    widg->set_tooltip_text(*tip);
+                if (auto const tip = param->param_getTooltip()) {
+                    widg->set_tooltip_markup(*tip);
                 } else {
                     widg->set_tooltip_text("");
                     widg->set_has_tooltip(false);
@@ -284,7 +261,7 @@ LPEMeasureSegments::newWidget()
         ++it;
     }
 
-    Gtk::Notebook * notebook = Gtk::manage(new Gtk::Notebook());
+    auto const notebook = Gtk::make_managed<Gtk::Notebook>();
     notebook->append_page (*vbox0, Glib::ustring(_("General")));
     notebook->append_page (*vbox1, Glib::ustring(_("Projection")));
     notebook->append_page (*vbox2, Glib::ustring(_("Options")));
@@ -293,19 +270,10 @@ LPEMeasureSegments::newWidget()
     vbox1->show_all();
     vbox2->show_all();
     vbox3->show_all();
-    vbox->pack_start(*notebook, true, true, 2);
+    UI::pack_start(*vbox, *notebook, true, true, 2);
     notebook->set_current_page(pagenumber);
     notebook->signal_switch_page().connect(sigc::mem_fun(*this, &LPEMeasureSegments::on_my_switch_page));
-    if(Gtk::Widget* widg = defaultParamSet()) {
-        //Wrap to make it more omogenious
-        Gtk::Box *vbox4 = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
-        vbox4->set_border_width(5);
-        vbox4->set_homogeneous(false);
-        vbox4->set_spacing(2);
-        vbox4->pack_start(*widg, true, true, 2);
-        vbox->pack_start(*vbox4, true, true, 2);
-    }
-    return dynamic_cast<Gtk::Widget *>(vbox);
+    return vbox;
 }
 
 void 
@@ -387,7 +355,7 @@ LPEMeasureSegments::createArrowMarker(Glib::ustring mode)
 }
 
 void
-LPEMeasureSegments::createTextLabel(Geom::Point pos, size_t counter, double length, Geom::Coord angle, bool remove, bool valid)
+LPEMeasureSegments::createTextLabel(Geom::Point &pos, size_t counter, double length, Geom::Coord angle, bool remove, bool valid)
 {
     SPDocument *document = getSPDoc();
     if (!document || !sp_lpe_item || !sp_lpe_item->getId()) {
@@ -454,7 +422,7 @@ LPEMeasureSegments::createTextLabel(Geom::Point pos, size_t counter, double leng
     font_size <<  fontsize << "px";
     setlocale (LC_NUMERIC, locale_base);           
     gchar c[32];
-    sprintf(c, "#%06x", rgb32 >> 8);
+    safeprintf(c, "#%06x", rgb32 >> 8);
     sp_repr_css_set_property (css, "fill",c);
     Inkscape::SVGOStringStream os;
     os << SP_RGBA32_A_F(coloropacity.get_value());
@@ -470,7 +438,11 @@ LPEMeasureSegments::createTextLabel(Geom::Point pos, size_t counter, double leng
     rtspan->setAttributeOrRemoveIfEmpty("style", css_str);
     rtspan->removeAttribute("transform");
     sp_repr_css_attr_unref (css);
-    length = Inkscape::Util::Quantity::convert(length, display_unit.c_str(), unit.get_abbreviation());
+    if (legacy) {
+        length = Inkscape::Util::Quantity::convert(length, document->getDisplayUnit()->abbr.c_str(), unit.get_abbreviation());
+    } else {
+        length = Inkscape::Util::Quantity::convert(length, "px", unit.get_abbreviation()) * getSPDoc()->getDocumentScale()[Geom::X];
+    }
     if (local_locale) {
         setlocale (LC_NUMERIC, "");
     } else {
@@ -509,13 +481,15 @@ LPEMeasureSegments::createTextLabel(Geom::Point pos, size_t counter, double leng
         label_value = Glib::ustring(_("Non Uniform Scale"));
     }
     rstring->setContent(label_value.c_str());
-    // this boring hack is to update the text with document scale inituialy loaded without root transform
     if (elemref) {
-        Geom::OptRect bounds = SP_ITEM(elemref)->geometricBounds();
-        if (bounds) {
-            anotation_width = bounds->width();
-            rtext->setAttributeSvgDouble("x", pos[Geom::X] - (anotation_width / 2.0));
-            rtspan->removeAttribute("style");
+        auto text = cast<SPText>(elemref);
+        if (text) {
+            text->rebuildLayout();
+            if (Geom::OptRect bounds = text->geometricBounds()) {
+                anotation_width = bounds->width();
+                rtext->setAttributeSvgDouble("x", pos[Geom::X] - (anotation_width / 2.0));
+                rtspan->removeAttribute("style");
+            }
         }
     }
 
@@ -624,14 +598,18 @@ LPEMeasureSegments::createLine(Geom::Point start,Geom::Point end, Glib::ustring 
     }
     std::stringstream stroke_w;
     setlocale (LC_NUMERIC, "C");
-    
-    double stroke_width = Inkscape::Util::Quantity::convert(line_width, unit.get_abbreviation(), display_unit.c_str());
+    double stroke_width;
+    if (legacy) {
+        stroke_width = Inkscape::Util::Quantity::convert(line_width, unit.get_abbreviation(), document->getDisplayUnit()->abbr.c_str());
+    } else {
+        stroke_width = Inkscape::Util::Quantity::convert(line_width, "mm", "px") / getSPDoc()->getDocumentScale()[Geom::X];
+    }
     stroke_w <<  stroke_width;
     setlocale (LC_NUMERIC, locale_base);
     style  += "stroke-width:";
     style  += stroke_w.str();
     gchar c[32];
-    sprintf(c, "#%06x", rgb32 >> 8);
+    safeprintf(c, "#%06x", rgb32 >> 8);
     style += ";stroke:";
     style += Glib::ustring(c);
     Inkscape::SVGOStringStream os;
@@ -652,17 +630,16 @@ LPEMeasureSegments::createLine(Geom::Point start,Geom::Point end, Glib::ustring 
 void
 LPEMeasureSegments::doOnApply(SPLPEItem const* lpeitem)
 {
-    if (!SP_IS_SHAPE(lpeitem)) {
+    if (!is<SPShape>(lpeitem)) {
         g_warning("LPE measure line can only be applied to shapes (not groups).");
         SPLPEItem * item = const_cast<SPLPEItem*>(lpeitem);
         item->removeCurrentPathEffect(false);
         return;
     }
     SPDocument *document = getSPDoc();
-    bool saved = DocumentUndo::getUndoSensitive(document);
-    DocumentUndo::setUndoSensitive(document, false);
+    DocumentUndo::ScopedInsensitive _no_undo(document);
     Inkscape::XML::Node *styleNode = nullptr;
-    Inkscape::XML::Node* textNode = nullptr;
+    Inkscape::XML::Node *textNode = nullptr;
     Inkscape::XML::Node *root = document->getReprRoot();
     for (unsigned i = 0; i < root->childCount(); ++i) {
         if (Glib::ustring(root->nthChild(i)->name()) == "svg:style") {
@@ -674,7 +651,7 @@ LPEMeasureSegments::doOnApply(SPLPEItem const* lpeitem)
             }
             if (textNode == nullptr) {
                 // Style element found but does not contain text node!
-                std::cerr << "StyleDialog::_getStyleTextNode(): No text node!" << std::endl;
+                std::cerr << "LPEMeasureSegments::doOnApply(): No text node!" << std::endl;
                 textNode = document->getReprDoc()->createTextNode("");
                 styleNode->appendChild(textNode);
                 Inkscape::GC::release(textNode);
@@ -692,7 +669,7 @@ LPEMeasureSegments::doOnApply(SPLPEItem const* lpeitem)
         styleNode->appendChild(textNode);
         Inkscape::GC::release(textNode);
     }
-    // To fix old meassuring files pre 1.0
+    // To fix old measuring files pre 1.0
     Glib::ustring styleContent = Glib::ustring(textNode->content());
     if (styleContent.find(".measure-arrow\n{\n") ==  std::string::npos) {
         styleContent = styleContent + Glib::ustring("\n.measure-arrow") + Glib::ustring("\n{\n}");
@@ -701,7 +678,8 @@ LPEMeasureSegments::doOnApply(SPLPEItem const* lpeitem)
         textNode->setContent(styleContent.c_str());
     }
     linked_items.update_satellites();
-    DocumentUndo::setUndoSensitive(document, saved);
+    lpeversion.param_setValue("1.3.1", true);
+    legacy = false;
 }
 
 bool
@@ -754,14 +732,14 @@ std::vector< Point >
 getNodes(SPItem * item, Geom::Affine transform, bool onbbox, bool centers, bool bboxonly, double angle_projection)
 {
     std::vector< Point > current_nodes;
-    SPShape    * shape    = dynamic_cast<SPShape     *> (item);
-    SPText     * text     = dynamic_cast<SPText      *> (item);
-    SPGroup    * group    = dynamic_cast<SPGroup     *> (item);
-    SPFlowtext * flowtext = dynamic_cast<SPFlowtext  *> (item);
+    SPShape    * shape    = cast<SPShape> (item);
+    SPText     * text     = cast<SPText> (item);
+    SPGroup    * group    = cast<SPGroup> (item);
+    SPFlowtext * flowtext = cast<SPFlowtext> (item);
     //TODO handle clones/use
 
     if (group) {
-        std::vector<SPItem*> const item_list = sp_item_group_item_list(group);
+        std::vector<SPItem*> const item_list = group->item_list();
         for (auto sub_item : item_list) {
             std::vector< Point > nodes = transformNodes(getNodes(sub_item, sub_item->transform, onbbox, centers, bboxonly, angle_projection), transform);
             current_nodes.insert(current_nodes.end(), nodes.begin(), nodes.end());
@@ -782,13 +760,10 @@ getNodes(SPItem * item, Geom::Affine transform, bool onbbox, bool centers, bool 
             // get path from iter to iter_next:
             auto curve = te_get_layout(item)->convertToCurves(iter, iter_next);
             iter = iter_next; // shift to next glyph
-            if (!curve) {
-                continue; // error converting this glyph
-            }
-            if (curve->is_empty()) { // whitespace glyph?
+            if (curve.is_empty()) { // whitespace glyph?
                 continue;
             }
-            std::vector< Point > letter_nodes = transformNodes(curve->get_pathvector().nodes(), transform);
+            std::vector< Point > letter_nodes = transformNodes(curve.get_pathvector().nodes(), transform);
             current_nodes.insert(current_nodes.end(),letter_nodes.begin(),letter_nodes.end());
             if (iter == te_get_layout(item)->end()) {
                 break;
@@ -825,7 +800,7 @@ static void extractFirstPoint(Geom::Point & dest, const Glib::ustring & lpobjid,
     id += Glib::ustring::format(idx);
     id += "-";
     id += lpobjid;
-    auto path = dynamic_cast<SPPath *>(document->getObjectById(id));
+    auto path = cast<SPPath>(document->getObjectById(id));
     if (path) {
         SPCurve const *curve = path->curve();
         if (curve) {
@@ -851,6 +826,32 @@ LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
 {
     if (isOnClipboard()) {
         return;
+    }
+    if (is_load) {
+        legacy = lpeversion.param_getSVGValue() < "1.3.1";
+        auto msg = Glib::ustring(_("<b><big>General</big></b>\n"
+                            "Display and position dimension lines and labels\n\n"
+                            "<b><big>Projection</big></b>\n"
+                            "Show a line with measurements based on the selected items\n\n"
+                            "<b><big>Options</big></b>\n"
+                            "Options for color, precision, label formatting and display\n\n"
+                            "<b><big>Tips</big></b>\n"
+                            "<b><i>Custom styling:</i></b> To further customize the styles, "
+                            "use the XML editor to find out the class or ID, then use the "
+                            "Style dialog to apply a new style.\n"
+                            "<b><i>Blacklists:</i></b> allow to hide some segments or projection steps.\n"
+                            "<b><i>Multiple Measure LPEs:</i></b> In the same object, in conjunction with blacklists,"
+                            "this allows for labels and measurements with different orientations or additional projections.\n"
+                            "<b><i>Set Defaults:</i></b> For every LPE, default values can be set at the bottom."));
+        
+        if (legacy) {
+            // helpdata is a message parameter, we must not need write this data into the SVG so we empty balue in this legacy files
+            helpdata.write_to_SVG(); // resert old legacy uneeded data
+            msg = Glib::ustring(_("<b><big>IMPORTANT</big></b>\n"
+                        "This LPE was added in an older version.\n"
+                        "The LPE will be kept, but we recommend you remove and re-add it for better results.\n")) + msg;
+        }
+        helpdata.param_update_default(msg.c_str());
     }
     if (!linked_items.data().size()) {
         linked_items.read_from_SVG();
@@ -898,13 +899,13 @@ LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
             auto satellites = linked_items.data();
             if (satellites.size() != prevsatellitecount ) {
                 prevsatellitecount = satellites.size();
-                linked_items.update_satellites(true);
+                sp_lpe_item_update_patheffect(sp_lpe_item, false, false, true);
             }
             prevsatellitecount = satellites.size();
             for (auto & iter : satellites) {
                 SPObject *obj;
-                if (iter && iter->isAttached() && iter->getActive() && (obj = iter->getObject()) && SP_IS_ITEM(obj)) {
-                    SPItem * item = dynamic_cast<SPItem *>(obj);
+                if (iter && iter->isAttached() && iter->getActive() && (obj = iter->getObject()) && is<SPItem>(obj)) {
+                    auto item = cast<SPItem>(obj);
                     if (item) {
                         Geom::Affine affinetransform_sub = i2anc_affine(item, document->getRoot());
                         Geom::Affine transform = affinetransform_sub ;
@@ -926,7 +927,12 @@ LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
                 }
                 result.push_back(point[Geom::Y]);
             }
-            double dproj = Inkscape::Util::Quantity::convert(distance_projection, display_unit.c_str(), unit.get_abbreviation());
+            double dproj;
+            if (legacy) {
+                dproj = Inkscape::Util::Quantity::convert(distance_projection, document->getDisplayUnit()->abbr.c_str(), unit.get_abbreviation());
+            } else {
+                dproj = Inkscape::Util::Quantity::convert(distance_projection, "mm", "px") * getSPDoc()->getDocumentScale()[Geom::X];
+            }
             Geom::Coord xpos = maxdistance + dproj;
             std::sort (result.begin(), result.end());
             Geom::Path path;
@@ -960,23 +966,32 @@ LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
     }
 
     //end projection prepare
-    SPShape *shape = dynamic_cast<SPShape *>(splpeitem);
+    auto shape = cast<SPShape>(splpeitem);
     if (shape) {
-        //only check constrain viewbox on X
-        display_unit = document->getDisplayUnit()->abbr.c_str();
         guint32 color32 = coloropacity.get_value();
         bool colorchanged = false;
         if (color32 != rgb32) {
             colorchanged = true;
         }
-        rgb32 = color32;
+        rgb32 = std::move(color32);
+        bool unitchanged = false;
+        Glib::ustring currentunit = unit.get_abbreviation();
+        if (currentunit != prevunit) {
+            unitchanged = true;
+        }
+        prevunit = std::move(currentunit);
         auto fontdesc_ustring = fontbutton.param_getSVGValue();
         Pango::FontDescription fontdesc(fontdesc_ustring);
         double newfontsize = fontdesc.get_size() / (double)Pango::SCALE;
-        if (newfontsize != fontsize) {
-            fontsize = Inkscape::Util::Quantity::convert(newfontsize, "pt", display_unit.c_str());
+        if (legacy) {
+            fontsize = Inkscape::Util::Quantity::convert(newfontsize, "pt", document->getDisplayUnit()->abbr.c_str());
+        } else {
+            fontsize = Inkscape::Util::Quantity::convert(newfontsize, "pt", "px") / getSPDoc()->getDocumentScale()[Geom::X];
+        }
+        if (newfontsize != prevfontsize) {
             fontsizechanged = true;
         }
+        prevfontsize = std::move(newfontsize);
         Geom::Point prev_stored = Geom::Point(0,0);
         Geom::Point start_stored = Geom::Point(0,0);
         Geom::Point end_stored = Geom::Point(0,0); 
@@ -1065,7 +1080,8 @@ LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
                     if (((Geom::are_near(prev, prev_stored, 0.01) && Geom::are_near(next, next_stored, 0.01)) ||
                          fix_overlaps_degree == 180) &&
                         Geom::are_near(start, start_stored, 0.01) && Geom::are_near(end, end_stored, 0.01) &&
-                        !this->refresh_widgets && !colorchanged && !fontsizechanged && !is_load && anotation_width) 
+                        !this->refresh_widgets && !colorchanged && !unitchanged && !fontsizechanged && 
+                        !is_load && !is_applied && anotation_width) 
                     {
                         continue;
                     }
@@ -1080,8 +1096,8 @@ LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
                         hstart[Geom::X] = xpos;
                         hend[Geom::X] = xpos;
                         if (hstart[Geom::Y] > hend[Geom::Y]) {
-                            swap(hstart,hend);
-                            swap(start,end);
+                            std::swap(hstart,hend);
+                            std::swap(start,end);
                         }
                         if (Geom::are_near(hstart[Geom::Y], hend[Geom::Y])) {
                             remove = true;
@@ -1094,8 +1110,8 @@ LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
                         hstart[Geom::Y] = ypos;
                         hend[Geom::Y] = ypos;
                         if (hstart[Geom::X] < hend[Geom::X]) {
-                            swap(hstart,hend);
-                            swap(start,end);
+                            std::swap(hstart,hend);
+                            std::swap(start,end);
                         }
                         if (Geom::are_near(hstart[Geom::X], hend[Geom::X])) {
                             remove = true;
@@ -1111,10 +1127,11 @@ LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
                         }
                     }
                     if (remove) {
-                        createLine(Geom::Point(), Geom::Point(), Glib::ustring("infoline-"), counter, true, true, true);
-                        createLine(Geom::Point(), Geom::Point(), Glib::ustring("infoline-on-start-"), counter, true, true, true);
-                        createLine(Geom::Point(), Geom::Point(), Glib::ustring("infoline-on-end-"), counter, true, true, true);
-                        createTextLabel(Geom::Point(), counter, 0, 0, true, true);
+                        Geom::Point pos = Geom::Point();
+                        createLine(pos, pos, Glib::ustring("infoline-"), counter, true, true, true);
+                        createLine(pos, pos, Glib::ustring("infoline-on-start-"), counter, true, true, true);
+                        createLine(pos, pos, Glib::ustring("infoline-on-end-"), counter, true, true, true);
+                        createTextLabel(pos, counter, 0, 0, true, true);
                         continue;
                     }
                     Geom::Ray ray(hstart,hend);
@@ -1191,7 +1208,11 @@ LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
                     } else {
                         createTextLabel(pos, counter, length, angle, remove, true);
                     }
-                    arrow_gap = 8 * Inkscape::Util::Quantity::convert(line_width, unit.get_abbreviation(), display_unit.c_str());
+                    if (legacy) {
+                        arrow_gap = 8 * Inkscape::Util::Quantity::convert(line_width, unit.get_abbreviation(), document->getDisplayUnit()->abbr.c_str());
+                    } else {
+                        arrow_gap = 8 * Inkscape::Util::Quantity::convert(line_width, "mm", "px") / getSPDoc()->getDocumentScale()[Geom::X];
+                    }
                     if(flip_side) {
                        arrow_gap *= -1;
                     }
@@ -1209,19 +1230,21 @@ LPEMeasureSegments::doBeforeEffect (SPLPEItem const* lpeitem)
                         createLine(hstart, hend, Glib::ustring("infoline-"), counter, true, true, true);
                     }
                 } else {
-                    createLine(Geom::Point(), Geom::Point(), Glib::ustring("infoline-"), counter, true, true, true);
-                    createLine(Geom::Point(), Geom::Point(), Glib::ustring("infoline-on-start-"), counter, true, true, true);
-                    createLine(Geom::Point(), Geom::Point(), Glib::ustring("infoline-on-end-"), counter, true, true, true);
-                    createTextLabel(Geom::Point(), counter, 0, 0, true, true);
+                    Geom::Point pos = Geom::Point();
+                    createLine(pos, pos, Glib::ustring("infoline-"), counter, true, true, true);
+                    createLine(pos, pos, Glib::ustring("infoline-on-start-"), counter, true, true, true);
+                    createLine(pos, pos, Glib::ustring("infoline-on-end-"), counter, true, true, true);
+                    createTextLabel(pos, counter, 0, 0, true, true);
                 }
             }
         }
         if (previous_size) {
             for (size_t counter = ncurves; counter < previous_size; counter++) {
-                createLine(Geom::Point(), Geom::Point(), Glib::ustring("infoline-"), counter, true, true, true);
-                createLine(Geom::Point(), Geom::Point(), Glib::ustring("infoline-on-start-"), counter, true, true, true);
-                createLine(Geom::Point(), Geom::Point(), Glib::ustring("infoline-on-end-"), counter, true, true, true);
-                createTextLabel(Geom::Point(), counter, 0, 0, true, true);
+                Geom::Point pos = Geom::Point();
+                createLine(pos, pos, Glib::ustring("infoline-"), counter, true, true, true);
+                createLine(pos, pos, Glib::ustring("infoline-on-start-"), counter, true, true, true);
+                createLine(pos, pos, Glib::ustring("infoline-on-end-"), counter, true, true, true);
+                createTextLabel(pos, counter, 0, 0, true, true);
             }
         }
         previous_size = ncurves;
@@ -1259,7 +1282,7 @@ LPEMeasureSegments::processObjects(LPEAction lpe_action)
     if (!document) {
         return;
     }
-    sp_lpe_item = dynamic_cast<SPLPEItem *>(*getLPEObj()->hrefList.begin());
+    sp_lpe_item = cast<SPLPEItem>(*getLPEObj()->hrefList.begin());
     if (!document || !sp_lpe_item) {
         return;
     }
@@ -1268,7 +1291,7 @@ LPEMeasureSegments::processObjects(LPEAction lpe_action)
         SPObject *elemref = nullptr;
         if ((elemref = document->getObjectById(id.c_str()))) {
             Inkscape::XML::Node * elemnode = elemref->getRepr();
-            auto item = dynamic_cast<SPItem *>(elemref);
+            auto item = cast<SPItem>(elemref);
             SPCSSAttr *css;
             Glib::ustring css_str;
             switch (lpe_action){
@@ -1277,7 +1300,10 @@ LPEMeasureSegments::processObjects(LPEAction lpe_action)
                     item->deleteObject(true);
                 } else {
                     elemnode->removeAttribute("sodipodi:insensitive");
-                    if (!SP_IS_DEFS(item->parent)) {
+                    if (!is<SPDefs>(item->parent)) {
+                        Geom::Affine trans = i2anc_affine(sp_lpe_item->parent, sp_lpe_item->document->getRoot());
+                        item->transform *= trans.inverse();
+                        item->doWriteTransform(item->transform);
                         item->moveTo(sp_lpe_item, false);
                     }
                 }

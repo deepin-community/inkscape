@@ -15,17 +15,23 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "live_effects/effect.h"
-#include "svg/svg.h"
-#include "attributes.h"
-#include <2geom/bezier-utils.h>
-#include <2geom/pathvector.h>
-#include "display/curve.h"
-#include <glibmm/i18n.h>
-#include "xml/repr.h"
-#include "document.h"
-
 #include "sp-spiral.h"
+
+#include <glibmm/i18n.h>
+
+#include <2geom/bezier-utils.h>
+
+#include "attributes.h"
+
+#include "display/curve.h"
+#include "snap-candidate.h"      // for SnapCandidatePoint
+#include "snap-enums.h"          // for SnapTargetType, SnapSourceType
+#include "snap-preferences.h"    // for SnapPreferences
+#include "svg/svg.h"
+#include "xml/document.h"        // for Document
+#include "xml/node.h"            // for Node
+
+class SPDocument;
 
 SPSpiral::SPSpiral()
     : SPShape()
@@ -77,7 +83,7 @@ Inkscape::XML::Node* SPSpiral::write(Inkscape::XML::Document *xml_doc, Inkscape:
 
     // Nulls might be possible if this called iteratively
     if (!this->_curve) {
-            //g_warning("sp_spiral_write(): No path to copy\n");
+            //g_warning("sp_spiral_write(): No path to copy");
             return nullptr;
     }
 
@@ -303,7 +309,7 @@ void SPSpiral::set_shape() {
 
     this->requestModified(SP_OBJECT_MODIFIED_FLAG);
 
-    auto c = std::make_unique<SPCurve>();
+    SPCurve c;
 
 #ifdef SPIRAL_VERBOSE
     g_print ("cx=%g, cy=%g, exp=%g, revo=%g, rad=%g, arg=%g, t0=%g\n",
@@ -317,7 +323,7 @@ void SPSpiral::set_shape() {
 #endif
 
     /* Initial moveto. */
-    c->moveto(this->getXY(this->t0));
+    c.moveto(this->getXY(this->t0));
 
     double const tstep = SAMPLE_STEP / this->revo;
     double const dstep = tstep / (SAMPLE_SIZE - 1);
@@ -327,21 +333,17 @@ void SPSpiral::set_shape() {
 
     double t;
     for (t = this->t0; t < (1.0 - tstep);) {
-        this->fitAndDraw(c.get(), dstep, darray, hat1, hat2, &t);
+        this->fitAndDraw(&c, dstep, darray, hat1, hat2, &t);
 
         hat1 = -hat2;
     }
 
     if ((1.0 - t) > SP_EPSILON) {
-        this->fitAndDraw(c.get(), (1.0 - t) / (SAMPLE_SIZE - 1.0), darray, hat1, hat2, &t);
+        this->fitAndDraw(&c, (1.0 - t) / (SAMPLE_SIZE - 1.0), darray, hat1, hat2, &t);
     }
 
-    if (prepareShapeForLPE(c.get())) {
-        return;
-    }
+    prepareShapeForLPE(&c);
 
-    // This happends on undo, fix bug:#1791784
-    setCurveInsync(std::move(c));
 }
 
 /**
@@ -543,14 +545,14 @@ bool SPSpiral::isInvalid() const {
     this->getPolar(0.0, &rad, nullptr);
 
     if (rad < 0.0 || rad > SP_HUGE) {
-        g_print("rad(t=0)=%g\n", rad);
+        g_warning("rad(t=0)=%g", rad);
         return true;
     }
 
     this->getPolar(1.0, &rad, nullptr);
 
     if (rad < 0.0 || rad > SP_HUGE) {
-        g_print("rad(t=1)=%g\n", rad);
+        g_warning("rad(t=1)=%g", rad);
         return true;
     }
 

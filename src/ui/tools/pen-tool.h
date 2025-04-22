@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#ifndef INKSCAPE_UI_TOOLS_PEN_TOOl_H
+#define INKSCAPE_UI_TOOLS_PEN_TOOl_H
+
 /** \file
  * PenTool: a context for pen tool events.
  *//*
@@ -7,33 +10,39 @@
  * Copyright (C) 2018 Authors
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
-#ifndef SEEN_PEN_CONTEXT_H
-#define SEEN_PEN_CONTEXT_H
 
+#include <array>
 #include <sigc++/sigc++.h>
 
-#include "ui/tools/freehand-base.h"
+#include "display/control/canvas-item-enums.h"
 #include "live_effects/effect.h"
+#include "ui/tools/freehand-base.h"
 
 #define SP_PEN_CONTEXT(obj) (dynamic_cast<Inkscape::UI::Tools::PenTool*>((Inkscape::UI::Tools::ToolBase*)obj))
 #define SP_IS_PEN_CONTEXT(obj) (dynamic_cast<const Inkscape::UI::Tools::PenTool*>((const Inkscape::UI::Tools::ToolBase*)obj) != NULL)
 
 namespace Inkscape {
-
 class CanvasItemCtrl;
 class CanvasItemCurve;
 
-namespace UI {
-namespace Tools {
+struct ButtonPressEvent;
+struct MotionEvent;
+struct ButtonReleaseEvent;
+struct KeyPressEvent;
+struct KeyReleaseEvent;
+} // namespace Inkscape
+
+namespace Inkscape::UI::Tools {
 
 /**
  * PenTool: a context for pen tool events.
  */
-class PenTool : public FreehandBase {
+class PenTool : public FreehandBase
+{
 public:
     PenTool(SPDesktop *desktop,
-        std::string prefs_path = "/tools/freehand/pen",
-        const std::string& cursor_filename = "pen.svg");
+        std::string &&prefs_path = "/tools/freehand/pen",
+        std::string &&cursor_filename = "pen.svg");
     ~PenTool() override;
 
     enum Mode {
@@ -49,7 +58,7 @@ public:
         DEAD
     };
 
-    Geom::Point p[5];
+    Geom::Point p_array[5];
     Geom::Point previous;
     /** \invar npoints in {0, 2, 5}. */
     // npoints somehow determines the type of the node (what does it mean, exactly? the number of Bezier handles?)
@@ -63,17 +72,18 @@ public:
 
     bool spiro = false;  // Spiro mode active?
     bool bspline = false; // BSpline mode active?
-    int num_clicks = 0;;
 
     unsigned int expecting_clicks_for_LPE = 0; // if positive, finish the path after this many clicks
     Inkscape::LivePathEffect::Effect *waiting_LPE = nullptr; // if NULL, waiting_LPE_type in SPDrawContext is taken into account
     SPLPEItem *waiting_item = nullptr;
 
-    Inkscape::CanvasItemCtrl *c0 = nullptr; // Start point of path.
-    Inkscape::CanvasItemCtrl *c1 = nullptr; // End point of path.
-    
-    Inkscape::CanvasItemCurve *cl0 = nullptr;
-    Inkscape::CanvasItemCurve *cl1 = nullptr;
+    CanvasItemPtr<CanvasItemCtrl> ctrl[4]; // Origin, Start, Center, End point of path.
+    static constexpr std::array<CanvasItemCtrlType, 4> ctrl_types = {
+        CANVAS_ITEM_CTRL_TYPE_NODE_SMOOTH, CANVAS_ITEM_CTRL_TYPE_ROTATE,
+        CANVAS_ITEM_CTRL_TYPE_ROTATE, CANVAS_ITEM_CTRL_TYPE_NODE_SMOOTH};
+
+    CanvasItemPtr<CanvasItemCurve> cl0;
+    CanvasItemPtr<CanvasItemCurve> cl1;
     
     bool events_disabled = false;
 
@@ -83,16 +93,17 @@ public:
     void waitForLPEMouseClicks(Inkscape::LivePathEffect::EffectType effect_type, unsigned int num_clicks, bool use_polylines = true);
 
 protected:
-    void set(const Inkscape::Preferences::Entry& val) override;
-    bool root_handler(GdkEvent* event) override;
-    bool item_handler(SPItem* item, GdkEvent* event) override;
+    void set(Inkscape::Preferences::Entry const &val) override;
+    bool root_handler(CanvasEvent const &event) override;
+    bool item_handler(SPItem* item, CanvasEvent const &event) override;
 
 private:
-    bool _handleButtonPress(GdkEventButton const &bevent);
-    bool _handleMotionNotify(GdkEventMotion const &mevent);
-    bool _handleButtonRelease(GdkEventButton const &revent);
-    bool _handle2ButtonPress(GdkEventButton const &bevent);
-    bool _handleKeyPress(GdkEvent *event);
+    bool _handleButtonPress(ButtonPressEvent const &event);
+    bool _handle2ButtonPress(ButtonPressEvent const &event);
+    bool _handleMotionNotify(MotionEvent const &event);
+    bool _handleButtonRelease(ButtonReleaseEvent const &event);
+    bool _handleKeyPress(KeyPressEvent const &event);
+
     //this function changes the colors red, green and blue making them transparent or not depending on if the function uses spiro
     void _bsplineSpiroColor();
     //creates a node in bspline or spiro modes
@@ -120,7 +131,8 @@ private:
     void _setSubsequentPoint(Geom::Point const p, bool statusbar, guint status = 0);
     void _setCtrl(Geom::Point const p, guint state);
     void _finishSegment(Geom::Point p, guint state);
-    bool _undoLastPoint();
+    bool _undoLastPoint(bool user_undo = false);
+    bool _redoLastPoint();
 
     void _finish(gboolean closed);
 
@@ -145,13 +157,19 @@ private:
     void _cancel();
 
     sigc::connection _desktop_destroy;
+    // NOTE: undoing work in progress always deletes the last added point,
+    // so there's no need for an undo stack.
+    std::vector<Geom::PathVector> _redo_stack; ///< History of undone events
+    bool _did_redo = false;
+
+    Util::ActionAccel _acc_to_line;
+    Util::ActionAccel _acc_to_curve;
+    Util::ActionAccel _acc_to_guides;
 };
 
-}
-}
-}
+} // namespace Inkscape:UI::Tools
 
-#endif /* !SEEN_PEN_CONTEXT_H */
+#endif // INKSCAPE_UI_TOOLS_PEN_TOOl_H
 
 /*
   Local Variables:

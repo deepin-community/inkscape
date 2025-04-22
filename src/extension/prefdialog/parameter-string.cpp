@@ -9,15 +9,16 @@
 
 #include "parameter-string.h"
 
+#include <glibmm/regex.h>
 #include <gtkmm/box.h>
 #include <gtkmm/entry.h>
 #include <gtkmm/scrolledwindow.h>
 #include <gtkmm/textview.h>
-#include <glibmm/regex.h>
 
-#include "xml/node.h"
 #include "extension/extension.h"
 #include "preferences.h"
+#include "ui/pack.h"
+#include "xml/node.h"
 
 namespace Inkscape {
 namespace Extension {
@@ -92,27 +93,30 @@ std::string ParamString::value_to_string() const
     return _value.raw();
 }
 
-
+void ParamString::string_to_value(const std::string &in)
+{
+    _value = in;
+}
 
 /** A special type of Gtk::Entry to handle string parameters. */
 class ParamStringEntry : public Gtk::Entry {
 private:
     ParamString *_pref;
-    sigc::signal<void> *_changeSignal;
+    sigc::signal<void ()> *_changeSignal;
 public:
     /**
      * Build a string preference for the given parameter.
      * @param  pref  Where to get the string from, and where to put it
      *                when it changes.
      */
-    ParamStringEntry(ParamString *pref, sigc::signal<void> *changeSignal)
+    ParamStringEntry(ParamString *pref, sigc::signal<void ()> *changeSignal)
         : Gtk::Entry()
         , _pref(pref)
         , _changeSignal(changeSignal)
     {
         this->set_text(_pref->get());
         this->set_max_length(_pref->getMaxLength()); //Set the max length - default zero means no maximum
-        this->signal_changed().connect(sigc::mem_fun(this, &ParamStringEntry::changed_text));
+        this->signal_changed().connect(sigc::mem_fun(*this, &ParamStringEntry::changed_text));
     };
     void changed_text();
 };
@@ -139,14 +143,14 @@ void ParamStringEntry::changed_text()
 class ParamMultilineStringEntry : public Gtk::TextView {
 private:
     ParamString *_pref;
-    sigc::signal<void> *_changeSignal;
+    sigc::signal<void ()> *_changeSignal;
 public:
     /**
      * Build a string preference for the given parameter.
      * @param  pref  Where to get the string from, and where to put it
      *                when it changes.
      */
-    ParamMultilineStringEntry(ParamString *pref, sigc::signal<void> *changeSignal)
+    ParamMultilineStringEntry(ParamString *pref, sigc::signal<void ()> *changeSignal)
         : Gtk::TextView()
         , _pref(pref)
         , _changeSignal(changeSignal)
@@ -155,7 +159,7 @@ public:
         Glib::ustring value = Glib::Regex::create("\\\\n")->replace_literal(_pref->get(), 0, "\n", (Glib::RegexMatchFlags)0);
 
         this->get_buffer()->set_text(value);
-        this->get_buffer()->signal_changed().connect(sigc::mem_fun(this, &ParamMultilineStringEntry::changed_text));
+        this->get_buffer()->signal_changed().connect(sigc::mem_fun(*this, &ParamMultilineStringEntry::changed_text));
     };
     void changed_text();
 };
@@ -186,42 +190,41 @@ void ParamMultilineStringEntry::changed_text()
  *
  * Builds a hbox with a label and a text box in it.
  */
-Gtk::Widget *ParamString::get_widget(sigc::signal<void> *changeSignal)
+Gtk::Widget *ParamString::get_widget(sigc::signal<void ()> *changeSignal)
 {
     if (_hidden) {
         return nullptr;
     }
 
-    Gtk::Box *box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, GUI_PARAM_WIDGETS_SPACING));
+    auto const box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL, GUI_PARAM_WIDGETS_SPACING);
 
-    Gtk::Label *label = Gtk::manage(new Gtk::Label(_text, Gtk::ALIGN_START));
-    label->show();
-    box->pack_start(*label, false, false);
+    auto const label = Gtk::make_managed<Gtk::Label>(_text, Gtk::ALIGN_START);
+    label->set_visible(true);
+    UI::pack_start(*box, *label, false, false);
 
     if (_mode == MULTILINE) {
         box->set_orientation(Gtk::ORIENTATION_VERTICAL);
 
-        Gtk::ScrolledWindow *textarea = Gtk::manage(new Gtk::ScrolledWindow());
+        auto const textarea = Gtk::make_managed<Gtk::ScrolledWindow>();
         textarea->set_vexpand();
         textarea->set_shadow_type(Gtk::SHADOW_IN);
 
-        ParamMultilineStringEntry *entry = Gtk::manage(new ParamMultilineStringEntry(this, changeSignal));
-        entry->show();
+        auto const entry = Gtk::make_managed<ParamMultilineStringEntry>(this, changeSignal);
+        entry->set_visible(true);
 
         textarea->add(*entry);
-        textarea->show();
+        textarea->set_visible(true);
 
-        box->pack_start(*textarea, true, true);
+        UI::pack_start(*box, *textarea, true, true);
     } else {
-        Gtk::Widget *entry = Gtk::manage(new ParamStringEntry(this, changeSignal));
-        entry->show();
+        Gtk::Widget *entry = Gtk::make_managed<ParamStringEntry>(this, changeSignal);
+        entry->set_visible(true);
 
-        box->pack_start(*entry, true, true);
+        UI::pack_start(*box, *entry, true, true);
     }
 
-    box->show();
-
-    return dynamic_cast<Gtk::Widget *>(box);
+    box->set_visible(true);
+    return box;
 }
 
 }  /* namespace Extension */

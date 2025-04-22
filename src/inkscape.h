@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef __INKSCAPE_H__
-#define __INKSCAPE_H__
+#ifndef SEEN_INKSCAPE_H
+#define SEEN_INKSCAPE_H
 
 /*
  * Interface to main application
@@ -14,12 +14,14 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "selection.h"
+#include <map>
+#include <string>
+#include <vector>
+
+#include <gdk/gdk.h>  // GDK_MOD1_MASK
 #include <glib-object.h>
 #include <glib.h>
-#include <map>
 #include <sigc++/signal.h>
-#include <vector>
 
 class SPDesktop;
 class SPDocument;
@@ -28,6 +30,8 @@ struct SPColor;
 namespace Inkscape {
 
 class Application;
+class Selection;
+
 namespace UI {
 class ThemeContext;
 namespace Tools {
@@ -100,6 +104,7 @@ public:
     unsigned int maximum_dkey();
     SPDesktop * next_desktop ();
     SPDesktop * prev_desktop ();
+    std::vector<SPDesktop *> * get_desktops() { return _desktops; };
     
     void external_change ();
     
@@ -107,9 +112,6 @@ public:
     // (rightly or wrongly) by console-mode functions
     void add_document (SPDocument *document);
     bool remove_document (SPDocument *document);
-    
-    // fixme: This has to be rethought
-    void refresh_display ();
     
     // fixme: This also
     void exit ();
@@ -123,27 +125,27 @@ public:
     // signals
     
     // one of selections changed
-    sigc::signal<void, Inkscape::Selection *> signal_selection_changed;
+    sigc::signal<void (Inkscape::Selection *)> signal_selection_changed;
     // one of subselections (text selection, gradient handle, etc) changed
-    sigc::signal<void, SPDesktop *> signal_subselection_changed;
+    sigc::signal<void (SPDesktop *)> signal_subselection_changed;
     // one of selections modified
-    sigc::signal<void, Inkscape::Selection *, guint /*flags*/> signal_selection_modified;
+    sigc::signal<void (Inkscape::Selection *, guint /*flags*/)> signal_selection_modified;
     // one of selections set
-    sigc::signal<void, Inkscape::Selection *> signal_selection_set;
+    sigc::signal<void (Inkscape::Selection *)> signal_selection_set;
     // some desktop got focus
-    sigc::signal<void, SPDesktop *> signal_activate_desktop;
+    sigc::signal<void (SPDesktop *)> signal_activate_desktop;
     // some desktop lost focus
-    sigc::signal<void, SPDesktop *> signal_deactivate_desktop;
+    sigc::signal<void (SPDesktop *)> signal_deactivate_desktop;
     
     // these are orphaned signals (nothing emits them and nothing connects to them)
-    sigc::signal<void, SPDocument *> signal_destroy_document;
-    sigc::signal<void, SPColor *, double /*opacity*/> signal_color_set;
+    sigc::signal<void (SPDocument *)> signal_destroy_document;
+    sigc::signal<void (SPColor *, double /*opacity*/)> signal_color_set;
     
     // inkscape is quitting
-    sigc::signal<void> signal_shut_down;
+    sigc::signal<void ()> signal_shut_down;
     // a document was changed by some external means (undo or XML editor); this
     // may not be reflected by a selection change and thus needs a separate signal
-    sigc::signal<void> signal_external_change;
+    sigc::signal<void ()> signal_external_change;
 
     void set_pdf_poppler(bool p) {
         _pdf_poppler = p;
@@ -151,11 +153,17 @@ public:
     bool get_pdf_poppler() {
         return _pdf_poppler;
     }
-    void set_pdf_page(gint page) {
-        _pdf_page = page;
+    void set_pdf_font_strategy(int mode) {
+        _pdf_font_strategy = mode;
     }
-    gint get_pdf_page() {
-        return _pdf_page;
+    int get_pdf_font_strategy() {
+        return _pdf_font_strategy;
+    }
+    void set_pages(const std::string &pages) {
+        _pages = pages;
+    }
+    const std::string &get_pages() const {
+        return _pages;
     }
 
   private:
@@ -167,17 +175,17 @@ public:
     Application(Application const&); // no copy
     Application& operator=(Application const&); // no assign
     Application* operator&() const; // no pointer access
-
     std::map<SPDocument *, int> _document_set;
     std::vector<SPDesktop *> *_desktops = nullptr;
+    std::string _pages;
 
     unsigned refCount = 1;
     guint _mapalt = GDK_MOD1_MASK;
     guint _trackalt = false;
     static bool _crashIsHappening;
     bool _use_gui = false;
-    gint _pdf_page = 1;
     bool _pdf_poppler = false;
+    int _pdf_font_strategy = 0;
 };
 
 } // namespace Inkscape

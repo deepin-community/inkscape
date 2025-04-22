@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef SEEN_EXTENSION_INTERNAL_PDFINPUT_H
-#define SEEN_EXTENSION_INTERNAL_PDFINPUT_H
-
 /*
  * Authors:
  *   miklos erdelyi
@@ -11,119 +8,120 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#ifndef SEEN_EXTENSION_INTERNAL_PDFINPUT_H
+#define SEEN_EXTENSION_INTERNAL_PDFINPUT_H
+
 #ifdef HAVE_CONFIG_H
 # include "config.h"  // only include where actually required!
 #endif
 
 #ifdef HAVE_POPPLER
-#include "poppler-transition-api.h"
 
+#include <glibmm/refptr.h>
 #include <gtkmm/dialog.h>
+#include <unordered_map>
 
 #include "../../implementation/implementation.h"
+#include "async/channel.h"
+#include "poppler-transition-api.h"
+#include "poppler-utils.h"
 #include "svg-builder.h"
+
+namespace Gtk {
+class Builder;
+class Button;
+class CheckButton;
+class DrawingArea;
+class Entry;
+class Label;
+class ListStore;
+class Scale;
+} // namespace Gtk
 
 #ifdef HAVE_POPPLER_CAIRO
 struct _PopplerDocument;
 typedef struct _PopplerDocument            PopplerDocument;
 #endif
 
-struct _GdkEventExpose;
-typedef _GdkEventExpose GdkEventExpose;
-
 class Page;
 class PDFDoc;
 
 namespace Gtk {
-  class Button;
-  class CheckButton;
-  class ComboBoxText;
-  class DrawingArea;
-  class Frame;
-  class Scale;
-  class RadioButton;
-  class Box;
-  class Label;
-}
+class Button;
+class CheckButton;
+class ComboBoxText;
+class DrawingArea;
+class Frame;
+class Scale;
+class RadioButton;
+class Box;
+class Label;
+class Entry;
+} // namespace Gtk
 
 namespace Inkscape {
 
-namespace UI {
-namespace Widget {
-  class SpinButton;
-  class Frame;
-}
-}
+namespace UI::Widget {
+class SpinButton;
+class Frame;
+} // namespace UI::Widget
 
-namespace Extension {
-namespace Internal {
+enum class PdfImportType : unsigned char
+{
+    PDF_IMPORT_INTERNAL,
+    PDF_IMPORT_CAIRO,
+};
+
+namespace Extension::Internal {
+
+class FontModelColumns;
 
 /**
  * PDF import using libpoppler.
  */
-class PdfImportDialog : public Gtk::Dialog
+class PdfImportDialog final : public Gtk::Dialog
 {
 public:
     PdfImportDialog(std::shared_ptr<PDFDoc> doc, const gchar *uri);
-    ~PdfImportDialog() override;
+    ~PdfImportDialog() final;
 
     bool showDialog();
-    int getSelectedPage();
-    bool getImportMethod();
+    bool getImportPages();
+    std::string getSelectedPages();
+    PdfImportType getImportMethod();
     void getImportSettings(Inkscape::XML::Node *prefs);
+    FontStrategies getFontStrategies();
+    void setFontStrategies(const FontStrategies &fs);
 
 private:
+    void _fontRenderChanged();
     void _setPreviewPage(int page);
+    void _setFonts(const FontList &fonts);
 
     // Signal handlers
     bool _onDraw(const Cairo::RefPtr<Cairo::Context>& cr);
     void _onPageNumberChanged();
-    void _onToggleAllPages();
-    void _onToggleCropping();
     void _onPrecisionChanged();
-#ifdef HAVE_POPPLER_CAIRO
-    void _onToggleImport();
-#endif
-    
-    class Gtk::Button * cancelbutton;
-    class Gtk::Button * okbutton;
-    class Gtk::Label * _labelSelect;
-    class Gtk::CheckButton *_pageAllPages;
-    class Inkscape::UI::Widget::SpinButton * _pageNumberSpin;
-    class Gtk::Label * _labelTotalPages;
-    class Gtk::Box * hbox2;
-    class Gtk::CheckButton * _cropCheck;
-    class Gtk::ComboBoxText * _cropTypeCombo;
-    class Gtk::Box * hbox3;
-    class Gtk::Box * vbox2;
-    class Inkscape::UI::Widget::Frame * _pageSettingsFrame;
-    class Gtk::Label * _labelPrecision;
-    class Gtk::Label * _labelPrecisionWarning;
-#ifdef HAVE_POPPLER_CAIRO
-    class Gtk::RadioButton * _importViaPoppler;  // Use poppler_cairo importing
-    class Gtk::Label * _labelViaPoppler;
-    class Gtk::RadioButton * _importViaInternal; // Use native (poppler based) importing
-    class Gtk::Label * _labelViaInternal;
-#endif
-    Gtk::Scale * _fallbackPrecisionSlider;
-    Glib::RefPtr<Gtk::Adjustment> _fallbackPrecisionSlider_adj;
-    class Gtk::Label * _labelPrecisionComment;
-    class Gtk::Box * hbox6;
-#if 0
-    class Gtk::Label * _labelText;
-    class Gtk::ComboBoxText * _textHandlingCombo;
-    class Gtk::Box * hbox5;
-#endif
-    class Gtk::CheckButton * _localFontsCheck;
-    class Gtk::CheckButton * _embedImagesCheck;
-    class Gtk::Box * vbox3;
-    class Inkscape::UI::Widget::Frame * _importSettingsFrame;
-    class Gtk::Box * vbox1;
-    class Gtk::DrawingArea * _previewArea;
-    class Gtk::Box * hbox1;
+
+    Glib::RefPtr<Gtk::Builder> _builder;
+
+    Gtk::Entry &_page_numbers;
+    Gtk::DrawingArea &_preview_area;
+    Gtk::CheckButton &_embed_images;
+    Gtk::CheckButton &_import_pages;
+    Gtk::Scale &_mesh_slider;
+    Gtk::Label &_mesh_label;
+    Gtk::Button &_next_page;
+    Gtk::Button &_prev_page;
+    Gtk::Label &_current_page;
+    Glib::RefPtr<Gtk::ListStore> _font_model;
+    FontModelColumns *_font_col;
 
     std::shared_ptr<PDFDoc> _pdf_doc;   // Document to be imported
-    int _current_page;  // Current selected page
+    std::string _current_pages;  // Current selected pages
+    FontList _font_list;         // List of fonts and the pages they appear on
+    int _total_pages = 0;
+    int _preview_page = 1;
     Page *_previewed_page;    // Currently previewed page
     unsigned char *_thumb_data; // Thumbnail image data
     int _thumb_width, _thumb_height;    // Thumbnail size
@@ -131,17 +129,20 @@ private:
     int _preview_width, _preview_height;    // Size of the preview area
     bool _render_thumb;     // Whether we can/shall render thumbnails
 #ifdef HAVE_POPPLER_CAIRO
-    cairo_surface_t *_cairo_surface;
-    PopplerDocument *_poppler_doc;
+    bool _preview_rendering_in_progress = false;
+    std::unordered_map<int, std::shared_ptr<cairo_surface_t>> _cairo_surfaces;
+    std::vector<Async::Channel::Dest> _channels;
+    PopplerDocument *_poppler_doc = nullptr;
 #endif
 };
 
     
-class PdfInput: public Inkscape::Extension::Implementation::Implementation {
-    PdfInput () = default;;
+class PdfInput final: public Inkscape::Extension::Implementation::Implementation {
 public:
-    SPDocument *open( Inkscape::Extension::Input *mod,
-                                const gchar *uri ) override;
+    PdfInput() = default;
+    SPDocument *open(Inkscape::Extension::Input *mod,
+                     const gchar *uri,
+                     bool is_importing) final;
     static void         init( );
 private:
     void add_builder_page(
@@ -150,8 +151,8 @@ private:
         int page_num);
 };
 
-} // namespace Implementation
-} // namespace Extension
+} // namespace Inkscape::Extension::Internal
+
 } // namespace Inkscape
 
 #endif // HAVE_POPPLER

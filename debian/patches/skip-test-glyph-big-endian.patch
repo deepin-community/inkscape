@@ -1,13 +1,19 @@
-Description: skip this test that fail on s390x, ppc64, sparc64
- Here the failure is real, but let's just ignore it since it only concerns BE
-Bug: https://gitlab.com/inkscape/inkscape/-/issues/4032
-Author: Mattia Rizzolo <mattia@debian.org>
-Forwarded: not-needed
-Last-Update: 2023-01-10
+From: Mattia Rizzolo <mattia@debian.org>
+Date: Tue, 10 Jan 2023 01:49:06 +0100
+Subject: skip this test that fail on s390x, ppc64, sparc64
 
+Here the failure is real, but let's just ignore it since it only concerns BE
+
+Forwarded: https://gitlab.com/inkscape/inkscape/-/issues/4032
+---
+ testfiles/rendering_tests/CMakeLists.txt | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/testfiles/rendering_tests/CMakeLists.txt b/testfiles/rendering_tests/CMakeLists.txt
+index 6fdef41..2024e75 100644
 --- a/testfiles/rendering_tests/CMakeLists.txt
 +++ b/testfiles/rendering_tests/CMakeLists.txt
-@@ -2,7 +2,11 @@
+@@ -66,10 +66,15 @@ add_rendering_test(symbol-svg2-ref)
  
  # Tests to run for 64-bit builds only. These fail in 32-bit builds (possibly due to rounding issues)
  # TODO: Figure out actual cause and see if we can fix it
@@ -16,14 +22,10 @@ Last-Update: 2023-01-10
 +TEST_BIG_ENDIAN(IS_BIG_ENDIAN)
  if(${CMAKE_SIZEOF_VOID_P} EQUAL 8)
 +if(NOT IS_BIG_ENDIAN)
-     set(RENDERING_TESTS_64bit
-         # test-rtl-vertical
+     # broken by a harfbuzz update. To be decided if a harfbuzz bug, a pango bug, or an Inkscape bug
+     add_rendering_test(test-rtl-vertical FUZZ 0.1 DISABLE TRUE)
  
-@@ -10,6 +14,7 @@
-         text-gzipped-svg-glyph
-     )
+     # .otf font with compressed SVG glyphs
+     add_rendering_test(text-gzipped-svg-glyph FUZZ 0.03)
  endif()
 +endif()
- 
- #add your test here (do not put the .svg extension)
- set(RENDERING_TESTS

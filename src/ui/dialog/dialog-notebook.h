@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-
-#ifndef INKSCAPE_UI_DIALOG_NOTEBOOK_H
-#define INKSCAPE_UI_DIALOG_NOTEBOOK_H
-
 /** @file
  * @brief A wrapper for Gtk::Notebook.
- *
+ */
+ /*
  * Authors: see git history
  *   Tavmjong Bah
  *
@@ -14,15 +11,32 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <gdkmm/dragcontext.h>
-#include <gtkmm/menu.h>
+#ifndef INKSCAPE_UI_DIALOG_NOTEBOOK_H
+#define INKSCAPE_UI_DIALOG_NOTEBOOK_H
+
+#include <map>
+#include <variant>
+#include <vector>
+#include <glibmm/refptr.h>
+#include <gtkmm/gesture.h> // Gtk::EventSequenceState
 #include <gtkmm/notebook.h>
-#include <gtkmm/radiomenuitem.h>
 #include <gtkmm/scrolledwindow.h>
 #include <gtkmm/widget.h>
 
-namespace Inkscape {
-namespace UI {
+#include "helper/auto-connection.h"
+#include "ui/widget/popover-menu.h"
+
+namespace Gdk {
+class DragContext;
+} // namespace Gdk
+
+namespace Gtk {
+class EventController;
+class GestureMultiPress;
+} // namespace Gtk
+
+namespace Inkscape::UI {
+
 namespace Dialog {
 
 enum class TabsStatus {
@@ -56,12 +70,15 @@ public:
     void close_tab_callback();
     void close_notebook_callback();
     DialogWindow* pop_tab_callback();
+    Gtk::ScrolledWindow * get_scrolledwindow(Gtk::Widget &page);
     Gtk::ScrolledWindow * get_current_scrolledwindow(bool skip_scroll_provider);
+    void set_requested_height(int height);
+
 private:
     // Widgets
     DialogContainer *_container;
-    Gtk::Menu _menu;
-    Gtk::Menu _menutabs;
+    UI::Widget::PopoverMenu _menu;
+    UI::Widget::PopoverMenu _menutabs;
     Gtk::Notebook _notebook;
 
     // State variables
@@ -74,13 +91,13 @@ private:
     gint _prev_alloc_width = 0;
     gint _none_tab_width = 0;
     gint _single_tab_width = 0;
-    gint _icon_width = 0;
     TabsStatus tabstatus = TabsStatus::NONE;
     TabsStatus prev_tabstatus = TabsStatus::NONE;
     Gtk::Widget *_selected_page;
-    std::vector<sigc::connection> _conn;
-    std::vector<sigc::connection> _connmenu;
-    std::multimap<Gtk::Widget *, sigc::connection> _tab_connections;
+    std::vector<auto_connection> _conn;
+    std::vector<auto_connection> _connmenu;
+    using TabConnection = std::variant<auto_connection, Glib::RefPtr<Gtk::EventController>>;
+    std::multimap<Gtk::Widget *, TabConnection> _tab_connections;
 
     static std::list<DialogNotebook *> _instances;
     void add_highlight_header();
@@ -93,7 +110,9 @@ private:
     void on_page_removed(Gtk::Widget *page, int page_num);
     void on_size_allocate_scroll(Gtk::Allocation &allocation);
     void on_size_allocate_notebook(Gtk::Allocation &allocation);
-    bool on_tab_click_event(GdkEventButton *event, Gtk::Widget *page);
+    Gtk::EventSequenceState on_tab_click_event(Gtk::GestureMultiPress const &click,
+                                               int n_press, double x, double y,
+                                               Gtk::Widget *page);
     void on_close_button_click_event(Gtk::Widget *page);
     void on_page_switch(Gtk::Widget *page, guint page_number);
     // Helpers
@@ -102,13 +121,16 @@ private:
     void change_page(size_t pagenum);
     void reload_tab_menu();
     void toggle_tab_labels_callback(bool show);
-    void add_close_tab_callback(Gtk::Widget *page);
-    void remove_close_tab_callback(Gtk::Widget *page);
+    void add_tab_connections(Gtk::Widget *page);
+    void remove_tab_connections(Gtk::Widget *page);
+    void get_preferred_height_for_width_vfunc(int width, int& minimum_height, int& natural_height) const override;
+    void get_preferred_height_vfunc(int& minimum_height, int& natural_height) const override;
+    int _natural_height = 0;
 };
 
 } // namespace Dialog
-} // namespace UI
-} // namespace Inkscape
+
+} // namespace Inkscape::UI
 
 #endif // INKSCAPE_UI_DIALOG_NOTEBOOK_H
 

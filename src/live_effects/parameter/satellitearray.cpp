@@ -5,17 +5,32 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "live_effects/parameter/satellitearray.h"
+#include "satellitearray.h"
+
+#include <algorithm>
+#include <string>
+#include <utility>
+#include <glibmm/i18n.h>
+#include <gtkmm/box.h>
+#include <gtkmm/button.h>
+#include <gtkmm/cellrenderertext.h>
+#include <gtkmm/cellrenderertoggle.h>
+#include <gtkmm/scrolledwindow.h>
+#include <gtkmm/treemodel.h>
+#include <gtkmm/treestore.h>
+#include <gtkmm/treeview.h>
+
+#include "inkscape.h"
+#include "selection.h"
 #include "live_effects/effect.h"
 #include "live_effects/lpeobject.h"
-#include "inkscape.h"
+#include "object/sp-lpe-item.h"
 #include "ui/clipboard.h"
 #include "ui/icon-loader.h"
-#include <glibmm/i18n.h>
+#include "ui/icon-names.h"
+#include "ui/pack.h"
 
-namespace Inkscape {
-
-namespace LivePathEffect {
+namespace Inkscape::LivePathEffect {
 
 class SatelliteArrayParam::ModelColumns : public Gtk::TreeModel::ColumnRecord
 {
@@ -26,32 +41,29 @@ public:
         add(_colLabel);
         add(_colActive);
     }
-    ~ModelColumns() override = default;
 
     Gtk::TreeModelColumn<Glib::ustring> _colObject;
     Gtk::TreeModelColumn<Glib::ustring> _colLabel;
     Gtk::TreeModelColumn<bool> _colActive;
 };
+
 SatelliteArrayParam::SatelliteArrayParam(const Glib::ustring &label, const Glib::ustring &tip, const Glib::ustring &key,
                                          Inkscape::UI::Widget::Registry *wr, Effect *effect, bool visible)
     : ArrayParam<std::shared_ptr<SatelliteReference>>(label, tip, key, wr, effect)
     , _visible(visible)
 {
     param_widget_is_visible(_visible);
+
     if (_visible) {
-        _tree = nullptr;
-        _scroller = nullptr;
-        _model = nullptr;
         initui();
         oncanvas_editable = true;
     }
 }
 
-SatelliteArrayParam::~SatelliteArrayParam()
-{
+SatelliteArrayParam::~SatelliteArrayParam() {
     _vector.clear();
     if (_store.get() && _model) {
-        delete _model;
+        _model.reset();
     }
     quit_listening();
 }
@@ -62,36 +74,36 @@ void SatelliteArrayParam::initui()
     if (!desktop) {
         return;
     }
+
     if (!_tree) {
-        _tree = manage(new Gtk::TreeView());
-        _model = new ModelColumns();
+        _tree = std::make_unique<Gtk::TreeView>();
+        _model = std::make_unique<ModelColumns>();
         _store = Gtk::TreeStore::create(*_model);
         _tree->set_model(_store);
 
         _tree->set_reorderable(true);
         _tree->enable_model_drag_dest(Gdk::ACTION_MOVE);
-        Gtk::CellRendererToggle *_toggle_active = manage(new Gtk::CellRendererToggle());
-        int activeColNum = _tree->append_column(_("Active"), *_toggle_active) - 1;
-        Gtk::TreeViewColumn *col_active = _tree->get_column(activeColNum);
-        _toggle_active->set_activatable(true);
-        _toggle_active->signal_toggled().connect(sigc::mem_fun(*this, &SatelliteArrayParam::on_active_toggled));
-        col_active->add_attribute(_toggle_active->property_active(), _model->_colActive);
 
-        _text_renderer = manage(new Gtk::CellRendererText());
-        int nameColNum = _tree->append_column(_("Name"), *_text_renderer) - 1;
-        _name_column = _tree->get_column(nameColNum);
-        _name_column->add_attribute(_text_renderer->property_text(), _model->_colLabel);
+        auto const toggle_active = Gtk::make_managed<Gtk::CellRendererToggle>();
+        int activeColNum = _tree->append_column(_("Active"), *toggle_active) - 1;
+        Gtk::TreeViewColumn *col_active = _tree->get_column(activeColNum);
+        toggle_active->set_activatable(true);
+        toggle_active->signal_toggled().connect(sigc::mem_fun(*this, &SatelliteArrayParam::on_active_toggled));
+        col_active->add_attribute(toggle_active->property_active(), _model->_colActive);
+
+        auto const text_renderer = Gtk::make_managed<Gtk::CellRendererText>();
+        int nameColNum = _tree->append_column(_("Name"), *text_renderer) - 1;
+        auto const name_column = _tree->get_column(nameColNum);
+        name_column->add_attribute(text_renderer->property_text(), _model->_colLabel);
 
         _tree->set_expander_column(*_tree->get_column(nameColNum));
         _tree->set_search_column(_model->_colLabel);
 
+        _scroller = std::make_unique<Gtk::ScrolledWindow>();
         // quick little hack -- newer versions of gtk gave the item zero space allotment
-        _scroller = manage(new Gtk::ScrolledWindow());
         _scroller->set_size_request(-1, 120);
-
         _scroller->add(*_tree);
         _scroller->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
-        //_scroller->set_shadow_type(Gtk::SHADOW_IN);
     }
     param_readSVGValue(param_getSVGValue().c_str());
 }
@@ -99,9 +111,9 @@ void SatelliteArrayParam::initui()
 void SatelliteArrayParam::start_listening()
 {
     quit_listening();
-    for (auto ref : _vector) {
+    for (auto const &ref : _vector) {
         if (ref && ref->isAttached()) {
-            SPItem *item = dynamic_cast<SPItem *>(ref->getObject());
+            auto item = cast<SPItem>(ref->getObject());
             if (item) {
                 linked_connections.emplace_back(item->connectRelease(
                     sigc::hide(sigc::mem_fun(*this, &SatelliteArrayParam::updatesignal))));
@@ -117,9 +129,12 @@ void SatelliteArrayParam::start_listening()
 }
 
 void SatelliteArrayParam::linked_modified(SPObject *linked_obj, guint flags) {
-    if (!param_effect->is_load && param_effect->_lpe_action == LPE_NONE && 
-        flags & (SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_CHILD_MODIFIED_FLAG | SP_OBJECT_STYLE_MODIFIED_FLAG |
-                 SP_OBJECT_VIEWPORT_MODIFIED_FLAG))
+    if (!_updating && (!SP_ACTIVE_DESKTOP || SP_ACTIVE_DESKTOP->getSelection()->includes(linked_obj)) &&
+        (!param_effect->is_load || ownerlocator || !SP_ACTIVE_DESKTOP ) && 
+        param_effect->_lpe_action == LPE_NONE &&
+        param_effect->isReady() &&
+        flags & (SP_OBJECT_MODIFIED_FLAG | SP_OBJECT_STYLE_MODIFIED_FLAG |
+                 SP_OBJECT_CHILD_MODIFIED_FLAG | SP_OBJECT_VIEWPORT_MODIFIED_FLAG))
     {
         param_effect->processObjects(LPE_UPDATE);
     }
@@ -127,42 +142,40 @@ void SatelliteArrayParam::linked_modified(SPObject *linked_obj, guint flags) {
 
 void SatelliteArrayParam::updatesignal()
 {
-    if (!param_effect->is_load && param_effect->_lpe_action == LPE_NONE) {
+    if (!_updating && 
+        (!param_effect->is_load || ownerlocator || !SP_ACTIVE_DESKTOP ) && 
+        param_effect->_lpe_action == LPE_NONE 
+        && param_effect->isReady()) 
+    {
         param_effect->processObjects(LPE_UPDATE);
     }
 }
 
 void SatelliteArrayParam::quit_listening()
 {
-    for (auto connexion : linked_connections) {
-        if (connexion) {
-            connexion.disconnect();
-        }
-    }
     linked_connections.clear();
 };
 
 void SatelliteArrayParam::on_active_toggled(const Glib::ustring &item)
 {
     int i = 0;
-    for (auto w : _vector) {
+    for (auto const &w : _vector) {
         if (w && w->isAttached() && w->getObject()) {
-            Gtk::TreeModel::Row row =  *_store->get_iter(Glib::ustring::format(i));
+            auto row =  *_store->get_iter(std::to_string(i));
             Glib::ustring id = w->getObject()->getId() ? w->getObject()->getId() : "";
-            if (id == row[_model->_colObject]) {
-                row[_model->_colActive] = !row[_model->_colActive];
-                w->setActive(row[_model->_colActive]);
+            if (id == row.get_value(_model->_colObject)) {
+                auto active = row[_model->_colActive];
+                active = !active;
+                w->setActive(active);
                 i++;
                 break;
             }
         }
     }
-    auto full = param_getSVGValue();
-    param_write_to_repr(full.c_str());
-    DocumentUndo::done(param_effect->getSPDoc(), _("Active switched"), "");
+    param_effect->makeUndoDone(_("Active switched"));
 }
 
-bool SatelliteArrayParam::param_readSVGValue(const gchar *strvalue)
+bool SatelliteArrayParam::param_readSVGValue(char const * const strvalue)
 {
     if (strvalue) {
         bool changed = !linked_connections.size() || !param_effect->is_load;
@@ -172,28 +185,27 @@ bool SatelliteArrayParam::param_readSVGValue(const gchar *strvalue)
         auto lpeitems = param_effect->getCurrrentLPEItems();
         if (!lpeitems.size() && !param_effect->is_applied && !param_effect->getSPDoc()->isSeeking()) {
             size_t pos = 0;
-            for (auto w : _vector) {
+            for (auto const &w : _vector) {
                 if (w) {
                     SPObject * tmp = w->getObject();
                     if (tmp) {
-                        SPObject * successor = tmp->_successor;
+                        SPObject * tmpsuccessor = tmp->_tmpsuccessor;
                         unlink(tmp);
-                        if (successor) {
-                            link(successor,pos);
+                        if (tmpsuccessor && tmpsuccessor->getId()) {
+                            link(tmpsuccessor,pos);
                         }
                     }
                 }
                 pos ++;
             }
-            auto full = param_getSVGValue();
-            param_write_to_repr(full.c_str());
-            update_satellites(false);
+            param_write_to_repr(param_getSVGValue().c_str());
+            update_satellites();
         }
         if (_store.get()) {
             _store->clear();
-            for (auto w : _vector) {
+            for (auto const &w : _vector) {
                 if (w) {
-                    Gtk::TreeModel::iterator iter = _store->append();
+                    auto const iter = _store->append();
                     Gtk::TreeModel::Row row = *iter;
                     if (auto obj = w->getObject()) {
                         row[_model->_colObject] = Glib::ustring(obj->getId());
@@ -211,7 +223,7 @@ bool SatelliteArrayParam::param_readSVGValue(const gchar *strvalue)
     return false;
 }
 
-bool SatelliteArrayParam::_selectIndex(const Gtk::TreeIter &iter, int *i)
+bool SatelliteArrayParam::_selectIndex(const Gtk::TreeModel::iterator &iter, int *i)
 {
     if ((*i)-- <= 0) {
         _tree->get_selection()->select(iter);
@@ -220,107 +232,90 @@ bool SatelliteArrayParam::_selectIndex(const Gtk::TreeIter &iter, int *i)
     return false;
 }
 
+void SatelliteArrayParam::move_up_down(int const delta, Glib::ustring const &word)
+{
+    auto const iter_selected = _tree->get_selection()->get_selected();
+    if (!iter_selected) return;
+
+    int i = 0;
+    for (auto const &w : _vector) {
+        if (w && w->isAttached() && w->getObject()) {
+            auto const iter =  _store->get_iter(std::to_string(i));
+            if (iter_selected == iter && i > 0) {
+                std::swap(_vector[i],_vector[i + delta]);
+                i += delta;
+                break;
+            }
+            i++;
+        }
+    }
+
+    // TRANSLATORS: %1 is the translated version of "up" or "down".
+    param_effect->makeUndoDone(Glib::ustring::compose(_("Move item %1"), word));
+    _store->foreach_iter(sigc::bind(sigc::mem_fun(*this, &SatelliteArrayParam::_selectIndex), &i));
+}
+
 void SatelliteArrayParam::on_up_button_click()
 {
-    Gtk::TreeModel::iterator iter = _tree->get_selection()->get_selected();
-    if (iter) {
-        Gtk::TreeModel::Row rowselected = *iter;
-        int i = 0;
-        for (auto w : _vector) {
-            if (w && w->isAttached() && w->getObject()) {
-                Gtk::TreeModel::Row row =  *_store->get_iter(Glib::ustring::format(i));
-                if (rowselected == row && i > 0) {
-                    std::swap(_vector[i],_vector[i-1]);
-                    i--;
-                    break;
-                }
-                i++;
-            }
-        }
-        auto full = param_getSVGValue();
-        param_write_to_repr(full.c_str());
-
-        DocumentUndo::done(param_effect->getSPDoc(), _("Move item up"), "");
-
-        _store->foreach_iter(sigc::bind<int *>(sigc::mem_fun(*this, &SatelliteArrayParam::_selectIndex), &i));
-    }
+    // TRANSLATORS: This belongs into the sentence 'Move item up'
+    move_up_down(-1, _("up"));
 }
 
 void SatelliteArrayParam::on_down_button_click()
 {
-    Gtk::TreeModel::iterator iter = _tree->get_selection()->get_selected();
-    if (iter) {
-        Gtk::TreeModel::Row rowselected = *iter;
-        int i = 0;
-        for (auto w : _vector) {
-            if (w && w->isAttached() && w->getObject()) {
-                Gtk::TreeModel::Row row =  *_store->get_iter(Glib::ustring::format(i));
-                if (rowselected == row && i < _vector.size() - 1) {
-                    std::swap(_vector[i],_vector[i+1]);
-                    i++;
-                    break;
-                }
-                i++;
-            }
-        }
-        auto full = param_getSVGValue();
-        param_write_to_repr(full.c_str());
-
-        DocumentUndo::done(param_effect->getSPDoc(), _("Move item down"), "");
-
-        _store->foreach_iter(sigc::bind<int *>(sigc::mem_fun(*this, &SatelliteArrayParam::_selectIndex), &i));
-    }
+    // TRANSLATORS: This belongs into the sentence 'Move item down'
+    move_up_down(+1, _("down"));
 }
 
 void SatelliteArrayParam::on_remove_button_click()
 {
-    Gtk::TreeModel::iterator iter = _tree->get_selection()->get_selected();
+    auto const iter = _tree->get_selection()->get_selected();
     if (iter) {
         Gtk::TreeModel::Row row = *iter;
-        unlink(param_effect->getSPDoc()->getObjectById(row[_model->_colObject]));
-
-        auto full = param_getSVGValue();
-        param_write_to_repr(full.c_str());
-
-        DocumentUndo::done(param_effect->getSPDoc(), _("Remove item"), "");
+        unlink(param_effect->getSPDoc()->getObjectById((const Glib::ustring&)(row[_model->_colObject])));
+        param_effect->makeUndoDone(_("Remove item"));
     }
 }
 
 void SatelliteArrayParam::on_link_button_click()
 {
     Inkscape::UI::ClipboardManager *cm = Inkscape::UI::ClipboardManager::get();
+
     std::vector<Glib::ustring> itemsid;
     // Here we ignore auto clipboard group wrapper
     std::vector<Glib::ustring> itemsids = cm->getElementsOfType(SP_ACTIVE_DESKTOP, "*", 2);
     std::vector<Glib::ustring> containers = cm->getElementsOfType(SP_ACTIVE_DESKTOP, "*", 1);
-    for (auto item : itemsids) {
+
+    for (auto &&item : std::move(itemsids)) {
         bool cont = false;
-        for (auto citems : containers) {
+        for (auto const &citems : containers) {
             if (citems == item) {
                 cont = true;
             }
         }
-        if (cont == false) {
-            itemsid.push_back(item);
+        if (!cont) {
+            itemsid.push_back(std::move(item));
         }
     }
+
     if (itemsid.empty()) {
         return;
     }
+
     auto hreflist = param_effect->getLPEObj()->hrefList;
     if (hreflist.size()) {
-        SPLPEItem *sp_lpe_item = dynamic_cast<SPLPEItem *>(*hreflist.begin());
+        auto sp_lpe_item = cast<SPLPEItem>(*hreflist.begin());
         if (sp_lpe_item) {
-            for (auto itemid : itemsid) {
+            for (auto &&itemid : std::move(itemsid)) {
                 SPObject *added = param_effect->getSPDoc()->getObjectById(itemid);
                 if (added && sp_lpe_item != added) {
                     itemid.insert(itemid.begin(), '#');
-                    std::shared_ptr<SatelliteReference> satellitereference =
+                    auto satellitereference =
                         std::make_shared<SatelliteReference>(param_effect->getLPEObj(), _visible);
                     try {
                         satellitereference->attach(Inkscape::URI(itemid.c_str()));
                         satellitereference->setActive(true);
-                        _vector.push_back(satellitereference);
+                        _vector.push_back(std::move(satellitereference));
                     } catch (Inkscape::BadURIException &e) {
                         g_warning("%s", e.what());
                         satellitereference->detach();
@@ -329,8 +324,7 @@ void SatelliteArrayParam::on_link_button_click()
             }
         }
     }
-    write_to_SVG();
-    DocumentUndo::done(param_effect->getSPDoc(), _("Link itemarray parameter to item"), "");
+    param_effect->makeUndoDone(_("Link itemarray parameter to item"));
 }
 
 Gtk::Widget *SatelliteArrayParam::param_newWidget()
@@ -338,63 +332,67 @@ Gtk::Widget *SatelliteArrayParam::param_newWidget()
     if (!_visible) {
         return nullptr;
     }
-    Gtk::Box *vbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
-    Gtk::Box *hbox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
-    _tree = nullptr;
-    _scroller = nullptr;
-    _model = nullptr;
+
+    auto const vbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
+    auto const hbox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+
+    _tree.reset();
+    _scroller.reset();
+    _model.reset();
+
     initui();
-    vbox->pack_start(*_scroller, Gtk::PACK_EXPAND_WIDGET);
+
+    UI::pack_start(*vbox, *_scroller, UI::PackOptions::expand_widget);
 
     { // Paste item to link button
         Gtk::Image *pIcon = Gtk::manage(sp_get_icon_image("edit-clone", Gtk::ICON_SIZE_BUTTON));
-        Gtk::Button *pButton = Gtk::manage(new Gtk::Button());
+        auto const pButton = Gtk::make_managed<Gtk::Button>();
         pButton->set_relief(Gtk::RELIEF_NONE);
-        pIcon->show();
+        pIcon->set_visible(true);
         pButton->add(*pIcon);
-        pButton->show();
+        pButton->set_visible(true);
         pButton->signal_clicked().connect(sigc::mem_fun(*this, &SatelliteArrayParam::on_link_button_click));
-        hbox->pack_start(*pButton, Gtk::PACK_SHRINK);
+        UI::pack_start(*hbox, *pButton, UI::PackOptions::shrink);
         pButton->set_tooltip_text(_("Link to item"));
     }
 
     { // Remove linked item
         Gtk::Image *pIcon = Gtk::manage(sp_get_icon_image("list-remove", Gtk::ICON_SIZE_BUTTON));
-        Gtk::Button *pButton = Gtk::manage(new Gtk::Button());
+        auto const pButton = Gtk::make_managed<Gtk::Button>();
         pButton->set_relief(Gtk::RELIEF_NONE);
-        pIcon->show();
+        pIcon->set_visible(true);
         pButton->add(*pIcon);
-        pButton->show();
+        pButton->set_visible(true);
         pButton->signal_clicked().connect(sigc::mem_fun(*this, &SatelliteArrayParam::on_remove_button_click));
-        hbox->pack_start(*pButton, Gtk::PACK_SHRINK);
+        UI::pack_start(*hbox, *pButton, UI::PackOptions::shrink);
         pButton->set_tooltip_text(_("Remove Item"));
     }
 
     { // Move Down
         Gtk::Image *pIcon = Gtk::manage(sp_get_icon_image("go-down", Gtk::ICON_SIZE_BUTTON));
-        Gtk::Button *pButton = Gtk::manage(new Gtk::Button());
+        auto const pButton = Gtk::make_managed<Gtk::Button>();
         pButton->set_relief(Gtk::RELIEF_NONE);
-        pIcon->show();
+        pIcon->set_visible(true);
         pButton->add(*pIcon);
-        pButton->show();
+        pButton->set_visible(true);
         pButton->signal_clicked().connect(sigc::mem_fun(*this, &SatelliteArrayParam::on_down_button_click));
-        hbox->pack_end(*pButton, Gtk::PACK_SHRINK);
+        UI::pack_end(*hbox, *pButton, UI::PackOptions::shrink);
         pButton->set_tooltip_text(_("Move Down"));
     }
 
     { // Move Down
         Gtk::Image *pIcon = Gtk::manage(sp_get_icon_image("go-up", Gtk::ICON_SIZE_BUTTON));
-        Gtk::Button *pButton = Gtk::manage(new Gtk::Button());
+        auto const pButton = Gtk::make_managed<Gtk::Button>();
         pButton->set_relief(Gtk::RELIEF_NONE);
-        pIcon->show();
+        pIcon->set_visible(true);
         pButton->add(*pIcon);
-        pButton->show();
+        pButton->set_visible(true);
         pButton->signal_clicked().connect(sigc::mem_fun(*this, &SatelliteArrayParam::on_up_button_click));
-        hbox->pack_end(*pButton, Gtk::PACK_SHRINK);
+        UI::pack_end(*hbox, *pButton, UI::PackOptions::shrink);
         pButton->set_tooltip_text(_("Move Up"));
     }
 
-    vbox->pack_end(*hbox, Gtk::PACK_SHRINK);
+    UI::pack_end(*vbox, *hbox, UI::PackOptions::shrink);
 
     vbox->show_all_children(true);
 
@@ -425,7 +423,7 @@ void SatelliteArrayParam::link(SPObject *obj, size_t pos)
     if (obj && obj->getId()) {
         Glib::ustring itemid = "#";
         itemid += obj->getId();
-        std::shared_ptr<SatelliteReference> satellitereference =
+        auto satellitereference =
             std::make_shared<SatelliteReference>(param_effect->getLPEObj(), _visible);
         try {
             satellitereference->attach(Inkscape::URI(itemid.c_str()));
@@ -433,9 +431,9 @@ void SatelliteArrayParam::link(SPObject *obj, size_t pos)
                 satellitereference->setActive(true);
             }
             if (_vector.size() == pos || pos == Glib::ustring::npos) {
-                _vector.push_back(satellitereference);
+                _vector.push_back(std::move(satellitereference));
             } else {
-                _vector[pos] = satellitereference;
+                _vector[pos] = std::move(satellitereference);
             }
         } catch (Inkscape::BadURIException &e) {
             g_warning("%s", e.what());
@@ -449,40 +447,15 @@ void SatelliteArrayParam::unlink(SPObject *obj)
     if (!obj) {
         return;
     }
-    gint pos = -1;
-    for (auto w : _vector) {
-        pos++;
-        if (w) {
-            if (w->getObject() == obj) {
-                break;
-            }
-        }
-    }
-    if (pos != -1) {
-        _vector.erase(_vector.begin() + pos);
-        _vector.insert(_vector.begin() + pos, nullptr);
-    }
+
+    auto const it = std::find_if(_vector.begin(), _vector.end(),
+                                 [=](auto const &w){ return w && w->getObject() == obj; });
+    if (it != _vector.end()) it->reset();
 }
 
-void SatelliteArrayParam::unlink(std::shared_ptr<SatelliteReference> to)
+void SatelliteArrayParam::unlink(std::shared_ptr<SatelliteReference> const &to)
 {
-    if (!to) {
-        return;
-    }
-    gint pos = -1;
-    for (auto w : _vector) {
-        pos++;
-        if (w) {
-            if (w->getObject() == to->getObject()) {
-                break;
-            }
-            
-        }
-    }
-    if (pos != -1) {
-        _vector.erase(_vector.begin() + pos);
-        _vector.insert(_vector.begin() + pos, nullptr);
-    }
+    unlink(to->getObject());
 }
 
 void SatelliteArrayParam::clear()
@@ -490,9 +463,7 @@ void SatelliteArrayParam::clear()
     _vector.clear();
 }
 
-} /* namespace LivePathEffect */
-
-} /* namespace Inkscape */
+} // namespace Inkscape::LivePathEffect
 
 /*
   Local Variables:

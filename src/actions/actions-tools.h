@@ -18,6 +18,7 @@ enum tools_enum {
   TOOLS_INVALID,
   TOOLS_SELECT,
   TOOLS_NODES,
+  TOOLS_BOOLEANS,
   TOOLS_MARKER,
   TOOLS_TWEAK,
   TOOLS_SPRAY,
@@ -39,7 +40,8 @@ enum tools_enum {
   TOOLS_PAINTBUCKET,
   TOOLS_ERASER,
   TOOLS_LPETOOL,
-  TOOLS_PAGES
+  TOOLS_PAGES,
+  TOOLS_PICKER
 };
 
 class InkscapeWindow;

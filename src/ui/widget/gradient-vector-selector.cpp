@@ -27,33 +27,15 @@
 #include <glibmm.h>
 #include <glibmm/i18n.h>
 
+#include "document.h"
 #include "gradient-chemistry.h"
-#include "inkscape.h"
 #include "preferences.h"
-#include "desktop.h"
-#include "document-undo.h"
-#include "layer-manager.h"
-#include "include/macros.h"
-#include "selection-chemistry.h"
-
-#include "io/resource.h"
 
 #include "object/sp-defs.h"
-#include "object/sp-linear-gradient.h"
-#include "object/sp-radial-gradient.h"
-#include "object/sp-root.h"
 #include "object/sp-stop.h"
-#include "style.h"
 
-#include "svg/css-ostringstream.h"
-
-#include "ui/dialog-events.h"
 #include "ui/selected-color.h"
-#include "ui/widget/color-notebook.h"
-#include "ui/widget/color-preview.h"
 #include "ui/widget/gradient-image.h"
-
-#include "xml/repr.h"
 
 using Inkscape::UI::SelectedColor;
 
@@ -80,21 +62,6 @@ GradientVectorSelector::GradientVectorSelector(SPDocument *doc, SPGradient *gr)
     }
 }
 
-GradientVectorSelector::~GradientVectorSelector()
-{
-    if (_gr) {
-        _gradient_release_connection.disconnect();
-        _tree_select_connection.disconnect();
-        _gr = nullptr;
-    }
-
-    if (_doc) {
-        _defs_release_connection.disconnect();
-        _defs_modified_connection.disconnect();
-        _doc = nullptr;
-    }
-}
-
 void GradientVectorSelector::set_gradient(SPDocument *doc, SPGradient *gr)
 {
 //     g_message("sp_gradient_vector_selector_set_gradient(%p, %p, %p) [%s] %d %d", gvs, doc, gr,
@@ -104,7 +71,6 @@ void GradientVectorSelector::set_gradient(SPDocument *doc, SPGradient *gr)
     static gboolean suppress = FALSE;
 
     g_return_if_fail(!gr || (doc != nullptr));
-    g_return_if_fail(!gr || SP_IS_GRADIENT(gr));
     g_return_if_fail(!gr || (gr->document == doc));
     g_return_if_fail(!gr || gr->hasStops());
 
@@ -122,11 +88,11 @@ void GradientVectorSelector::set_gradient(SPDocument *doc, SPGradient *gr)
 
         // Connect signals
         if (doc) {
-            _defs_release_connection = doc->getDefs()->connectRelease(sigc::mem_fun(this, &GradientVectorSelector::defs_release));
-            _defs_modified_connection = doc->getDefs()->connectModified(sigc::mem_fun(this, &GradientVectorSelector::defs_modified));
+            _defs_release_connection = doc->getDefs()->connectRelease(sigc::mem_fun(*this, &GradientVectorSelector::defs_release));
+            _defs_modified_connection = doc->getDefs()->connectModified(sigc::mem_fun(*this, &GradientVectorSelector::defs_modified));
         }
         if (gr) {
-            _gradient_release_connection = gr->connectRelease(sigc::mem_fun(this, &GradientVectorSelector::gradient_release));
+            _gradient_release_connection = gr->connectRelease(sigc::mem_fun(*this, &GradientVectorSelector::gradient_release));
         }
         _doc = doc;
         _gr = gr;
@@ -195,9 +161,9 @@ GradientVectorSelector::rebuild_gui_full()
     if (_gr) {
         auto gradients = _gr->document->getResourceList("gradient");
         for (auto gradient : gradients) {
-            SPGradient* grad = SP_GRADIENT(gradient);
+            auto grad = cast<SPGradient>(gradient);
             if ( grad->hasStops() && (grad->isSwatch() == _swatched) ) {
-                gl.push_back(SP_GRADIENT(gradient));
+                gl.push_back(cast<SPGradient>(gradient));
             }
         }
     }

@@ -8,27 +8,19 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "live_effects/parameter/enum.h"
-#include "live_effects/fill-conversion.h"
-#include "helper/geom-pathstroke.h"
+#include "lpe-jointype.h"
 
-#include "desktop-style.h"
-
-#include "display/curve.h"
-
-#include "object/sp-item-group.h"
-#include "object/sp-shape.h"
-#include "style.h"
-
-#include "svg/css-ostringstream.h"
-#include "svg/svg-color.h"
+#include <glibmm/i18n.h>
 
 #include <2geom/elliptical-arc.h>
 
-#include "lpe-jointype.h"
+#include "style.h"
 
-// TODO due to internal breakage in glibmm headers, this must be last:
-#include <glibmm/i18n.h>
+#include "helper/geom-pathstroke.h"
+#include "live_effects/fill-conversion.h"
+#include "live_effects/parameter/enum.h"
+#include "object/sp-item-group.h"
+#include "object/sp-shape.h"
 
 namespace Inkscape {
 namespace LivePathEffect {
@@ -83,18 +75,17 @@ LPEJoinType::LPEJoinType(LivePathEffectObject *lpeobject) :
     //end_lean.param_set_digits(4);
 }
 
-LPEJoinType::~LPEJoinType()
-= default;
+LPEJoinType::~LPEJoinType()= default;
 
 void LPEJoinType::doOnApply(SPLPEItem const* lpeitem)
 {
-    if (!SP_IS_SHAPE(lpeitem)) {
+    if (!is<SPShape>(lpeitem)) {
         return;
     }
 
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     auto lpeitem_mutable = const_cast<SPLPEItem *>(lpeitem);
-    auto item = dynamic_cast<SPShape *>(lpeitem_mutable);
+    auto item = cast<SPShape>(lpeitem_mutable);
     double width = (lpeitem && lpeitem->style) ? lpeitem->style->stroke_width.computed : 1.;
 
     lpe_shape_convert_stroke_and_fill(item);
@@ -127,13 +118,10 @@ void LPEJoinType::transform_multiply(Geom::Affine const &postmul, bool /*set*/)
 void LPEJoinType::doOnRemove(SPLPEItem const* lpeitem)
 {
     auto lpeitem_mutable = const_cast<SPLPEItem *>(lpeitem);
-    auto shape = dynamic_cast<SPShape *>(lpeitem_mutable);
-
-    if (!shape) {
-        return;
+    auto shape = cast<SPShape>(lpeitem_mutable);
+    if (shape) {
+        lpe_shape_revert_stroke_and_fill(shape, line_width);
     }
-
-    lpe_shape_revert_stroke_and_fill(shape, line_width);
 }
 
 Geom::PathVector LPEJoinType::doEffect_path(Geom::PathVector const & path_in)

@@ -24,7 +24,7 @@ cd ..
 mkdir -p build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_BINRELOC=ON \
 -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_C_COMPILER_LAUNCHER=ccache \
--DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DWITH_INTERNAL_CAIRO=ON
+-DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 make -j$(nproc)
 make DESTDIR=$PWD/appdir -j$(nproc) install ; find appdir/
 cp ../packaging/appimage/AppRun appdir/AppRun ; chmod +x appdir/AppRun
@@ -90,6 +90,8 @@ apt_bundle \
     python3-msgpack \
     python3-lockfile \
     python3-cssselect \
+    python3-tinycss2 \
+    python3-webencodings \
     python3-distutils \
     python3-packaging \
     python3-appdirs \
@@ -121,6 +123,8 @@ cd -
 ########################################################################
 # Generate AppImage
 ########################################################################
+
+export ARCH=x86_64
 
 wget -c -nv "https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage"
 chmod a+x linuxdeployqt-continuous-x86_64.AppImage

@@ -1,8 +1,7 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Run the scour module on the svg output.
 """
-
 
 import inkex
 from inkex.localization import inkex_gettext as _

@@ -10,29 +10,25 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#ifndef SEEN_UI_TOOL_NODE_H
-#define SEEN_UI_TOOL_NODE_H
+#ifndef INKSCAPE_UI_TOOL_NODE_H
+#define INKSCAPE_UI_TOOL_NODE_H
 
-#include <iterator>
-#include <iosfwd>
-#include <stdexcept>
 #include <cstddef>
-#include <functional>
+#include <iosfwd>
+#include <list>
+#include <memory>
+#include <optional>
+#include <2geom/point.h>
+#include <boost/noncopyable.hpp>
 
+#include "snap-candidate.h"
 #include "ui/tool/selectable-control-point.h"
-#include "snapped-point.h"
 #include "ui/tool/node-types.h"
 
 namespace Inkscape {
 class CanvasItemGroup;
 class CanvasItemCurve;
 
-namespace UI {
-template <typename> class NodeIterator;
-}
-}
-
-namespace Inkscape {
 namespace UI {
 
 class PathManipulator;
@@ -46,27 +42,15 @@ template <typename> class NodeIterator;
 
 std::ostream &operator<<(std::ostream &, NodeType);
 
-/*
-template <typename T>
-struct ListMember {
-    T *next;
-    T *prev;
-};
-struct SubpathMember : public ListMember<NodeListMember> {
-    Subpath *list;
-};
-struct SubpathListMember : public ListMember<SubpathListMember> {
-    SubpathList *list;
-};
-*/
-
-struct ListNode {
+struct ListNode
+{
     ListNode *ln_next;
     ListNode *ln_prev;
     NodeList *ln_list;
 };
 
-struct NodeSharedData {
+struct NodeSharedData
+{
     SPDesktop *desktop;
     ControlPointSelection *selection;
     Inkscape::CanvasItemGroup *node_group;
@@ -74,10 +58,11 @@ struct NodeSharedData {
     Inkscape::CanvasItemGroup *handle_line_group;
 };
 
-class Handle : public ControlPoint {
+class Handle : public ControlPoint
+{
 public:
-
     ~Handle() override;
+
     inline Geom::Point relativePos() const;
     inline double length() const;
     bool isDegenerate() const { return _degenerate; } // True if the handle is retracted, i.e. has zero length.
@@ -98,26 +83,26 @@ public:
     static char const *handle_type_to_localized_string(NodeType type);
 
 protected:
-
     Handle(NodeSharedData const &data, Geom::Point const &initial_pos, Node *parent);
+
     virtual void handle_2button_press();
-    bool _eventHandler(Inkscape::UI::Tools::ToolBase *event_context, GdkEvent *event) override;
-    void dragged(Geom::Point &new_pos, GdkEventMotion *event) override;
-    bool grabbed(GdkEventMotion *event) override;
-    void ungrabbed(GdkEventButton *event) override;
-    bool clicked(GdkEventButton *event) override;
+    bool _eventHandler(Inkscape::UI::Tools::ToolBase *event_context, CanvasEvent const &event) override;
+    void dragged(Geom::Point &new_pos, MotionEvent const &event) override;
+    bool grabbed(MotionEvent const &event) override;
+    void ungrabbed(ButtonReleaseEvent const *event) override;
+    bool clicked(ButtonReleaseEvent const &event) override;
 
     Glib::ustring _getTip(unsigned state) const override;
-    Glib::ustring _getDragTip(GdkEventMotion *event) const override;
+    Glib::ustring _getDragTip(MotionEvent const &event) const override;
     bool _hasDragTips() const override { return true; }
 
 private:
-
     inline PathManipulator &_pm();
     inline PathManipulator &_pm() const;
+    void _update_bspline_handles();
     Node *_parent; // the handle's lifetime does not extend beyond that of the parent node,
     // so a naked pointer is OK and allows setting it during Node's construction
-    CanvasItemCurve *_handle_line;
+    CanvasItemPtr<CanvasItemCurve> _handle_line;
     bool _degenerate; // True if the handle is retracted, i.e. has zero length. This is used often internally so it makes sense to cache this
 
     /**
@@ -130,13 +115,14 @@ private:
 
     static double _saved_length;
     static bool _drag_out;
-    static ColorSet _handle_colors;
     friend class Node;
 };
 
-class Node : ListNode, public SelectableControlPoint {
+class Node
+    : ListNode
+    , public SelectableControlPoint
+{
 public:
-
     /**
      * Curve endpoint in an editable path.
      *
@@ -166,7 +152,6 @@ public:
     void showHandles(bool v);
 
     void updateHandles();
-
 
     /**
      * Pick the best type for this node, based on the position of its handles.
@@ -217,23 +202,21 @@ public:
 
     // temporarily public
     /** Customized event handler to catch scroll events needed for selection grow/shrink. */
-    bool _eventHandler(Inkscape::UI::Tools::ToolBase *event_context, GdkEvent *event) override;
+    bool _eventHandler(Inkscape::UI::Tools::ToolBase *event_context, CanvasEvent const &event) override;
 
     Inkscape::SnapCandidatePoint snapCandidatePoint();
 
 protected:
-
-    void dragged(Geom::Point &new_pos, GdkEventMotion *event) override;
-    bool grabbed(GdkEventMotion *event) override;
-    bool clicked(GdkEventButton *event) override;
+    void dragged(Geom::Point &new_pos, MotionEvent const &event) override;
+    bool grabbed(MotionEvent const &event) override;
+    bool clicked(ButtonReleaseEvent const &event) override;
 
     void _setState(State state) override;
     Glib::ustring _getTip(unsigned state) const override;
-    Glib::ustring _getDragTip(GdkEventMotion *event) const override;
+    Glib::ustring _getDragTip(MotionEvent const &event) const override;
     bool _hasDragTips() const override { return true; }
 
 private:
-
     void _updateAutoHandles();
 
     /**
@@ -261,7 +244,6 @@ private:
     Handle _back; ///< Node handle in the forward direction of the path
     NodeType _type; ///< Type of node - cusp, smooth...
     bool _handles_shown;
-    static ColorSet node_colors;
 
     // This is used by fixNeighbors to repair smooth nodes after all move
     // operations have been completed. If this is empty, no fixing is needed.
@@ -301,11 +283,10 @@ private:
  * */
 template <typename N>
 class NodeIterator
-    : public boost::bidirectional_iterator_helper<NodeIterator<N>, N, std::ptrdiff_t,
-        N *, N &>
+    : public boost::bidirectional_iterator_helper<NodeIterator<N>, N, std::ptrdiff_t, N*, N&>
 {
 public:
-    typedef NodeIterator self;
+    using self = NodeIterator;
     NodeIterator()
         : _node(nullptr)
     {}
@@ -339,6 +320,7 @@ public:
     }
     self &advance();
     self &retreat();
+
 private:
     NodeIterator(ListNode const *n)
         : _node(const_cast<ListNode*>(n))
@@ -347,16 +329,19 @@ private:
     friend class NodeList;
 };
 
-class NodeList : ListNode, boost::noncopyable {
+class NodeList
+    : ListNode
+    , boost::noncopyable
+{
 public:
-    typedef std::size_t size_type;
-    typedef Node &reference;
-    typedef Node const &const_reference;
-    typedef Node *pointer;
-    typedef Node const *const_pointer;
-    typedef Node value_type;
-    typedef NodeIterator<value_type> iterator;
-    typedef NodeIterator<value_type const> const_iterator;
+    using size_type = std::size_t;
+    using reference = Node &;
+    using const_reference = Node const &;
+    using pointer = Node *;
+    using const_pointer = Node const *;
+    using value_type = Node;
+    using iterator = NodeIterator<value_type>;
+    using const_iterator = NodeIterator<value_type const>;
 
     // TODO Lame. Make this private and make SubpathList a factory
     /**
@@ -367,12 +352,7 @@ public:
      * to obtain shared pointers to nodes.
      */
     NodeList(SubpathList &_list);
-
     ~NodeList();
-
-    // no copy or assign
-    NodeList(NodeList const &) = delete;
-    void operator=(NodeList const &) = delete;
 
     // iterators
     iterator begin() { return iterator(ln_next); }
@@ -381,17 +361,17 @@ public:
     const_iterator end() const { return const_iterator(this); }
 
     // size
-    bool empty();
-    size_type size();
+    bool empty() const;
+    size_type size() const;
 
     // extra node-specific methods
-    bool closed();
+    bool closed() const { return _closed; }
 
     /**
      * A subpath is degenerate if it has no segments - either one node in an open path
      * or no nodes in a closed path.
      */
-    bool degenerate();
+    bool degenerate() const;
 
     void setClosed(bool c) { _closed = c; }
     iterator before(double t, double *fracpart = nullptr);
@@ -435,16 +415,18 @@ public:
 
     // HACK remove this subpath from its path. This will be removed later.
     void kill();
-    SubpathList &subpathList() { return _list; }
+
+    SubpathList const &subpathList() const { return _list; }
+    SubpathList       &subpathList()       { return _list; }
 
     static iterator get_iterator(Node *n) { return iterator(n); }
     static const_iterator get_iterator(Node const *n) { return const_iterator(n); }
     static NodeList &get(Node *n);
     static NodeList &get(iterator const &i);
-private:
 
+private:
     SubpathList &_list;
-    bool _closed;
+    bool _closed = false;
 
     friend class Node;
     friend class Handle; // required to access handle and handle line groups
@@ -456,12 +438,15 @@ private:
  * List of node lists. Represents an editable path.
  * Editable path composed of one or more subpaths.
  */
-class SubpathList : public std::list< std::shared_ptr<NodeList> > {
+class SubpathList : public std::list<std::shared_ptr<NodeList>>
+{
 public:
-    typedef std::list< std::shared_ptr<NodeList> > list_type;
+    using list_type = std::list<std::shared_ptr<NodeList>>;
 
     SubpathList(PathManipulator &pm) : _path_manipulator(pm) {}
-    PathManipulator &pm() { return _path_manipulator; }
+
+    PathManipulator const &pm() const { return _path_manipulator; }
+    PathManipulator       &pm()       { return _path_manipulator; }
 
 private:
     list_type _nodelists;
@@ -470,8 +455,6 @@ private:
     friend class Node;
     friend class Handle;
 };
-
-
 
 // define inline Handle funcs after definition of Node
 inline Geom::Point Handle::relativePos() const {
@@ -518,7 +501,7 @@ NodeIterator<N> &NodeIterator<N>::retreat() {
 } // namespace UI
 } // namespace Inkscape
 
-#endif
+#endif // INKSCAPE_UI_TOOL_NODE_H
 
 /*
   Local Variables:

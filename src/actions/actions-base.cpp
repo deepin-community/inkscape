@@ -8,47 +8,60 @@
  *
  */
 
+#include "actions-base.h"
+
 #include <iostream>
 
 #include <giomm.h>  // Not <gtkmm.h>! To eventually allow a headless version!
 #include <glibmm/i18n.h>
 
-#include "actions-base.h"
 #include "actions-helper.h"
 
-#include "actions/actions-extra-data.h"
 #include "inkscape-application.h"
 
-#include "inkscape.h"             // Inkscape::Application
+#include "document.h"             // SPDocument
+#include "file.h"                 // dpi convert method
 #include "inkscape-version-info.h"// Inkscape version
+#include "inkscape.h"             // Inkscape::Application
 #include "path-prefix.h"          // Extension directory
 #include "selection.h"            // Selection
-#include "object/sp-root.h"       // query_all()
-#include "file.h"                 // dpi convert method
+
+#include "actions/actions-extra-data.h"
 #include "io/resource.h"
+#include "object/sp-root.h"       // query_all()
 
 void
 print_inkscape_version()
 {
-    std::cout << Inkscape::inkscape_version() << std::endl;
+    show_output(Inkscape::inkscape_version(), false);
+}
+
+void
+active_window_start() {
+    active_window_start_helper();
+}
+
+void
+active_window_end() {
+    active_window_end_helper();
 }
 
 void
 print_debug_info()
 {
-    std::cout << Inkscape::debug_info() << std::endl;
+    show_output(Inkscape::debug_info(), false);
 }
 
 void
 print_system_data_directory()
 {
-    std::cout << Glib::build_filename(get_inkscape_datadir(), "inkscape") << std::endl;
+    show_output(Glib::build_filename(get_inkscape_datadir(), "inkscape"), false);
 }
 
 void
 print_user_data_directory()
 {
-    std::cout << Inkscape::IO::Resource::profile_path("") << std::endl;
+    show_output(Inkscape::IO::Resource::profile_path(), false);
 }
 
 // Helper function for query_x(), query_y(), query_width(), and query_height().
@@ -67,23 +80,24 @@ query_dimension(InkscapeApplication* app, bool extent, Geom::Dim2 const axis)
 
     bool first = true;
     auto items = selection->items();
+    Glib::ustring out = "";
     for (auto item : items) {
         if (!first) {
-            std::cout << ",";
+            out += ",";
         }
         first = false;
         Geom::OptRect area = item->documentVisualBounds();
         if (area) {
             if (extent) {
-                std::cout << area->dimensions()[axis];
+                out += Glib::ustring::format(area->dimensions()[axis]);
             } else {
-                std::cout << area->min()[axis];
+                out += Glib::ustring::format(area->min()[axis]);
             }
         } else {
-            std::cout << "0";
+            out += "0";
         }
     }
-    std::cout << std::endl;
+    show_output(out, false);
 }
 
 void
@@ -114,19 +128,20 @@ query_height(InkscapeApplication* app)
 void
 query_all_recurse (SPObject *o)
 {
-    SPItem *item = dynamic_cast<SPItem*>(o);
+    auto item = cast<SPItem>(o);
     if (item && item->getId()) {
         Geom::OptRect area = item->documentVisualBounds();
+        Glib::ustring out = "";
         if (area) {
             // clang-format off
-            std::cout << item->getId()               << ","
-                      << area->min()[Geom::X]        << ","
-                      << area->min()[Geom::Y]        << ","
-                      << area->dimensions()[Geom::X] << ","
-                      << area->dimensions()[Geom::Y] << std::endl;
+            out += Glib::ustring(item->getId()) + ",";
+            out += Glib::ustring::format(area->min()[Geom::X]) + ",";
+            out += Glib::ustring::format(area->min()[Geom::Y]) + ",";
+            out += Glib::ustring::format(area->dimensions()[Geom::X]) + ",";
+            out += Glib::ustring::format(area->dimensions()[Geom::Y]);
             // clang-format on
         }
-
+        show_output(out, false);
         for (auto& child: o->children) {
             query_all_recurse (&child);
         }
@@ -138,7 +153,7 @@ query_all(InkscapeApplication* app)
 {
     SPDocument* doc = app->get_active_document();
     if (!doc) {
-        std::cerr << "query_all: no document!" << std::endl;
+        show_output("query_all: no document!");
         return;
     }
 
@@ -151,7 +166,7 @@ query_all(InkscapeApplication* app)
 void
 pdf_page(int page)
 {
-    INKSCAPE.set_pdf_page(page);
+    INKSCAPE.set_pages(std::to_string(page));
 }
 
 void
@@ -164,7 +179,7 @@ convert_dpi_method(Glib::ustring method)
     } else if (method == "scale-document") {
         sp_file_convert_dpi_method_commandline = FILE_DPI_DOCUMENT_SCALED;
     } else {
-        std::cerr << "dpi_convert_method: invalid option" << std::endl;
+        show_output("dpi_convert_method: invalid option");
     }
 }
 
@@ -174,26 +189,17 @@ no_convert_baseline()
     sp_no_convert_text_baseline_spacing = true;
 }
 
-void
-vacuum_defs(InkscapeApplication* app)
-{
-    SPDocument* document = nullptr;
-    Inkscape::Selection* selection = nullptr;
-    if (!get_document_and_selection(app, &document, &selection)) {
-        return;
-    }
-    document->vacuumDocument();
-}
-
 std::vector<std::vector<Glib::ustring>> raw_data_base =
 {
     // clang-format off
     {"app.inkscape-version",          N_("Inkscape Version"),        "Base",       N_("Print Inkscape version and exit")                   },
+    {"app.active-window-start",       N_("Active Window: Start Call"), "Base",     N_("Start execution in active window")                          },
+    {"app.active-window-end",         N_("Active Window: End Call"), "Base",       N_("End execution in active window")                            },
     {"app.debug-info",                N_("Debug Info"),              "Base",       N_("Print debugging information and exit")              },
     {"app.system-data-directory",     N_("System Directory"),        "Base",       N_("Print system data directory and exit")              },
     {"app.user-data-directory",       N_("User Directory"),          "Base",       N_("Print user data directory and exit")                },
     {"app.action-list",               N_("List Actions"),            "Base",       N_("Print a list of actions and exit")                  },
-    {"app.vacuum-defs",               N_("Clean up Document"),       "Base",       N_("Remove unused definitions (gradients, etc.)")       },
+    {"app.list-input-types",          N_("List Input File Extensions"), "Base",    N_("Print a list of input file extensions and exit")    },
     {"app.quit",                      N_("Quit"),                    "Base",       N_("Quit Inkscape, check for data loss")                },
     {"app.quit-immediate",            N_("Quit Immediately"),        "Base",       N_("Immediately quit Inkscape, no check for data loss") },
 
@@ -213,29 +219,33 @@ void
 add_actions_base(InkscapeApplication* app)
 {
     auto *gapp = app->gio_app();
-
     // Note: "radio" actions are just an easy way to set type without using templating.
     // clang-format off
     gapp->add_action(               "inkscape-version",                                    sigc::ptr_fun(&print_inkscape_version)                 );
+    gapp->add_action(               "active-window-start",                                 sigc::ptr_fun(&active_window_start)                    );
+    gapp->add_action(               "active-window-end",                                   sigc::ptr_fun(&active_window_end)                      );
     gapp->add_action(               "debug-info",                                          sigc::ptr_fun(&print_debug_info)                       );
     gapp->add_action(               "system-data-directory",                               sigc::ptr_fun(&print_system_data_directory)            );
     gapp->add_action(               "user-data-directory",                                 sigc::ptr_fun(&print_user_data_directory)              );
-    gapp->add_action(               "action-list",        sigc::mem_fun(app, &InkscapeApplication::print_action_list)                             );
-    gapp->add_action(               "vacuum-defs",        sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&vacuum_defs),               app)        );
-    gapp->add_action(               "quit",               sigc::mem_fun(app, &InkscapeApplication::on_quit)                                       );
-    gapp->add_action(               "quit-immediate",     sigc::mem_fun(app, &InkscapeApplication::on_quit_immediate)                             );
+    gapp->add_action(               "action-list",        sigc::mem_fun(*app, &InkscapeApplication::print_action_list)                            );
+    gapp->add_action(               "list-input-types",   sigc::mem_fun(*app, &InkscapeApplication::print_input_type_list)                        );
+    gapp->add_action(               "quit",               sigc::mem_fun(*app, &InkscapeApplication::on_quit)                                      );
+    gapp->add_action(               "quit-immediate",     sigc::mem_fun(*app, &InkscapeApplication::on_quit_immediate)                            );
 
     gapp->add_action_radio_integer( "open-page",                                           sigc::ptr_fun(&pdf_page),                             0);
     gapp->add_action_radio_string(  "convert-dpi-method",                                  sigc::ptr_fun(&convert_dpi_method),              "none");
     gapp->add_action(               "no-convert-baseline",                                 sigc::ptr_fun(&no_convert_baseline)                    );
 
 
-    gapp->add_action(               "query-x",            sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&query_x),                   app)        );
-    gapp->add_action(               "query-y",            sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&query_y),                   app)        );
-    gapp->add_action(               "query-width",        sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&query_width),               app)        );
-    gapp->add_action(               "query-height",       sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&query_height),              app)        );
-    gapp->add_action(               "query-all",          sigc::bind<InkscapeApplication*>(sigc::ptr_fun(&query_all),                 app)        );
+    gapp->add_action(               "query-x",            sigc::bind(sigc::ptr_fun(&query_x),                   app)        );
+    gapp->add_action(               "query-y",            sigc::bind(sigc::ptr_fun(&query_y),                   app)        );
+    gapp->add_action(               "query-width",        sigc::bind(sigc::ptr_fun(&query_width),               app)        );
+    gapp->add_action(               "query-height",       sigc::bind(sigc::ptr_fun(&query_height),              app)        );
+    gapp->add_action(               "query-all",          sigc::bind(sigc::ptr_fun(&query_all),                 app)        );
     // clang-format on
+
+    // Revision string is going to be added to the actions interface so it can be queried for existance by GApplication
+    gapp->add_action(Inkscape::inkscape_revision(), [=]() { g_warning("Don't call this action"); });
 
     app->get_action_extra_data().add_data(raw_data_base);
 }

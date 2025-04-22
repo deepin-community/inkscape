@@ -15,27 +15,45 @@
 #ifndef SEEN_OBJECTS_PANEL_H
 #define SEEN_OBJECTS_PANEL_H
 
+#include <optional>
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
+#include <glibmm/refptr.h>
+#include <gtk/gtk.h> // GtkEventControllerKey
 #include <gtkmm/box.h>
-#include <gtkmm/dialog.h>
+#include <gtkmm/gesture.h> // Gtk::EventSequenceState
+#include <gtkmm/treemodel.h>
+#include <gtkmm/treerowreference.h>
 
-#include "helper/auto-connection.h"
-#include "xml/node-observer.h"
-
-#include "ui/dialog/dialog-base.h"
-#include "ui/widget/color-picker.h"
-
-#include "selection.h"
 #include "color-rgba.h"
 #include "helper/auto-connection.h"
+#include "preferences.h"
+#include "selection.h"
+#include "style-enums.h"
+#include "ui/dialog/dialog-base.h"
+#include "ui/widget/color-picker.h"
+#include "ui/widget/preferences-widget.h"
+#include "xml/node-observer.h"
 
-using Inkscape::XML::Node;
+namespace Gtk {
+class Builder;
+class GestureMultiPress;
+class Popover;
+class RadioButton;
+class Scale;
+class SearchEntry;
+class TreeStore;
+} // namespace Gtk
 
+class SPItem;
 class SPObject;
-class SPGroup;
-// struct SPColorSelector;
 
-namespace Inkscape {
-namespace UI {
+namespace Inkscape::UI {
+
+namespace Widget { class ImageToggler; }
+
 namespace Dialog {
 
 class ObjectsPanel;
@@ -54,28 +72,28 @@ enum SelectionStates : SelectionState {
 /**
  * A panel that displays objects.
  */
-class ObjectsPanel : public DialogBase
+class ObjectsPanel final : public DialogBase
 {
 public:
     ObjectsPanel();
-    ~ObjectsPanel() override;
+    ~ObjectsPanel() final;
 
     class ModelColumns;
-    static ObjectsPanel& getInstance();
 
 protected:
-
-    void desktopReplaced() override;
-    void documentReplaced() override;
+    void desktopReplaced() final;
+    void documentReplaced() final;
     void layerChanged(SPObject *obj);
-    void selectionChanged(Selection *selected) override;
+    void selectionChanged(Selection *selected) final;
+    ObjectWatcher *unpackToObject(SPObject *item);
 
     // Accessed by ObjectWatcher directly (friend class)
-    SPObject* getObject(Node *node);
-    ObjectWatcher* getWatcher(Node *node);
-    ObjectWatcher *getRootWatcher() const { return root_watcher; };
+    SPObject* getObject(Inkscape::XML::Node *node);
+    ObjectWatcher* getWatcher(Inkscape::XML::Node *node);
+    ObjectWatcher *getRootWatcher() const { return root_watcher.get(); };
+    bool showChildInTree(SPItem *item);
 
-    Node *getRepr(Gtk::TreeModel::Row const &row) const;
+    Inkscape::XML::Node *getRepr(Gtk::TreeModel::Row const &row) const;
     SPItem *getItem(Gtk::TreeModel::Row const &row) const;
     std::optional<Gtk::TreeRow> getRow(SPItem *item) const;
 
@@ -85,14 +103,18 @@ protected:
     bool cleanDummyChildren(Gtk::TreeModel::Row const &row);
 
     Glib::RefPtr<Gtk::TreeStore> _store;
-    ModelColumns* _model;
+    std::unique_ptr<ModelColumns> _model;
 
     void setRootWatcher();
-private:
 
+private:
+    Glib::RefPtr<Gtk::Builder> _builder;
     Inkscape::PrefObserver _watch_object_mode;
-    ObjectWatcher* root_watcher;
+    std::unique_ptr<ObjectWatcher> root_watcher;
     SPItem *current_item = nullptr;
+    Gtk::TreeModel::Path _initial_path;
+    bool _start_new_range = true;
+    std::vector<SPObject *> _prev_range;
 
     Inkscape::auto_connection layer_changed;
     SPObject *_layer;
@@ -100,7 +122,9 @@ private:
 
     //Show icons in the context menu
     bool _show_contextmenu_icons;
+
     bool _is_editing;
+    bool _scroll_lock = false;
 
     std::vector<Gtk::Widget*> _watching;
     std::vector<Gtk::Widget*> _watchingNonTop;
@@ -109,31 +133,47 @@ private:
     Gtk::TreeView _tree;
     Gtk::CellRendererText *_text_renderer;
     Gtk::TreeView::Column *_name_column;
+    Gtk::TreeView::Column *_blend_mode_column = nullptr;
     Gtk::TreeView::Column *_eye_column = nullptr;
     Gtk::TreeView::Column *_lock_column = nullptr;
+    Gtk::TreeView::Column *_color_tag_column = nullptr;
     Gtk::Box _buttonsRow;
     Gtk::Box _buttonsPrimary;
     Gtk::Box _buttonsSecondary;
+    Gtk::SearchEntry& _searchBox;
     Gtk::ScrolledWindow _scroller;
-    Gtk::Menu _popupMenu;
     Gtk::Box _page;
-    Gtk::ToggleButton _object_mode;
     Inkscape::auto_connection _tree_style;
     Inkscape::UI::Widget::ColorPicker _color_picker;
     Gtk::TreeRow _clicked_item_row;
 
-    ObjectsPanel(ObjectsPanel const &) = delete; // no copy
-    ObjectsPanel &operator=(ObjectsPanel const &) = delete; // no assign
-
     Gtk::Button *_addBarButton(char const* iconName, char const* tooltip, char const *action_name);
-    void _objects_toggle();
-    
-    bool toggleVisible(GdkEventButton* event, Gtk::TreeModel::Row row);
-    bool toggleLocked(GdkEventButton* event, Gtk::TreeModel::Row row);
-    
-    bool _handleButtonEvent(GdkEventButton *event);
-    bool _handleKeyEvent(GdkEventKey *event);
-    bool _handleMotionEvent(GdkEventMotion* motion_event);
+
+    void _activateAction(const std::string& layerAction, const std::string& selectionAction);
+
+    bool blendModePopup(int x, int y, Gtk::TreeModel::Row row);
+    bool toggleVisible(unsigned int state, Gtk::TreeModel::Row row);
+    bool toggleLocked(unsigned int state, Gtk::TreeModel::Row row);
+
+    enum class EventType {pressed, released};
+    Gtk::EventSequenceState on_click(Gtk::GestureMultiPress const &gesture,
+                                     int n_press, double x, double y,
+                                     EventType);
+    gboolean on_tree_key_pressed   (GtkEventControllerKey const *controller,
+                                unsigned keyval, unsigned keycode, GdkModifierType state);
+    gboolean on_window_key_pressed (GtkEventControllerKey const *controller,
+                                unsigned keyval, unsigned keycode, GdkModifierType state);
+    gboolean on_window_key_released(GtkEventControllerKey const *controller,
+                                unsigned keyval, unsigned keycode, GdkModifierType state);
+    gboolean on_window_key         (GtkEventControllerKey const *controller,
+                                unsigned keyval, unsigned keycode, GdkModifierType state,
+                                EventType);
+    void on_motion_enter (GtkEventControllerMotion const *controller, double x, double y);
+    void on_motion_motion(GtkEventControllerMotion const *controller, double x, double y);
+    void on_motion_leave (GtkEventControllerMotion const *controller);
+
+    void _searchActivated();
+    void _searchChanged();
     
     void _handleEdited(const Glib::ustring& path, const Glib::ustring& new_text);
     void _handleTransparentHover(bool enabled);
@@ -141,24 +181,42 @@ private:
 
     bool select_row( Glib::RefPtr<Gtk::TreeModel> const & model, Gtk::TreeModel::Path const & path, bool b );
 
-    bool on_drag_motion(const Glib::RefPtr<Gdk::DragContext> &, int, int, guint) override;
-    bool on_drag_drop(const Glib::RefPtr<Gdk::DragContext> &, int, int, guint) override;
+    bool on_drag_motion(const Glib::RefPtr<Gdk::DragContext> &, int, int, guint) final;
+    bool on_drag_drop(const Glib::RefPtr<Gdk::DragContext> &, int, int, guint) final;
     void on_drag_start(const Glib::RefPtr<Gdk::DragContext> &);
-    void on_drag_end(const Glib::RefPtr<Gdk::DragContext> &) override;
+    void on_drag_end(const Glib::RefPtr<Gdk::DragContext> &) final;
+
+    void selectRange(Gtk::TreeModel::Path start, Gtk::TreeModel::Path end);
+    bool selectCursorItem(unsigned int state);
+    SPItem *_getCursorItem(Gtk::TreeViewColumn *column);
 
     friend class ObjectWatcher;
 
-    SPItem *_solid_item;
-    std::list<SPItem *> _translucent_items;
+    bool _translucency_enabled = false;
+    SPItem *_old_solid_item = nullptr;
+
+    int _msg_id;
+    Gtk::Popover& _settings_menu;
+    Gtk::Popover& _object_menu;
+    Gtk::Scale& _opacity_slider;
+    std::map<SPBlendMode, Gtk::RadioButton *> _blend_items;
+    std::map<SPBlendMode, Glib::ustring> _blend_mode_names;
+    Inkscape::UI::Widget::ImageToggler* _item_state_toggler;
+
+    // Special column dragging mode
+    Gtk::TreeViewColumn* _drag_column = nullptr;
+
+    UI::Widget::PrefCheckButton& _setting_layers;
+    UI::Widget::PrefCheckButton& _setting_track;
+    bool _drag_flip;
+
+    bool _selectionChanged();
+    auto_connection _idle_connection;
 };
 
+} //namespace Dialog
 
-
-} //namespace Dialogs
-} //namespace UI
-} //namespace Inkscape
-
-
+} //namespace Inkscape::UI
 
 #endif // SEEN_OBJECTS_PANEL_H
 

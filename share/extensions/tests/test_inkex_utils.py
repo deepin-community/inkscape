@@ -2,6 +2,7 @@
 """
 Unit test file for ../inkex.py
 """
+
 # Revision history:
 #   * 2012-01-27 (jazzynico): check errormsg function.
 #

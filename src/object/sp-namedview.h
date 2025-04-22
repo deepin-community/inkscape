@@ -15,21 +15,22 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "attributes.h"
-#include "sp-object-group.h"
-#include "snap.h"
-#include "document.h"
-#include "util/units.h"
-#include "svg/svg-bool.h"
 #include <vector>
+
+#include "attributes.h"
+#include "snap.h"
+#include "sp-object-group.h"
+
+#include "svg/svg-bool.h"
 
 namespace Inkscape {
     class CanvasPage;
-    class CanvasGrid;
     namespace Util {
         class Unit;
     }
 }
+
+class SPGrid;
 
 typedef unsigned int guint32;
 typedef guint32 GQuark;
@@ -39,17 +40,19 @@ enum {
     SP_BORDER_LAYER_TOP
 };
 
-class SPNamedView : public SPObjectGroup {
+class SPNamedView final : public SPObjectGroup {
 public:
     SPNamedView();
     ~SPNamedView() override;
+    int tag() const override { return tag_of<decltype(*this)>; }
 
     unsigned int editable : 1;
 
     SVGBool showguides;
     SVGBool lockguides;
     SVGBool grids_visible;
-
+    SVGBool clip_to_page; // if true, clip rendered content to pages' boundaries
+    SVGBool antialias_rendering = true;
     guint32 desk_color;
     SVGBool desk_checkerboard;
 
@@ -64,7 +67,6 @@ public:
     int window_maximized;
 
     SnapManager snap_manager;
-    std::vector<Inkscape::CanvasGrid *> grids;
 
     Inkscape::Util::Unit const *display_units;   // Units used for the UI (*not* the same as units of SVG coordinates)
     // Inkscape::Util::Unit const *page_size_units; // Only used in "Custom size" part of Document Properties dialog 
@@ -77,6 +79,7 @@ public:
     guint32 guidehicolor;
 
     std::vector<SPGuide *> guides;
+    std::vector<SPGrid *> grids;
     std::vector<SPDesktop *> views;
 
     int viewcount;
@@ -93,11 +96,14 @@ public:
 
     void translateGuides(Geom::Translate const &translation);
     void translateGrids(Geom::Translate const &translation);
-    void scrollAllDesktops(double dx, double dy, bool is_scrolling);
-    void writeNewGrid(SPDocument *document,int gridtype);
+    void scrollAllDesktops(double dx, double dy);
+
+    bool getShowGrids();
+    void setShowGrids(bool v);
 
     void toggleShowGuides();
     void toggleLockGuides();
+    void toggleShowGrids();
 
     bool getLockGuides();
     void setLockGuides(bool v);
@@ -106,6 +112,7 @@ public:
     bool getShowGuides();
 
     void updateViewPort();
+    void newGridCreated();
 
     // page background, border, desk colors
     void change_color(unsigned int rgba, SPAttr color_key, SPAttr opacity_key = SPAttr::INVALID);
@@ -113,15 +120,23 @@ public:
     void change_bool_setting(SPAttr key, bool value);
     // sync desk colors
     void set_desk_color(SPDesktop* desktop);
+    // turn clip to page mode on/off
+    void set_clip_to_page(SPDesktop* desktop, bool enable);
+    // immediate show/hide guides request, not recorded in a named view
+    void temporarily_show_guides(bool show);
+
+    SPGrid *getFirstEnabledGrid();
 
 private:
     void updateGuides();
+    void updateGrids();
+
     void setShowGuideSingle(SPGuide *guide);
 
-    double getMarginLength(gchar const * const key,Inkscape::Util::Unit const * const margin_units,Inkscape::Util::Unit const * const return_units,double const width,double const height,bool const use_width);
     friend class SPDocument;
 
     Inkscape::CanvasPage *_viewport = nullptr;
+    bool _sync_grids = true;
 
 protected:
     void build(SPDocument *document, Inkscape::XML::Node *repr) override;
@@ -144,13 +159,10 @@ void sp_namedview_zoom_and_view_from_document(SPDesktop *desktop);
 void sp_namedview_document_from_window(SPDesktop *desktop);
 void sp_namedview_update_layers_from_document (SPDesktop *desktop);
 
-void sp_namedview_show_grids(SPNamedView *namedview, bool show, bool dirty_document);
-Inkscape::CanvasGrid * sp_namedview_get_first_enabled_grid(SPNamedView *namedview);
+const Inkscape::Util::Unit* sp_parse_document_units(const char* unit);
 
-MAKE_SP_OBJECT_DOWNCAST_FUNCTIONS(SP_NAMEDVIEW, SPNamedView)
 
 #endif /* !INKSCAPE_SP_NAMEDVIEW_H */
-
 
 /*
   Local Variables:

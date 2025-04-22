@@ -1,10 +1,14 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 """
 Test the element API base classes and basic functionality
 """
+
 import random
+import lxml
+import pytest
 from lxml import etree
+from packaging.version import Version
 
 from inkex.elements import (
     load_svg,
@@ -332,6 +336,14 @@ class TransformationTestCase(SvgTestCase):
         elem.transform.add_translate(-10, -10)
         self.assertNotIn(b"transform", etree.tostring(elem))
 
+    def test_composed_transform(self):
+        """Calculate every transform down to the other element"""
+        elem = self.svg.getElementById("F")
+        grandparent = elem.getparent().getparent()
+        transform3 = elem.composed_transform(grandparent)
+        transform4 = elem.composed_transform()
+        self.assertNotEqual(transform3, transform4)
+
 
 class RelationshipTestCase(SvgTestCase):
     """Test relationships between elements"""
@@ -355,6 +367,23 @@ class RelationshipTestCase(SvgTestCase):
         self.assertTrue(dup.get("id"))
         self.assertNotEqual(elem.get("id"), dup.get("id"))
         self.assertEqual(elem.getparent(), dup.getparent())
+
+    @pytest.mark.skipif(
+        Version(lxml.__version__) < Version("5.0.0"), reason="lxml upstream bug"
+    )
+    def test_duplicate_text(self):
+        """Test duplicating text elements, see
+        https://gitlab.com/inkscape/extensions/-/issues/480"""
+        root = TextElement()
+        self.svg.append(root)
+        el = Tspan()
+        el.text = "inner"
+        root.append(el)
+        el.tail = "after"
+        d = el.duplicate()
+        assert el.tail == "after"
+        assert d.tail == "after"
+        assert d.text == "inner"
 
     def test_duplicate_group(self):
         """Check that when duplicating a group, all ids are replaced
@@ -446,3 +475,15 @@ class RelationshipTestCase(SvgTestCase):
         self.assertEqual(tuple(get("M").ancestors(get("M")).ids), ("L",))
         self.assertEqual(tuple(get("G").ancestors(get("H")).ids), ("C",))
         self.assertEqual(tuple(get("M").ancestors(get("H")).ids), ("L", "K", "A"))
+
+    def test_comment_callback(self):
+        """Test that foreign elements can be inserted /removed
+        (despite caching)
+
+        Fix for https://gitlab.com/inkscape/extensions/-/issues/587"""
+
+        defs = self.svg.defs
+        comment = etree.Comment("Hello World")
+        defs.extend([comment])
+        defs.append(etree.Element("testelement"))
+        defs.remove(comment)

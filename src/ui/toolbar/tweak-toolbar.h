@@ -19,6 +19,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -30,40 +31,53 @@
 
 #include "toolbar.h"
 
-class SPDesktop;
-
 namespace Gtk {
-class RadioToolButton;
-}
+class Builder;
+class RadioButton;
+class ToggleButton;
+} // namespace Gtk
+
+class SPDesktop;
 
 namespace Inkscape {
 namespace UI {
 namespace Widget {
-class LabelToolItem;
-class SpinButtonToolItem;
+class SpinButton;
+class ToolbarMenuButton;
 }
 
 namespace Toolbar {
-class TweakToolbar : public Toolbar {
+
+class TweakToolbar final : public Toolbar
+{
+public:
+    TweakToolbar(SPDesktop *desktop);
+    ~TweakToolbar() override;
+
+    void set_mode(int mode);
+
 private:
-    UI::Widget::SpinButtonToolItem *_width_item;
-    UI::Widget::SpinButtonToolItem *_force_item;
-    UI::Widget::SpinButtonToolItem *_fidelity_item;
+    using ValueChangedMemFun = void (TweakToolbar::*)();
+    Glib::RefPtr<Gtk::Builder> _builder;
+    std::vector<Gtk::RadioButton *> _mode_buttons;
 
-    Gtk::ToggleToolButton *_pressure_item;
+    UI::Widget::SpinButton &_width_item;
+    UI::Widget::SpinButton &_force_item;
+    Gtk::Box &_fidelity_box;
+    UI::Widget::SpinButton &_fidelity_item;
 
-    Glib::RefPtr<Gtk::Adjustment> _width_adj;
-    Glib::RefPtr<Gtk::Adjustment> _force_adj;
-    Glib::RefPtr<Gtk::Adjustment> _fidelity_adj;
+    Gtk::ToggleButton &_pressure_btn;
 
-    std::vector<Gtk::RadioToolButton *> _mode_buttons;
+    Gtk::Box &_channels_box;
+    Gtk::ToggleButton &_doh_btn;
+    Gtk::ToggleButton &_dos_btn;
+    Gtk::ToggleButton &_dol_btn;
+    Gtk::ToggleButton &_doo_btn;
 
-    UI::Widget::LabelToolItem *_channels_label;
-    Gtk::ToggleToolButton *_doh_item;
-    Gtk::ToggleToolButton *_dos_item;
-    Gtk::ToggleToolButton *_dol_item;
-    Gtk::ToggleToolButton *_doo_item;
+    UI::Widget::ToolbarMenuButton *menu_btn2 = nullptr;
 
+    void setup_derived_spin_button(UI::Widget::SpinButton &btn, Glib::ustring const &name, double default_value,
+                                   ValueChangedMemFun const value_changed_mem_fun);
     void width_value_changed();
     void force_value_changed();
     void mode_changed(int mode);
@@ -73,17 +87,10 @@ private:
     void toggle_dos();
     void toggle_dol();
     void toggle_doo();
-
-protected:
-    TweakToolbar(SPDesktop *desktop);
-
-public:
-    static GtkWidget * create(SPDesktop *desktop);
-
-    void set_mode(int mode);
 };
-}
-}
-}
+
+} // namespace Toolbar
+} // namespace UI
+} // namespace Inkscape
 
 #endif /* !SEEN_SELECT_TOOLBAR_H */

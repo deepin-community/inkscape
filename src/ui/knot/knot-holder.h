@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef SEEN_SP_KNOTHOLDER_H
-#define SEEN_SP_KNOTHOLDER_H
-
 /*
  * KnotHolder - Hold SPKnot list and manage signals
  *
@@ -22,20 +19,28 @@
 #include <2geom/affine.h>
 #include <list>
 #include <sigc++/connection.h>
+#include "helper/auto-connection.h"
+
+#ifndef SEEN_SP_KNOTHOLDER_H
+#define SEEN_SP_KNOTHOLDER_H
 
 namespace Inkscape {
+
 namespace UI {
 class ShapeEditor;
-}
+} // namespace UI
+
 namespace XML {
 class Node;
-}
+} // namespace XML
+
 namespace LivePathEffect {
 class PowerStrokePointArrayParamKnotHolderEntity;
 class NodeSatelliteArrayParam;
 class FilletChamferKnotHolderEntity;
-}
-}
+} // namespace LivePathEffect
+
+} // namespace Inkscape
 
 class KnotHolderEntity;
 class SPItem;
@@ -57,13 +62,15 @@ public:
     void knot_mousedown_handler(SPKnot *knot, unsigned int state);
     void knot_moved_handler(SPKnot *knot, Geom::Point const &p, unsigned int state);
     void knot_clicked_handler(SPKnot *knot, unsigned int state);
+    void knot_grabbed_handler(SPKnot *knot, unsigned state);
     void knot_ungrabbed_handler(SPKnot *knot, unsigned int state);
     void transform_selected(Geom::Affine transform);
     void add(KnotHolderEntity *e);
-
+    void remove(KnotHolderEntity *e);
     void add_pattern_knotholder();
     void add_hatch_knotholder();
     void add_filter_knotholder();
+    void clear();
 
     void setEditTransform(Geom::Affine edit_transform);
     Geom::Affine getEditTransform() const { return _edit_transform; }
@@ -75,6 +82,10 @@ public:
     SPItem *getItem() { return item; }
     bool is_dragging() const { return dragging; }
 
+    bool set_item_clickpos(Geom::Point loc);
+    void install_modification_watch();
+
+    std::list<KnotHolderEntity *> entity;
     friend class Inkscape::UI::ShapeEditor; // FIXME why?
     friend class Inkscape::LivePathEffect::NodeSatelliteArrayParam;                    // why?
     friend class Inkscape::LivePathEffect::PowerStrokePointArrayParamKnotHolderEntity; // why?
@@ -85,7 +96,6 @@ protected:
     SPDesktop *desktop;
     SPItem *item; // TODO: Remove this and keep the actual item (e.g., SPRect etc.) in the item-specific knotholders
     Inkscape::XML::Node *repr; ///< repr of the item, for setting and releasing listeners.
-    std::list<KnotHolderEntity *> entity;
 
     SPKnotHolderReleasedFunc released;
 
@@ -94,13 +104,9 @@ protected:
     bool dragging;
 
     Geom::Affine _edit_transform;
+    Inkscape::auto_connection _watch_fill;
+    Inkscape::auto_connection _watch_stroke;
 };
-
-/**
-void knot_clicked_handler(SPKnot *knot, guint state, gpointer data);
-void knot_moved_handler(SPKnot *knot, Geom::Point const *p, guint state, gpointer data);
-void knot_ungrabbed_handler(SPKnot *knot, unsigned int state, KnotHolder *kh);
-**/
 
 #endif // SEEN_SP_KNOTHOLDER_H
 

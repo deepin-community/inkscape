@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 #
 # Copyright (C) 2007 John Beard john.j.beard@gmail.com
@@ -172,8 +172,8 @@ class GridCartesian(inkex.GenerateExtension):
                         if (j <= self.options.x_half_freq) or (
                             k % 2 == 0
                         ):  # only draw half the subsubdivs past the half-freq point
-                            if (ssd % 2 > 0) and (
-                                j > self.options.y_half_freq
+                            if (
+                                (ssd % 2 > 0) and (j > self.options.y_half_freq)
                             ):  # half frequency won't work with odd numbers of subsubdivs,
                                 ssd2 = ssd + 1  # make even
                             else:
@@ -247,8 +247,8 @@ class GridCartesian(inkex.GenerateExtension):
                         if (j <= self.options.y_half_freq) or (
                             k % 2 == 0
                         ):  # only draw half the subsubdivs past the half-freq point
-                            if (ssd % 2 > 0) and (
-                                j > self.options.y_half_freq
+                            if (
+                                (ssd % 2 > 0) and (j > self.options.y_half_freq)
                             ):  # half frequency won't work with odd numbers of subsubdivs,
                                 ssd2 = ssd + 1
                             else:

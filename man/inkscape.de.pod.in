@@ -34,7 +34,7 @@ Optionen:
         --user-data-directory
 
     -p, --pipe
-        --pdf-page=SEITE
+    -n, --pages=SEITE[,SEITE]
         --pdf-poppler
         --convert-dpi-method=METHODE
         --no-convert-text-baseline-spacing
@@ -53,10 +53,13 @@ Optionen:
     -h, --export-height=HÖHE
         --export-margin=WERT
 
+        --export-page=all|n[,a-b]
     -i, --export-id=OBJEKT-ID[;OBJEKT-ID]*
     -j, --export-id-only
     -l, --export-plain-svg
         --export-png-color-mode=FARBMODUS
+        --export_png_compression=LEVEL
+        --export_png_antialias=LEVEL
         --export-png-use-dithering=WAHRHEITSWERT
         --export-ps-level=LEVEL
         --export-pdf-version=VERSION
@@ -78,8 +81,10 @@ Optionen:
         --select=OBJEKT-ID[,OBJEKT-ID]*
         --actions=AKTION(:ARG)[;AKTION(:ARG)]*
         --action-list
+        --actions-file=DATEINAME
 
     -g, --with-gui
+    -q, --active-window
         --display=DISPLAY
         --app-id-tag=TAG
         --batch-process
@@ -179,9 +184,12 @@ L<INKSCAPE_PROFILE_DIR> überschrieben werden.
 
 Eingabedatei von der Standardeingabe (stdin) lesen.
 
-=item B<--pdf-page>=I<SEITE>
+=item B<--pages>=I<SEITE>
 
-Gibt die aus dem PDF zu importierende Seite an. Nummerierung startet bei 1.
+Importiert die angegebene, Komma getrennte Liste von Seiten aus einem PDF
+oder einem mehrseitigen SVG-Dokument.
+
+Ersetzt I<--pdf-page> aus früheren Inkscape-Versionen.
 
 =item B<--pdf-poppler>
 
@@ -314,6 +322,17 @@ Fügt einen Rand zum Exportbereich hinzu. Die Randgröße wird in Einheiten der
 Seitengröße (für SVG) oder in Millimetern (für PS/PDF) angegeben. Die Option
 hat für andere Exportformate derzeit keine Funktion.
 
+=item B<-i> I<ID>, B<--export-page>=I<all|n[,a-b]*>
+
+Exportiert nur die gewählten Seiten. Wenn mehr als eine Seite angegeben
+wurde, ist das exportierte Dokument mehrseitig, falls dessen Dateiformat
+dieses unterstützt.
+
+Der Wert kann entweder als eine Komma getrennte Liste von Seitennummern oder
+als ein Bereich in der Form von 2 Seitennummern mit einem Bindestrich
+dazwischen angegeben werden. Das Schlüsselwort 'all' bewirkt, dass alle
+Seiten exportiert werden.
+
 =item B<-i> I<ID>, B<--export-id>=I<OBJEKT-ID[;OBJEKT-ID]*>
 
 Beim Export nach PNG, PS, EPS, PDF und normalem SVG: ID(s) des Objekts/der
@@ -328,12 +347,11 @@ Dateien nach dem Schema [dateiname]_[ID].[export_type] benannt.
 
 =item B<-j>, B<--export-id-only>
 
-Beim Export nach PNG und normalem SVG wird nur das Objekt exportiert, dessen
-id in L<--export-id> angegeben ist. Alle anderen Objekte werden versteckt
-und sind im exportierten Bild nicht zu sehen, selbst wenn sie über dem
-exportierten Objekt liegen. Ohne die Angabe von L<--export-id> wird diese
-Option ignoriert. Beim PDF-Export ist dies bereits die Standardeinstellung
-und bewirkt daher nichts.
+Beim Export als PNG, PS, EPS, PDF und normales SVG wird nur das Objekt
+exportiert, dessen id in L<--export-id> angegeben ist. Alle anderen Objekte
+werden versteckt und sind im exportierten Bild nicht zu sehen, selbst wenn
+sie über dem exportierten Objekt liegen. Ohne die Angabe von L<--export-id>
+wird diese Option ignoriert.
 
 =item B<-l>, B<--export-plain-svg>
 
@@ -345,6 +363,16 @@ anzugeben wird die Option L<--export-filename> benutzt.
 
 Bestimmt den Farbmodus (Bittiefe und Farbtyp) für exportierte Rastergrafiken
 (Gray_1/Gray_2/Gray_4/Gray_8/Gray_16/RGB_8/RGB_16/GrayAlpha_8/GrayAlpha_16/RGBA_8/RGBA_16)
+
+=item B<--export_png_compression>=I<LEVEL>
+
+Bestimmt das Kompressionslevel für den Export zu PNG (0 bis 9), Standardwert
+6.
+
+=item B<--export_png_antialias>=I<LEVEL>
+
+Bestimmt die Intensität der Kantenglättung für den Export zu PNG (0 bis 3),
+Standardwert 2.
 
 =item B<--export-png-use-dithering>=I<false|true>
 
@@ -509,10 +537,22 @@ werden. Dies ermöglicht mehrfache Exporte aus einer einzelnen Datei.
 
 Zeigt alle zur Verfügung stehenden Aktionen an.
 
+=item B<--actions-file>=I<DATEINAME>
+
+Führt alle Aktionen aus, die in der angegebenen Datei aufgeführt sind. Die
+Datei muss gemäß der Syntax von L<--actions> formatiert sein. Das Argument
+L<--actions> wird ignoriert, wenn es gleichzeitig mit dieser Option
+verwendet wird.
+
 =item B<-g>, B<--with-gui>
 
 Versucht, die grafische Oberfläche zu verwenden (unter Unix wird der
 X-Server benutzt, selbst wenn $DISPLAY nicht gesetzt ist).
+
+=item B<-q>, B<--active-window>
+
+Der Befehl wird im zuletzt fokussierten Inkscape-Dokument ausgeführt,
+anstatt einen neuen Inkscape-Prozess zu starten.
 
 =item B<--export-ps-level>=I<LEVEL>
 
@@ -520,7 +560,7 @@ Bestimmt, welches X-Display für das Inkscape-Fenster verwendet werden soll
 
 =item B<--app-id-tag>=I<TAG>
 
-Erzeugt eine Inkscape-Instanz mit der Anwendungs-ID
+Erzeugt eine eindeutige Inkscape-Instanz mit der Anwendungs-ID
 'org.inkscape.Inkscape.TAG'. Dies kann genutzt werden, um Inkscape-Instanzen
 mit unterschiedlichen Versionen oder unterschiedlichen Einstellungsdateien
 gleichzeitig laufen zu lassen.
@@ -546,6 +586,9 @@ aufeinanderfolgende Reihe von Aktionen (oder Verben) als Eingabe. Diese
 werden zeilenweise verarbeitet, also typischerweise wen die Eingabetaste
 gedrückt wird. Es ist möglich (aber nicht erforderlich) alle Aktionen in
 eine einzelne Zeile zusammenzufassen.
+
+Diese Option kann mit dem Parameter L<--active-window> kombiniert werden, um
+die Shell-Befehle in einem bereits geöffneten Inkscape-Dokument auszuführen.
 
 Folgendes Beispiel öffnet eine Datei und exportiert sie in zwei
 unterschiedliche Formate, öffnet anschließend eine andere Datei und
@@ -701,21 +744,6 @@ Setzt einen benutzerdefinierten Pfad zum Übersetzungskatalog.
 Für mehr Details, siehe
 L<http://wiki.inkscape.org/wiki/index.php/Environment_variables>
 
-=head1 DESIGN
-
-Für andere Icons als die in der standardmäßig verwendeten Datei
-B<$PREFIX>/share/inkscape/icons/icons.svg wird das Verzeichnis
-B<$HOME>/.config/inkscape/icons/ benutzt. Icons werden zunächst nach
-Dateiname gesucht (z.B. I<fill_none.svg>), oder, wenn sie so nicht gefunden
-werden, dann in I<icons.svg>. Wenn das Icon dort auch nicht gefunden werden
-kann, wird der Standard für das System verwendet.
-
-Die benötigten Icons werden aus SVG-Dateien geladen, indem nach der SVG-id
-mit dem Namen des Icons gesucht wird (Zum Beispiel wird das Icon "fill_none"
-aus einer Datei geladen, indem alles innerhalb der Begrenzung des
-SVG-Elementes mit "fill_none" als Icon verwendet wird, entweder aus
-I<fill_none.svg> oder I<icons.svg>).
-
 =head1 WEITERE INFORMATIONEN
 
 Die offizielle Anlaufstelle für Informationen rund um B<Inkscape> ist
@@ -850,7 +878,7 @@ ${INKSCAPE_AUTHORS}
 
 =head1 URHEBERRECHT UND LIZENZ
 
-B<Copyright (C)> 1999-2022 liegt bei den Autoren.
+B<Copyright (C)> 1999-2023 liegt bei den Autoren.
 
 B<Inkscape> ist freie Software. Sie dürfen es zu den Bedingungen der GPL in
 Version 2 oder höher weiterverbreiten und / oder verändern.

@@ -83,6 +83,7 @@ static SPStyleProp const props[] = {
     {SPAttr::BORDERCOLOR, "bordercolor"},
     {SPAttr::BORDEROPACITY, "borderopacity"},
     {SPAttr::PAGECOLOR, "pagecolor"},
+    {SPAttr::PAGELABELSTYLE, "labelstyle"},
     {SPAttr::FIT_MARGIN_TOP, "fit-margin-top"},
     {SPAttr::FIT_MARGIN_LEFT, "fit-margin-left"},
     {SPAttr::FIT_MARGIN_RIGHT, "fit-margin-right"},
@@ -138,6 +139,28 @@ static SPStyleProp const props[] = {
     {SPAttr::POSITION, "position"},
     {SPAttr::INKSCAPE_COLOR, "inkscape:color"},
     {SPAttr::INKSCAPE_LOCKED, "inkscape:locked"},
+    /* SPPage */
+    {SPAttr::PAGE_MARGIN, "margin"},
+    {SPAttr::PAGE_BLEED, "bleed"},
+    {SPAttr::PAGE_SIZE_NAME, "page-size"},
+    /* SPGrid */
+    {SPAttr::ORIGINX, "originx"},
+    {SPAttr::ORIGINY, "originy"},
+    {SPAttr::SPACINGX, "spacingx"},
+    {SPAttr::SPACINGY, "spacingy"},
+    {SPAttr::ANGLE_X, "gridanglex"},
+    {SPAttr::ANGLE_Z, "gridanglez"},
+    {SPAttr::GAP_X, "gapx"},
+    {SPAttr::GAP_Y, "gapy"},
+    {SPAttr::MARGIN_X, "marginx"},
+    {SPAttr::MARGIN_Y, "marginy"},
+    {SPAttr::VISIBLE, "visible"},
+    {SPAttr::ENABLED, "enabled"},
+    {SPAttr::EMPOPACITY, "empopacity"},
+    {SPAttr::EMPCOLOR, "empcolor"},
+    {SPAttr::MAJOR_LINE_INTERVAL, "empspacing"},
+    {SPAttr::DOTTED, "dotted"},
+    {SPAttr::SNAP_TO_VISIBLE_ONLY, "snapvisiblegridlinesonly"},
     /* SPImage */
     {SPAttr::X, "x"},
     {SPAttr::Y, "y"},
@@ -302,6 +325,7 @@ static SPStyleProp const props[] = {
     {SPAttr::GRADIENTTRANSFORM, "gradientTransform"},
     {SPAttr::SPREADMETHOD, "spreadMethod"},
     {SPAttr::INKSCAPE_SWATCH, "inkscape:swatch"},
+    {SPAttr::INKSCAPE_PINNED, "inkscape:pinned"},
     /* SPRadialGradient */
     {SPAttr::FX, "fx"},
     {SPAttr::FY, "fy"},
@@ -547,7 +571,7 @@ static SPStyleProp const props[] = {
     {SPAttr::COLOR_INTERPOLATION, "color-interpolation"},
     {SPAttr::COLOR_INTERPOLATION_FILTERS, "color-interpolation-filters"},
     {SPAttr::COLOR_PROFILE, "color-profile"},
-    {SPAttr::COLOR_RENDERING, "color-rendering"},
+    {SPAttr::COLOR_RENDERING, "color-rendering"}, // Obsolete
     {SPAttr::IMAGE_RENDERING, "image-rendering"},
     {SPAttr::SHAPE_RENDERING, "shape-rendering"},
     {SPAttr::TEXT_RENDERING, "text-rendering"},
@@ -568,7 +592,9 @@ static SPStyleProp const props[] = {
     {SPAttr::INKSCAPE_DESK_COLOR, "inkscape:deskcolor"},
     {SPAttr::INKSCAPE_DESK_OPACITY, "inkscape:deskopacity"},
     {SPAttr::INKSCAPE_DESK_CHECKERBOARD, "inkscape:pagecheckerboard"}, // old attr
-
+    // rendering mode
+    {SPAttr::INKSCAPE_CLIP_TO_PAGE_RENDERING, "inkscape:clip-to-page"},
+    {SPAttr::INKSCAPE_ANTIALIAS_RENDERING, "inkscape:antialias-rendering"},
 };
 
 #define n_attrs (sizeof(props) / sizeof(props[0]))
@@ -595,6 +621,9 @@ class AttributeLookupImpl {
 
             m_map[props[i].name] = props[i].code;
         }
+
+        // SVG 2.0 alias for xlink:href
+        m_map["href"] = SPAttr::XLINK_HREF;
     }
 };
 

@@ -23,11 +23,13 @@
 #include "ui/tools/measure-tool.h"
 #include "ui/tools/mesh-tool.h"
 #include "ui/tools/node-tool.h"
+#include "ui/tools/object-picker-tool.h"
 #include "ui/tools/pages-tool.h"
 #include "ui/tools/pencil-tool.h"
 #include "ui/tools/rect-tool.h"
 #include "ui/tools/marker-tool.h"
 #include "ui/tools/select-tool.h"
+#include "ui/tools/booleans-tool.h"
 #include "ui/tools/spiral-tool.h"
 #include "ui/tools/spray-tool.h"
 #include "ui/tools/star-tool.h"
@@ -67,6 +69,8 @@ ToolBase *ToolFactory::createObject(SPDesktop *desktop, std::string const &id)
         tool = new MeshTool(desktop);
     else if (id == "/tools/nodes")
         tool = new NodeTool(desktop);
+    else if (id == "/tools/booleans")
+        tool = new InteractiveBooleansTool(desktop);
     else if (id == "/tools/pages")
         tool = new PagesTool(desktop);
     else if (id == "/tools/freehand/pencil")
@@ -89,8 +93,13 @@ ToolBase *ToolFactory::createObject(SPDesktop *desktop, std::string const &id)
         tool = new TweakTool(desktop);
     else if (id == "/tools/zoom")
         tool = new ZoomTool(desktop);
-    else
+    else if (id == "/tools/picker")
+        tool = new ObjectPickerTool(desktop);
+    else {
         fprintf(stderr, "WARNING: unknown tool: %s", id.c_str());
+        // Backup tool prevents crashes in signals that expect a tool to exist.
+        tool = new SelectTool(desktop);
+    }
 
     return tool;
 }

@@ -14,51 +14,71 @@
 #ifndef SP_EXPORT_SINGLE_H
 #define SP_EXPORT_SINGLE_H
 
+#include <map>
+#include <memory>
+#include <vector>
+#include <glibmm/refptr.h>
+#include <gtkmm/box.h>
+#include <gtkmm/entry.h>
+
+#include "helper/auto-connection.h"
+#include "ui/dialog/export-batch.h"
 #include "ui/widget/scrollprotected.h"
+
+namespace Gtk {
+class Builder;
+class Button;
+class CheckButton;
+class FlowBox;
+class Grid;
+class Label;
+class ProgressBar;
+class RadioButton;
+class ScrolledWindow;
+class SpinButton;
+} // namespace Gtk
 
 class InkscapeApplication;
 class SPDesktop;
 class SPDocument;
 class SPObject;
+class SPPage;
 
 namespace Inkscape {
-    class Selection;
-    class Preferences;
 
-namespace Util {
-    class Unit;
-}
+class Selection;
+class Preferences;
+
 namespace UI {
-    namespace Widget {
-        class UnitMenu;
-    }
+
+namespace Widget {
+class UnitMenu;
+class ColorPicker;
+} // namespace Widget
+
 namespace Dialog {
-    class ExportPreview;
-    class ExtensionList;
-    class ExportProgressDialog;
+
+class PreviewDrawing;
+class ExportPreview;
+class ExtensionList;
 
 class SingleExport : public Gtk::Box
 {
 public:
-    SingleExport(){};
-    SingleExport(BaseObjectType *cobject, const Glib::RefPtr<Gtk::Builder> &refGlade)
-        : Gtk::Box(cobject){};
-    ~SingleExport() override{};
+    SingleExport(BaseObjectType *cobject, const Glib::RefPtr<Gtk::Builder> &refGlade);
+    ~SingleExport() override;
 
-private:
-    InkscapeApplication *_app = nullptr;
-    SPDesktop *_desktop = nullptr;
-    SPDocument *_document = nullptr;
-
-private:
-    bool setupDone = false; // To prevent setup() call add connections again.
-
-public:
     void setApp(InkscapeApplication *app) { _app = app; }
     void setDocument(SPDocument *document);
     void setDesktop(SPDesktop *desktop);
     void selectionChanged(Inkscape::Selection *selection);
     void selectionModified(Inkscape::Selection *selection, guint flags);
+    void refresh()
+    {
+        refreshArea();
+        refreshPage();
+        loadExportHints();
+    };
 
 private:
     enum sb_type
@@ -82,31 +102,42 @@ private:
         SELECTION_CUSTOM,
     };
 
-private:
+    InkscapeApplication *_app = nullptr;
+    SPDesktop *_desktop = nullptr;
+    SPDocument *_document = nullptr;
+    std::shared_ptr<PreviewDrawing> _preview_drawing;
+
+    bool setupDone = false; // To prevent setup() call add connections again.
+
     typedef Inkscape::UI::Widget::ScrollProtected<Gtk::SpinButton> SpinButton;
 
     std::map<sb_type, SpinButton *> spin_buttons;
     std::map<sb_type, Gtk::Label *> spin_labels;
     std::map<selection_mode, Gtk::RadioButton *> selection_buttons;
 
-    Gtk::Box *si_units_row = nullptr;
     Gtk::CheckButton *show_export_area = nullptr;
-    Inkscape::UI::Widget::UnitMenu *units = nullptr;
-    Gtk::Label *si_name_label = nullptr;
 
-    Gtk::CheckButton *si_hide_all = nullptr;
-    Gtk::CheckButton *si_show_preview = nullptr;
-    Gtk::CheckButton *si_default_opts = nullptr;
+    BatchItems current_items;
 
-    ExportPreview *preview = nullptr;
+    // In order of intialization
+    Gtk::FlowBox &pages_list;
+    Gtk::ScrolledWindow &pages_list_box;
+    Gtk::Grid &size_box;
+    Inkscape::UI::Widget::UnitMenu &units;
+    Gtk::Box &si_units_row;
+    Gtk::CheckButton &si_hide_all;
+    Gtk::CheckButton &si_show_preview;
 
-    ExtensionList *si_extension_cb = nullptr;
-    Gtk::Entry *si_filename_entry = nullptr;
-    Gtk::Button *si_export = nullptr;
-    Gtk::Box *adv_box = nullptr;
-    Gtk::ProgressBar *_prog = nullptr;
-    Gtk::Button *page_prev = nullptr;
-    Gtk::Button *page_next = nullptr;
+    ExportPreview &preview;
+    Gtk::Box &preview_box;
+
+    ExtensionList &si_extension_cb;
+
+    Gtk::Entry &si_filename_entry;
+    Gtk::Button &si_export;
+    Gtk::ProgressBar &progress_bar;
+    Gtk::Widget &progress_box;
+    Gtk::Button &cancel_button;
 
     bool filename_modified = false;
     Glib::ustring original_name;
@@ -116,12 +147,7 @@ private:
     std::map<selection_mode, Glib::ustring> selection_names;
     selection_mode current_key = (selection_mode)0;
 
-public:
-    // initialise variables from builder
-    void initialise(const Glib::RefPtr<Gtk::Builder> &builder);
     void setup();
-
-private:
     void setupUnits();
     void setupExtensionList();
     void setupSpinButtons();
@@ -142,19 +168,11 @@ private:
     void onFilenameModified();
     void onExtensionChanged();
     void onExport();
+    void onCancel();
     void onBrowse(Gtk::EntryIconPosition pos, const GdkEventButton *ev);
     void on_inkscape_selection_modified(Inkscape::Selection *selection, guint flags);
     void on_inkscape_selection_changed(Inkscape::Selection *selection);
 
-public:
-    void refresh()
-    {
-        refreshArea();
-        refreshPage();
-        loadExportHints();
-    };
-
-private:
     void refreshArea();
     void refreshPage();
     void loadExportHints();
@@ -165,45 +183,47 @@ private:
     void setArea(double x0, double y0, double x1, double y1);
     void blockSpinConns(bool status);
 
-private:
     void setExporting(bool exporting, Glib::ustring const &text = "");
-    ExportProgressDialog *create_progress_dialog(Glib::ustring progress_text);
     /**
      * Callback to be used in for loop to update the progress bar.
      *
      * @param value number between 0 and 1 indicating the fraction of progress (0.17 = 17 % progress)
-     * @param dlg void pointer to the Gtk::Dialog progress dialog
      */
-    static unsigned int onProgressCallback(float value, void *dlg);
+    static unsigned int onProgressCallback(float value, void *data);
 
     /**
-     * Callback for pressing the cancel button.
+     * Page functions
      */
-    void onProgressCancel();
+    void onPagesChanged();
+    void onPagesModified(SPPage *page);
+    void onPagesSelected(SPPage *page);
+    void setPagesMode(bool multi);
+    void selectPage(SPPage *page);
+    std::vector<SPPage const *> getSelectedPages() const;
 
-    /**
-     * Callback invoked on closing the progress dialog.
-     */
-    bool onProgressDelete(GdkEventAny *event);
-
-private:
-    ExportProgressDialog *prog_dlg = nullptr;
     bool interrupted;
 
-private:
     // Gtk Signals
-    std::vector<sigc::connection> spinButtonConns;
-    sigc::connection filenameConn;
-    sigc::connection extensionConn;
-    sigc::connection exportConn;
-    sigc::connection browseConn;
+    std::vector<auto_connection> spinButtonConns;
+    auto_connection filenameConn;
+    auto_connection extensionConn;
+    auto_connection exportConn;
+    auto_connection cancelConn;
+    auto_connection browseConn;
+    auto_connection _pages_list_changed;
     // Document Signals
-    sigc::connection _page_selected_connection;
+    auto_connection _page_selected_connection;
+    auto_connection _page_modified_connection;
+    auto_connection _page_changed_connection;
+
+    std::unique_ptr<Inkscape::UI::Widget::ColorPicker> _bgnd_color_picker;
 };
+
 } // namespace Dialog
 } // namespace UI
 } // namespace Inkscape
-#endif
+
+#endif // SP_EXPORT_SINGLE_H
 
 /*
   Local Variables:

@@ -17,26 +17,30 @@
 # include "config.h"  // only include where actually required!
 #endif
 
-#ifdef HAVE_POPPLER
-# include "internal/pdfinput/pdf-input.h"
-#endif
-
-#include "path-prefix.h"
-
-#include "inkscape.h"
-
+#include <algorithm>
+#include <iterator>
+#include <utility>
 #include <glibmm/fileutils.h>
 #include <glibmm/i18n.h>
 #include <glibmm/ustring.h>
 
-#include "system.h"
 #include "db.h"
+#include "internal/emf-inout.h"
+#include "internal/emf-print.h"
 #include "internal/svgz.h"
-# include "internal/emf-inout.h"
-# include "internal/emf-print.h"
-# include "internal/wmf-inout.h"
-# include "internal/wmf-print.h"
+#include "internal/template-from-file.h"
+#include "internal/template-other.h"
+#include "internal/template-paper.h"
+#include "internal/template-screen.h"
+#include "internal/template-social.h"
+#include "internal/template-video.h"
+#include "internal/wmf-inout.h"
+#include "internal/wmf-print.h"
+#include "system.h"
 
+#ifdef HAVE_POPPLER
+#include "internal/pdfinput/pdf-input.h"
+#endif
 #include <cairo.h>
 #ifdef CAIRO_HAS_PDF_SURFACE
 # include "internal/cairo-renderer-pdf-out.h"
@@ -63,7 +67,6 @@
 #include "internal/cdr-input.h"
 #endif
 #include "preferences.h"
-#include "io/sys.h"
 #include "io/resource.h"
 
 #ifdef WITH_MAGICK
@@ -140,7 +143,8 @@ update_pref(Glib::ustring const &pref_path,
 }
 
 // A list of user extensions loaded, used for refreshing
-static std::vector<Glib::ustring> user_extensions;
+static std::vector<std::string> user_extensions;
+static std::vector<std::string> shared_extensions;
 
 /**
  * Invokes the init routines for internal modules.
@@ -154,6 +158,13 @@ init()
     /* TODO: Change to Internal */
     Internal::Svg::init();
     Internal::Svgz::init();
+
+    Internal::TemplateFromFile::init();
+    Internal::TemplatePaper::init();
+    Internal::TemplateScreen::init();
+    Internal::TemplateVideo::init();
+    Internal::TemplateSocial::init();
+    Internal::TemplateOther::init();
 
 #ifdef CAIRO_HAS_PDF_SURFACE
     Internal::CairoRendererPdfOutput::init();
@@ -234,6 +245,7 @@ init()
 
     // User extensions first so they can over-ride
     load_user_extensions();
+    load_shared_extensions();
 
     for(auto &filename: get_filenames(SYSTEM, EXTENSIONS, {SP_MODULE_EXTENSION})) {
         build_from_file(filename.c_str());
@@ -257,21 +269,39 @@ init()
         );
 }
 
+// C++23: Just use std::ranges::contains().
+template <typename Range, typename Value>
+[[nodiscard]] static bool contains(Range &&range, Value const &value)
+{
+    using std::begin, std::end;
+    auto const first = begin(range), last = end(range);
+    return std::find(first, last, value) != last;
+}
+
 void
 load_user_extensions()
 {
     // There's no need to ask for SYSTEM extensions, just ask for user extensions.
-    for(auto &filename: get_filenames(USER, EXTENSIONS, {SP_MODULE_EXTENSION})) {
-        bool exist = false;
-        for(auto &filename2: user_extensions) {
-            if (filename == filename2) {
-                exist = true;
-                break;
-            }
-        }
+    for (auto &&filename: get_filenames(USER, EXTENSIONS, {SP_MODULE_EXTENSION})) {
+        bool const exist = contains(  user_extensions, filename) ||
+                           contains(shared_extensions, filename);
         if (!exist) {
             build_from_file(filename.c_str());
-            user_extensions.push_back(filename);
+            user_extensions.push_back(std::move(filename));
+        }
+    }
+}
+
+void
+load_shared_extensions()
+{
+    // There's no need to ask for SYSTEM extensions, just ask for user extensions.
+    for (auto &&filename: get_filenames(SHARED, EXTENSIONS, {SP_MODULE_EXTENSION})) {
+        bool const exist = contains(shared_extensions, filename) ||
+                           contains(  user_extensions, filename);
+        if (!exist) {
+            build_from_file(filename.c_str());
+            shared_extensions.push_back(std::move(filename));
         }
     }
 }
@@ -280,6 +310,9 @@ load_user_extensions()
  * Refresh user extensions
  *
  * Remember to call check_extensions() once completed.
+ * 
+ * No need to add shared extensions here (extension manager update user ones)
+ *
  */
 void
 refresh_user_extensions()

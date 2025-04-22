@@ -14,19 +14,24 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include <cstring>
-#include <string>
-#include <glib.h>
-#include "live_effects/effect.h"
-
-#include "svg/svg.h"
-#include "attributes.h"
-#include "display/curve.h"
-#include "xml/repr.h"
-#include "document.h"
-
 #include "sp-star.h"
+
+#include <cstring>
+
+#include <glib.h>
 #include <glibmm/i18n.h>
+
+#include "attributes.h"
+#include "snap-candidate.h"       // for SnapCandidatePoint
+#include "snap-enums.h"           // for SnapTargetType, SnapSourceType
+#include "snap-preferences.h"     // for SnapPreferences
+
+#include "display/curve.h"
+#include "svg/svg.h"
+#include "xml/document.h"         // for Document
+#include "xml/node.h"             // for Node
+
+class SPDocument;
 
 SPStar::SPStar() : SPShape() ,
 	sides(5),
@@ -236,7 +241,7 @@ gchar* SPStar::description() const {
     // while there will never be less than 2 or 3 vertices, we still need to
     // make calls to ngettext because the pluralization may be different
     // for various numbers >=3.  The singular form is used as the index.
-    return g_strdup_printf (ngettext(_("with %d vertex"), _("with %d vertices"),
+    return g_strdup_printf (ngettext("with %d vertex", "with %d vertices",
                 this->sides), this->sides);
 }
 
@@ -246,7 +251,7 @@ Returns a unit-length vector at 90 degrees to the direction from o to n
 static Geom::Point
 rot90_rel (Geom::Point o, Geom::Point n)
 {
-    return ((1/Geom::L2(n - o)) * Geom::Point ((n - o)[Geom::Y],  (o - n)[Geom::X]));
+    return (n-o).ccw().normalized();
 }
 
 /**
@@ -357,7 +362,7 @@ void SPStar::set_shape() {
         return;
     }
 
-    auto c = std::make_unique<SPCurve>();
+    SPCurve c;
 
     bool not_rounded = (fabs (this->rounded) < 1e-4);
 
@@ -365,13 +370,13 @@ void SPStar::set_shape() {
     // other places that call that function (e.g. the knotholder) need the exact point
 
     // draw 1st segment
-    c->moveto(sp_star_get_xy (this, SP_STAR_POINT_KNOT1, 0, true));
+    c.moveto(sp_star_get_xy (this, SP_STAR_POINT_KNOT1, 0, true));
 
     if (this->flatsided == false) {
         if (not_rounded) {
-            c->lineto(sp_star_get_xy (this, SP_STAR_POINT_KNOT2, 0, true));
+            c.lineto(sp_star_get_xy (this, SP_STAR_POINT_KNOT2, 0, true));
         } else {
-            c->curveto(sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT1, 0, NEXT),
+            c.curveto(sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT1, 0, NEXT),
                 sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT2, 0, PREV),
                 sp_star_get_xy (this, SP_STAR_POINT_KNOT2, 0, true));
         }
@@ -380,14 +385,14 @@ void SPStar::set_shape() {
     // draw all middle segments
     for (gint i = 1; i < sides; i++) {
         if (not_rounded) {
-            c->lineto(sp_star_get_xy (this, SP_STAR_POINT_KNOT1, i, true));
+            c.lineto(sp_star_get_xy (this, SP_STAR_POINT_KNOT1, i, true));
         } else {
             if (this->flatsided == false) {
-                c->curveto(sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT2, i - 1, NEXT),
+                c.curveto(sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT2, i - 1, NEXT),
                         sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT1, i, PREV),
                         sp_star_get_xy (this, SP_STAR_POINT_KNOT1, i, true));
             } else {
-                c->curveto(sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT1, i - 1, NEXT),
+                c.curveto(sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT1, i - 1, NEXT),
                         sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT1, i, PREV),
                         sp_star_get_xy (this, SP_STAR_POINT_KNOT1, i, true));
             }
@@ -395,9 +400,9 @@ void SPStar::set_shape() {
 
         if (this->flatsided == false) {
             if (not_rounded) {
-                       c->lineto(sp_star_get_xy (this, SP_STAR_POINT_KNOT2, i, true));
+                       c.lineto(sp_star_get_xy (this, SP_STAR_POINT_KNOT2, i, true));
             } else {
-                c->curveto(sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT1, i, NEXT),
+                c.curveto(sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT1, i, NEXT),
                     sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT2, i, PREV),
                     sp_star_get_xy (this, SP_STAR_POINT_KNOT2, i, true));
             }
@@ -407,31 +412,26 @@ void SPStar::set_shape() {
     // draw last segment
 	if (!not_rounded) {
 		if (this->flatsided == false) {
-			c->curveto(sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT2, sides - 1, NEXT),
+            c.curveto(sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT2, sides - 1, NEXT),
 				sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT1, 0, PREV),
 				sp_star_get_xy (this, SP_STAR_POINT_KNOT1, 0, true));
 		} else {
-			c->curveto(sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT1, sides - 1, NEXT),
+            c.curveto(sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT1, sides - 1, NEXT),
 				sp_star_get_curvepoint (this, SP_STAR_POINT_KNOT1, 0, PREV),
 				sp_star_get_xy (this, SP_STAR_POINT_KNOT1, 0, true));
 		}
 	}
 
-    c->closepath();
+    c.closepath();
 
-    if (prepareShapeForLPE(c.get())) {
-        return;
-    }
+    prepareShapeForLPE(&c);
 
-    // This happends on undo, fix bug:#1791784
-    setCurveInsync(std::move(c));
 }
 
 void
 sp_star_position_set (SPStar *star, gint sides, Geom::Point center, gdouble r1, gdouble r2, gdouble arg1, gdouble arg2, bool isflat, double rounded, double randomized)
 {
     g_return_if_fail (star != nullptr);
-    g_return_if_fail (SP_IS_STAR (star));
 
     star->flatsided = isflat;
     star->center = center;

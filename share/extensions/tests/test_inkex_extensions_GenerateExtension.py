@@ -2,6 +2,7 @@
 """
 Test the inkex.GenerateExtension class.
 """
+
 import inkex
 from inkex.tester import TestCase
 

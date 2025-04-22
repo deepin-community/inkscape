@@ -26,11 +26,12 @@ This would be done deeper in coverage (as a plugin) but that functionality isn't
 import os
 import re
 import sys
+from typing import Tuple
 from pylint import lint
 from pylint.reporters.text import TextReporter
 
 DIR = os.path.dirname(__file__)
-REX = re.compile(r"<tr\ class=\"file\"\>.+?\">([^<]+\.py).+?\<\/tr\>")
+REX = re.compile(r"<tr\ class=\"region\"\>.+?\">([^<]+\.py).+?\<\/tr\>")
 
 ARGS = ["--rcfile=" + os.path.join(DIR, "..", ".pylintrc")]
 stdout = sys.stdout
@@ -51,7 +52,7 @@ class WritableObject(object):
         return self.content
 
 
-def run_pylint(fname):
+def run_pylint(fname) -> Tuple[int, float]:
     "run pylint on the given file"
     pylint_output = WritableObject()
     # Pipe lint errors to devnull
@@ -61,13 +62,16 @@ def run_pylint(fname):
     except Exception:  # pylint: disable=broad-except
         return None
     sys.stderr = temp
+    num_statements = 0
+    score = -11.0
     for output in pylint_output.read():
+        statements = re.findall(r"^(\d+) statements analysed.$", output)
+        for st in statements:
+            num_statements = int(st)
         rates = re.findall(r"rated at (\-?[\d\.]+)", output)
         for rate in rates:
-            return float(rate)
-        if " rated " in output:
-            print(f"FAIL: {output}")
-    return None
+            score = float(rate)
+    return num_statements, score
 
 
 def add_lint(fname):
@@ -80,10 +84,12 @@ def add_lint(fname):
 
     # Keep a tab on how much we've inserted into the html
     adjust = 0
-    scores = []
+    total_score = 0
+    total_statements = 0
     for match in REX.finditer(html):
-        score = add_lint_one(match.groups()[0])
-        scores.append(score)
+        statements, score = run_pylint(match.groups()[0])
+        total_score += statements * score
+        total_statements += statements
         (start, end) = match.span()
         start += adjust
         end += adjust
@@ -92,19 +98,12 @@ def add_lint(fname):
         html = html[:start] + new_content + html[end:]
         adjust += len(new_content) - len(old_content)
 
-    total = sum(scores) / len(scores)
+    total = total_score / total_statements
     html = html.replace("coverage</th>", "coverage</th><th>pylint</th>")
     html = html.replace("</tr></tfoot>", f"<td>{total:.2f}</td></tr></tfoot>")
 
     with open(fname, "w") as fhl:
         fhl.write(html)
-
-
-def add_lint_one(py_file):
-    score = run_pylint(py_file)
-    if score is None:
-        score = -11.0
-    return score
 
 
 if __name__ == "__main__":
@@ -114,5 +113,5 @@ if __name__ == "__main__":
                 add_lint(filename)
     else:
         for my_py_file in sys.argv[1:]:
-            score = add_lint_one(my_py_file)
+            score = run_pylint(my_py_file)[0]
             print(f"{score},{my_py_file}")

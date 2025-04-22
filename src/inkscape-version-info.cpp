@@ -11,6 +11,7 @@
  */
 
 
+#include <iostream>
 #include <ostream>
 #include <string>
 
@@ -43,6 +44,34 @@ std::string inkscape_version() {
 }
 
 /**
+ * Return Inkscape repository revision string
+ *
+ * @return code revision string
+ */
+std::string inkscape_revision()
+{
+    return std::string("revision_" + std::string(Inkscape::revision_string));
+}
+
+/**
+ * Wrapper around g_spawn_sync which captures STDOUT and strips trailing whitespace.
+ *
+ * If an error occurs, report it to STDERR and return an empty string.
+ */
+[[maybe_unused]] static std::string _run(char const *command)
+{
+    std::string out;
+    try {
+        Glib::spawn_command_line_sync(command, &out);
+    } catch (Glib::Error const &) {
+        std::cerr << "Failed to execute " << command << std::endl;
+    }
+    auto pos = out.find_last_not_of(" \n\r\t");
+    out.resize(pos == std::string::npos ? 0 : pos + 1);
+    return out;
+}
+
+/**
  * Return OS version string
  *
  * Returns the OS version string including OS name.
@@ -55,7 +84,12 @@ std::string inkscape_version() {
 std::string os_version() {
     std::string os_version_string = "(unknown)";
 
-#if GLIB_CHECK_VERSION(2,64,0)
+#ifdef __APPLE__
+    os_version_string = _run("sw_vers -productName") + " " +     //
+                        _run("sw_vers -productVersion") + " (" + //
+                        _run("sw_vers -buildVersion") + ") " +   //
+                        _run("uname -m");
+#elif GLIB_CHECK_VERSION(2, 64, 0)
     char *os_name = g_get_os_info(G_OS_INFO_KEY_NAME);
     char *os_pretty_name = g_get_os_info(G_OS_INFO_KEY_PRETTY_NAME);
     if (os_pretty_name) {
@@ -85,15 +119,21 @@ std::string debug_info() {
 
     ss << inkscape_version() << std::endl;
     ss << std::endl;
-    ss << "    GLib version:     " << glib_major_version   << "." << glib_minor_version   << "." << glib_micro_version   << std::endl;
-    ss << "    GTK version:      " << gtk_major_version    << "." << gtk_minor_version    << "." << gtk_micro_version    << std::endl;
-    ss << "    glibmm version:   " << GLIBMM_MAJOR_VERSION << "." << GLIBMM_MINOR_VERSION << "." << GLIBMM_MICRO_VERSION << std::endl;
-    ss << "    gtkmm version:    " << GTKMM_MAJOR_VERSION  << "." << GTKMM_MINOR_VERSION  << "." << GTKMM_MICRO_VERSION  << std::endl;
+
+    ss << "                      Compile  (Run)" << std::endl;
+    ss << "    GLib version:     " << GLIB_MAJOR_VERSION      << "." << GLIB_MINOR_VERSION      << "." << GLIB_MICRO_VERSION      << std::endl;
+    ss << "    GTK version:      " << GTK_MAJOR_VERSION       << "." << GTK_MINOR_VERSION       << "." << GTK_MICRO_VERSION
+       << " ("                     << gtk_get_major_version() << "." << gtk_get_minor_version() << "." << gtk_get_micro_version() << ")" << std::endl;
+    ss << "    glibmm version:   " << GLIBMM_MAJOR_VERSION    << "." << GLIBMM_MINOR_VERSION    << "." << GLIBMM_MICRO_VERSION    << std::endl;
+    ss << "    gtkmm version:    " << GTKMM_MAJOR_VERSION     << "." << GTKMM_MINOR_VERSION     << "." << GTKMM_MICRO_VERSION     << std::endl;
     ss << "    libxml2 version:  " << LIBXML_DOTTED_VERSION << std::endl;
     ss << "    libxslt version:  " << LIBXSLT_DOTTED_VERSION << std::endl;
-    ss << "    Cairo version:    " << cairo_version_string() << std::endl;
-    ss << "    Pango version:    " << pango_version_string() << std::endl;
-    ss << "    HarfBuzz version: " << hb_version_string() << std::endl;
+    ss << "    Cairo version:    " << CAIRO_VERSION_MAJOR     << "." << CAIRO_VERSION_MINOR     << "." << CAIRO_VERSION_MICRO
+       << " (" << cairo_version_string() << ")" << std::endl;
+    ss << "    Pango version:    " << PANGO_VERSION_MAJOR     << "." << PANGO_VERSION_MINOR     << "." << PANGO_VERSION_MICRO
+       << " (" << pango_version_string() << ")" << std::endl;
+    ss << "    HarfBuzz version: " << HB_VERSION_MAJOR        << "." << HB_VERSION_MINOR        << "." << HB_VERSION_MICRO
+       << " (" << hb_version_string() << ")" << std::endl;
 #ifdef HAVE_POPPLER
     ss << "    Poppler version:  " << POPPLER_VERSION << std::endl;
 #endif
@@ -103,6 +143,16 @@ std::string debug_info() {
     return ss.str();
 }
 
+/**
+ * Return build year as 4 digit
+ *
+ * @return Inkscape build year
+ */
+unsigned short int inkscape_build_year()
+{
+    return Inkscape::build_year;
+}
+
 } // namespace Inkscape
 
 
@@ -110,7 +160,7 @@ std::string debug_info() {
   Local Variables:
   mode:c++
   c-file-style:"stroustrup"
-  c-file-offsets:((innamespace .0)(inline-open . 0)(case-label . +))
+  c-file-offsets:((innamespace . 0)(inline-open . 0)(case-label . +))
   indent-tabs-mode:nil
   fill-column:99
   End:

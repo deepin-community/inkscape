@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-
 /** @file
  * @brief A base class for all dialogs.
  *
@@ -13,28 +12,37 @@
 
 #include "dialog-base.h"
 
+#include <utility>
 #include <glibmm/i18n.h>
 #include <glibmm/main.h>
 #include <glibmm/refptr.h>
+#include <gtkmm/adjustment.h>
 #include <gtkmm/cssprovider.h>
 #include <gtkmm/notebook.h>
 #include <gtkmm/scrolledwindow.h>
-#include <iostream>
+#include <gtkmm/viewport.h>
+#include <gtkmm/window.h>
 
 #include "inkscape.h"
 #include "desktop.h"
+#include "selection.h"
+#include "ui/controller.h"
+#include "ui/dialog-events.h"
 #include "ui/dialog/dialog-data.h"
 #include "ui/dialog/dialog-notebook.h"
-#include "ui/dialog-events.h"
-// get_latin_keyval
-#include "ui/tools/tool-base.h"
-#include "widgets/spw-utilities.h"
-#include "ui/widget/canvas.h"
+#include "ui/tools/tool-base.h" // get_latin_keyval
 #include "ui/util.h"
+#include "ui/widget/canvas.h"
+#include "widgets/spw-utilities.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
+namespace Inkscape::UI::Dialog {
+
+static void remove_first(Glib::ustring &name, Glib::ustring const &pattern)
+{
+    if (auto const pos = name.find(pattern); pos != name.npos) {
+        name.erase(pos, pattern.size());
+    }
+}
 
 /**
  * DialogBase constructor.
@@ -42,42 +50,29 @@ namespace Dialog {
  * @param prefs_path characteristic path to load/save dialog position.
  * @param dialog_type is the "type" string for the dialog.
  */
-DialogBase::DialogBase(gchar const *prefs_path, Glib::ustring dialog_type)
+DialogBase::DialogBase(char const * const prefs_path, Glib::ustring dialog_type)
     : Gtk::Box(Gtk::ORIENTATION_VERTICAL)
-    , desktop(nullptr)
-    , document(nullptr)
-    , selection(nullptr)
     , _name("DialogBase")
     , _prefs_path(prefs_path)
-    , _dialog_type(dialog_type)
+    , _dialog_type{std::move(dialog_type)}
     , _app(InkscapeApplication::instance())
 {
     auto const &dialog_data = get_dialog_data();
-
     // Derive a pretty display name for the dialog.
-    auto it = dialog_data.find(dialog_type);
-    if (it != dialog_data.end()) {
-
+    if (auto const it = dialog_data.find(_dialog_type); it != dialog_data.end()) {
         _name = it->second.label; // Already translated
-
         // remove ellipsis and mnemonics
-        int pos = _name.find("...", 0);
-        if (pos >= 0 && pos < _name.length() - 2) {
-            _name.erase(pos, 3);
-        }
-        pos = _name.find("…", 0);
-        if (pos >= 0 && pos < _name.length()) {
-            _name.erase(pos, 1);
-        }
-        pos = _name.find("_", 0);
-        if (pos >= 0 && pos < _name.length()) {
-            _name.erase(pos, 1);
-        }
+        remove_first(_name, "...");
+        remove_first(_name, "…"  );
+        remove_first(_name, "_"  );
     }
 
     set_name(_dialog_type); // Essential for dialog functionality
     property_margin().set_value(1); // Essential for dialog UI
-    ensure_size();
+
+    // TODO: GTK4: See if we can add the Controller on self — since all widgets receive all events.
+    Controller::add_key_on_window<&DialogBase::on_window_key_pressed>(*this, *this,
+                                                                      Gtk::PHASE_CAPTURE);
 }
 
 DialogBase::~DialogBase() {
@@ -92,6 +87,7 @@ DialogBase::~DialogBase() {
 void DialogBase::ensure_size() {
     if (desktop) {
         resize_widget_children(desktop->getToplevel());
+        resize_widget_children(this);
     }
 }
 
@@ -103,18 +99,28 @@ void DialogBase::on_map() {
     // the time of dialog creation. Formerly used _app.get_active_view() did not at application start-up.
     setDesktop(Inkscape::Application::instance().active_desktop());
     parent_type::on_map();
+    ensure_size();
 }
 
-bool DialogBase::on_key_press_event(GdkEventKey* key_event) {
-    switch (Inkscape::UI::Tools::get_latin_keyval(key_event)) {
+gboolean DialogBase::on_window_key_pressed(GtkEventControllerKey const * const controller,
+                                       unsigned const keyval, unsigned const keycode,
+                                       GdkModifierType const state)
+{
+    // We listen for key on window, so must ensure WE have focus, to not break Esc from canvas etc.
+    auto const &window = dynamic_cast<Gtk::Window const &>(*get_toplevel());
+    auto const focus = window.get_focus();
+    if (!focus || !is_descendant_of(*focus, *this)) {
+        return false;
+    }
+
+    switch (Inkscape::UI::Tools::get_latin_keyval(controller, keyval, keycode, state)) {
         case GDK_KEY_Escape:
             defocus_dialog();
             return true;
     }
 
-    return parent_type::on_key_press_event(key_event);
+    return false;
 }
-
 
 /**
  * Highlight notebook where dialog already exists.
@@ -128,7 +134,7 @@ void DialogBase::blink()
         notebook->get_style_context()->add_class("blink");
 
         // Add timer to turn off blink.
-        sigc::slot<bool> slot = sigc::mem_fun(*this, &DialogBase::blink_off);
+        sigc::slot<bool ()> slot = sigc::mem_fun(*this, &DialogBase::blink_off);
         sigc::connection connection = Glib::signal_timeout().connect(slot, 1000); // msec
     }
 }
@@ -141,10 +147,9 @@ void DialogBase::focus_dialog() {
     // widget that had focus, if any
     if (auto child = get_focus_child()) {
         child->grab_focus();
-    }
-    else {
+    } else {
         // find first focusable widget
-        if (auto child = sp_find_focusable_widget(this)) {
+        if (auto const child = find_focusable_widget(*this)) {
             child->grab_focus();
         }
     }
@@ -188,18 +193,27 @@ void DialogBase::setDesktop(SPDesktop *new_desktop)
     if (new_desktop) {
         desktop = new_desktop;
 
-        if (desktop->selection) {
-            selection = desktop->selection;
-            _select_changed = selection->connectChanged(sigc::mem_fun(*this, &DialogBase::selectionChanged_impl));
-            _select_modified = selection->connectModified(sigc::mem_fun(*this, &DialogBase::selectionModified_impl));
+        if (auto sel = desktop->getSelection()) {
+            selection = sel;
+            _select_changed = selection->connectChanged([this](Inkscape::Selection *selection) {
+                _changed_while_hidden = !_showing;
+                if (_showing)
+                    selectionChanged(selection);
+            });
+            _select_modified = selection->connectModified([this](Inkscape::Selection *selection, guint flags) {
+                _modified_while_hidden = !_showing;
+                _modified_flags = flags;
+                if (_showing)
+                    selectionModified(selection, flags);
+            });
         }
 
         _doc_replaced = desktop->connectDocumentReplaced(sigc::hide<0>(sigc::mem_fun(*this, &DialogBase::setDocument)));
         _desktop_destroyed = desktop->connectDestroy(sigc::mem_fun(*this, &DialogBase::desktopDestroyed));
         this->setDocument(desktop->getDocument());
 
-        if (desktop->selection) {
-            this->selectionChanged(selection);
+        if (desktop->getSelection()) {
+            selectionChanged(selection);
         }
         set_sensitive(true);
     }
@@ -207,59 +221,36 @@ void DialogBase::setDesktop(SPDesktop *new_desktop)
     desktopReplaced();
 }
 
-//
-void DialogBase::fix_inner_scroll(Gtk::Widget *scrollwindow)
+void DialogBase::fix_inner_scroll(Gtk::Widget * const widget)
 {
-    auto scrollwin = dynamic_cast<Gtk::ScrolledWindow *>(scrollwindow);
-    auto viewport = dynamic_cast<Gtk::ScrolledWindow *>(scrollwin->get_child());
+    auto const scrollwin = dynamic_cast<Gtk::ScrolledWindow *>(widget);
+    if (!scrollwin) return;
+
     Gtk::Widget *child = nullptr;
-    if (viewport) { //some widgets has viewportother not
+    if (auto const viewport = dynamic_cast<Gtk::Viewport *>(scrollwin->get_child())) {
         child = viewport->get_child();
     } else {
         child = scrollwin->get_child();
     }
-    if (child && scrollwin) {
-        Glib::RefPtr<Gtk::Adjustment> adjustment = scrollwin->get_vadjustment();
-        child->signal_scroll_event().connect([=](GdkEventScroll* event) { 
-            auto container = dynamic_cast<Gtk::Container *>(this);
-            if (container) {
-                std::vector<Gtk::Widget*> widgets = container->get_children();
-                if (widgets.size()) {
-                    auto parentscroll = dynamic_cast<Gtk::ScrolledWindow *>(widgets[0]);
-                    if (parentscroll) {
-                        if (event->delta_y > 0 && (adjustment->get_value() + adjustment->get_page_size()) == adjustment->get_upper()) {
-                            parentscroll->event((GdkEvent*)event);
-                            return true;
-                        } else if (event->delta_y < 0 && adjustment->get_value() == adjustment->get_lower()) {
-                            parentscroll->event((GdkEvent*)event);
-                            return true;
-                        }
-                    }
-                }
-            }
-            return false;
-        });
-    }
-}
+    if (!child) return;
 
-/**
- * implementation method that call to main function only when tab is showing
- */
-void 
-DialogBase::selectionChanged_impl(Inkscape::Selection *selection) {
-    if (_showing) {
-        selectionChanged(selection);
-    }
-}
+    child->signal_scroll_event().connect([this, adj = scrollwin->get_vadjustment()]
+                                         (GdkEventScroll * const event)
+    {
+        auto const children = UI::get_children(*this);
+        if (children.empty()) return false;
 
-/**
- * implementation method that call to main function only when tab is showing
- */
-void 
-DialogBase::selectionModified_impl(Inkscape::Selection *selection, guint flags) {
-    if (_showing) {
-        selectionModified(selection, flags);
-    }
+        auto const parentscroll = dynamic_cast<Gtk::ScrolledWindow *>(children.at(0));
+        if (!parentscroll) return false;
+
+        if (event->delta_y > 0 && adj->get_value() + adj->get_page_size() == adj->get_upper() ||
+            event->delta_y < 0 && adj->get_value() == adj->get_lower())
+        {
+            parentscroll->event(reinterpret_cast<GdkEvent *>(event));
+            return true;
+        }
+        return false;
+    });
 }
 
 /**
@@ -268,7 +259,14 @@ DialogBase::selectionModified_impl(Inkscape::Selection *selection, guint flags) 
 void 
 DialogBase::setShowing(bool showing) {
     _showing = showing;
-    selectionChanged(getSelection());
+    if (showing && _changed_while_hidden) {
+        selectionChanged(getSelection());
+        _changed_while_hidden = false;
+    }
+    if (showing && _modified_while_hidden) {
+        selectionModified(getSelection(), _modified_flags);
+        _modified_while_hidden = false;
+    }
 }
 
 /**
@@ -289,6 +287,7 @@ void DialogBase::desktopDestroyed(SPDesktop* old_desktop)
 {
     if (old_desktop == desktop && desktop) {
         unsetDesktop();
+        desktopReplaced();
         set_sensitive(false);
     }
 }
@@ -304,9 +303,7 @@ void DialogBase::setDocument(SPDocument *new_document)
     }
 }
 
-} // namespace Dialog
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Dialog
 
 /*
   Local Variables:

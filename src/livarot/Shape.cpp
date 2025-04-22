@@ -24,11 +24,7 @@
  */
 
 Shape::Shape()
-  : nbQRas(0),
-    firstQRas(-1),
-    lastQRas(-1),
-    qrsData(nullptr),
-    nbInc(0),
+  : nbInc(0),
     maxInc(0),
     iData(nullptr),
     sTree(nullptr),
@@ -41,9 +37,7 @@ Shape::Shape()
     _has_sweep_src_data(false),
     _has_sweep_dest_data(false),
     _has_raster_data(false),
-    _has_quick_raster_data(false),
     _has_back_data(false),
-    _has_voronoi_data(false),
     _bbox_up_to_date(false)
 {
   leftX = topY = rightX = bottomY = 0;
@@ -56,7 +50,6 @@ Shape::~Shape ()
 {
   maxPt = 0;
   maxAr = 0;
-  free(qrsData);
 }
 
 void Shape::Affiche()
@@ -131,30 +124,7 @@ Shape::MakeRasterData (bool nVal)
         }
     }
 }
-void
-Shape::MakeQuickRasterData (bool nVal)
-{
-  if (nVal)
-    {
-      if (_has_quick_raster_data == false)
-        {
-          _has_quick_raster_data = true;
-          quick_raster_data* new_qrsData = static_cast<quick_raster_data*>(realloc(qrsData, maxAr * sizeof(quick_raster_data)));
-          if (!new_qrsData) {
-              g_error("Not enough memory available for reallocating Shape::qrsData");
-          } else {
-              qrsData = new_qrsData;
-          }
-        }
-    }
-  else
-    {
-      if (_has_quick_raster_data)
-        {
-          _has_quick_raster_data = false;
-        }
-    }
-}
+
 void
 Shape::MakeSweepSrcData (bool nVal)
 {
@@ -215,28 +185,6 @@ Shape::MakeBackData (bool nVal)
         }
     }
 }
-void
-Shape::MakeVoronoiData (bool nVal)
-{
-  if (nVal)
-    {
-      if (_has_voronoi_data == false)
-        {
-          _has_voronoi_data = true;
-          vorpData.resize(maxPt);
-          voreData.resize(maxAr);
-        }
-    }
-  else
-    {
-      if (_has_voronoi_data)
-        {
-          _has_voronoi_data = false;
-          vorpData.clear();
-          voreData.clear();
-        }
-    }
-}
 
 
 /**
@@ -256,7 +204,6 @@ Shape::Copy (Shape * who)
   MakeSweepSrcData (false);
   MakeSweepDestData (false);
   MakeRasterData (false);
-  MakeQuickRasterData (false);
   MakeBackData (false);
 
   delete sTree;
@@ -274,9 +221,7 @@ Shape::Copy (Shape * who)
   _has_sweep_src_data = false;
   _has_sweep_dest_data = false;
   _has_raster_data = false;
-  _has_quick_raster_data = false;
   _has_back_data = false;
-  _has_voronoi_data = false;
   _bbox_up_to_date = false;
 
   _pts = who->_pts;
@@ -298,8 +243,6 @@ Shape::Reset (int pointCount, int edgeCount)
       maxPt = pointCount;
       if (_has_points_data)
         pData.resize(maxPt);
-      if (_has_voronoi_data)
-        vorpData.resize(maxPt);
     }
   if (edgeCount > maxAr)
     {
@@ -312,8 +255,6 @@ Shape::Reset (int pointCount, int edgeCount)
         swsData.resize(maxAr);
       if (_has_back_data)
         ebData.resize(maxAr);
-      if (_has_voronoi_data)
-        voreData.resize(maxAr);
     }
   _need_points_sorting = false;
   _need_edges_sorting = false;
@@ -329,8 +270,6 @@ Shape::AddPoint (const Geom::Point x)
       maxPt = 2 * numberOfPoints() + 1;
       if (_has_points_data)
         pData.resize(maxPt);
-      if (_has_voronoi_data)
-        vorpData.resize(maxPt);
     }
 
   dg_point p;
@@ -344,17 +283,11 @@ Shape::AddPoint (const Geom::Point x)
   if (_has_points_data)
     {
       pData[n].pending = 0;
-      pData[n].edgeOnLeft = -1;
       pData[n].nextLinkedPoint = -1;
       pData[n].askForWindingS = nullptr;
       pData[n].askForWindingB = -1;
       pData[n].rx[0] = Round(p.x[0]);
       pData[n].rx[1] = Round(p.x[1]);
-    }
-  if (_has_voronoi_data)
-    {
-      vorpData[n].value = 0.0;
-      vorpData[n].winding = -2;
     }
   _need_points_sorting = true;
 
@@ -519,12 +452,6 @@ Shape::SwapPoints (int a, int b)
       pData[b] = swad;
       //              pData[pData[a].oldInd].newInd=a;
       //              pData[pData[b].oldInd].newInd=b;
-    }
-  if (_has_voronoi_data)
-    {
-      voronoi_point swav = vorpData[a];
-      vorpData[a] = vorpData[b];
-      vorpData[b] = swav;
     }
 }
 void
@@ -1142,8 +1069,6 @@ Shape::AddEdge (int st, int en)
         swrData.resize(maxAr);
       if (_has_back_data)
         ebData.resize(maxAr);
-      if (_has_voronoi_data)
-        voreData.resize(maxAr);
     }
 
   dg_arete a;
@@ -1175,11 +1100,6 @@ Shape::AddEdge (int st, int en)
       ebData[n].pathID = -1;
       ebData[n].pieceID = -1;
       ebData[n].tSt = ebData[n].tEn = 0;
-    }
-  if (_has_voronoi_data)
-    {
-      voreData[n].leF = -1;
-      voreData[n].riF = -1;
     }
   _need_edges_sorting = true;
   return n;
@@ -1217,8 +1137,6 @@ Shape::AddEdge (int st, int en, int leF, int riF)
         swrData.resize(maxAr);
       if (_has_back_data)
         ebData.resize(maxAr);
-      if (_has_voronoi_data)
-        voreData.resize(maxAr);
     }
 
   dg_arete a;
@@ -1250,11 +1168,6 @@ Shape::AddEdge (int st, int en, int leF, int riF)
       ebData[n].pathID = -1;
       ebData[n].pieceID = -1;
       ebData[n].tSt = ebData[n].tEn = 0;
-    }
-  if (_has_voronoi_data)
-    {
-      voreData[n].leF = leF;
-      voreData[n].riF = riF;
     }
   _need_edges_sorting = true;
   return n;
@@ -1466,12 +1379,6 @@ Shape::SwapEdges (int a, int b)
       ebData[a] = ebData[b];
       ebData[b] = swae;
     }
-  if (_has_voronoi_data)
-    {
-      voronoi_edge swav = voreData[a];
-      voreData[a] = voreData[b];
-      voreData[b] = swav;
-    }
 }
 void
 Shape::SwapEdges (int a, int b, int c)
@@ -1490,15 +1397,20 @@ Shape::SortEdges ()
   }
   _need_edges_sorting = false;
 
+  // allocate the edge_list array as it's needed by SortEdgesList
   edge_list *list = (edge_list *) g_malloc(numberOfEdges() * sizeof (edge_list));
+  // for each point
   for (int p = 0; p < numberOfPoints(); p++)
     {
       int const d = getPoint(p).totalDegree();
+      // if degree is greater than 1
       if (d > 1)
         {
           int cb;
+          // get the first edge
           cb = getPoint(p).incidentEdge[FIRST];
           int nb = 0;
+          // for all the edges connected at this point, form the list
           while (cb >= 0)
             {
               int n = nb++;
@@ -1515,7 +1427,9 @@ Shape::SortEdges ()
                 }
               cb = NextAt (p, cb);
             }
+          // sort the list
           SortEdgesList (list, 0, nb - 1);
+          // recreate the linked list with the sorted edges
           _pts[p].incidentEdge[FIRST] = list[0].no;
           _pts[p].incidentEdge[LAST] = list[nb - 1].no;
           for (int i = 0; i < nb; i++)
@@ -1567,6 +1481,8 @@ Shape::SortEdges ()
 int
 Shape::CmpToVert (Geom::Point ax, Geom::Point bx,bool as,bool bs)
 {
+  // these tst variables store the sign of the x and y coordinates of each of the vectors
+  // + is +1, - is -1 and 0 is 0
   int tstAX = 0;
   int tstAY = 0;
   int tstBX = 0;
@@ -1588,6 +1504,9 @@ Shape::CmpToVert (Geom::Point ax, Geom::Point bx,bool as,bool bs)
   if (bx[1] < 0)
     tstBY = -1;
 
+  // calcuate quadrant for both a and b edge vectors
+  // for quadrant numbers, see the figure in header file documentation of this
+  // function
   int quadA = 0, quadB = 0;
   if (tstAX < 0)
     {
@@ -1679,22 +1598,40 @@ Shape::CmpToVert (Geom::Point ax, Geom::Point bx,bool as,bool bs)
           quadB = 3;
         }
     }
+
+
+  // B should have a smaller quadrant number, if the opposite is true, we need to swap
   if (quadA < quadB)
     return 1;
   if (quadA > quadB)
     return -1;
 
+  // if the quadrants are same, we need to do more maths to figure out their relative orientation
+
   Geom::Point av, bv;
   av = ax;
   bv = bx;
+
+  // take cross from av to bv
+  // cross product in SVG coordinates is different visually. With your right hand, let index finger point to vector
+  // av, and let middle finger point to vector bv, if thumb is out of page, cross is negative, if into the page, it's
+  // positive
   double si = cross(av, bv);
+  // if the angle that bv makes from -y axis is smaller than the one av makes, our arrangement is good and needs no swap
+  // this ideal orientation will give a negative cross product (thumb out of page)
   int tstSi = 0;
-  if (si > 0.000001) tstSi = 1;
-  if (si < -0.000001) tstSi = -1;
+  if (si > 0.000001) tstSi = 1; // if positive cross product, swap needed
+  if (si < -0.000001) tstSi = -1; // if negative cross product, we are good
+
+  // if the edges are kinda on top of each other
+  // I have no idea if there is a reason behind these two rules below
   if ( tstSi == 0 ) {
-    if ( as && !bs ) return -1;
-    if ( !as && bs ) return 1;
+    if ( as && !bs ) return -1; // if b ends at point and a starts, we are good
+    if ( !as && bs ) return 1; // if b starts at point and a ends, swap
   }
+
+  // if we stil can't decide whether a swap is needed or not (both edges on top of each other and both starting
+  // from the point) or ending at the point, we return 0
   return tstSi;
 }
 
@@ -2021,12 +1958,6 @@ Shape::Inverse (int b)
       ebData[b].tSt = ebData[b].tEn;
       ebData[b].tEn = swat;
     }
-  if (_has_voronoi_data)
-    {
-      int swai = voreData[b].leF;
-      voreData[b].leF = voreData[b].riF;
-      voreData[b].riF = swai;
-    }
 }
 void
 Shape::CalcBBox (bool strict_degree)
@@ -2128,7 +2059,6 @@ void Shape::initialisePointData()
   
     for (int i = 0; i < N; i++) {
         pData[i].pending = 0;
-        pData[i].edgeOnLeft = -1;
         pData[i].nextLinkedPoint = -1;
         pData[i].rx[0] = Round(getPoint(i).x[0]);
         pData[i].rx[1] = Round(getPoint(i).x[1]);

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding=utf-8
 #
 # Copyright (C) 2007 John Bintz, jcoswell@cosellproductions.org
@@ -20,6 +20,7 @@
 """
 Greate perfect bound cover
 """
+
 import textwrap
 
 import inkex

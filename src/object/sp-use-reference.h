@@ -41,7 +41,7 @@ protected:
 
 class SPUsePath : public SPUseReference {
 public:
-    std::unique_ptr<SPCurve> originalPath{nullptr};
+    std::optional<SPCurve> originalPath;
     bool sourceDirty{false};
 
     SPObject            *owner;
@@ -59,7 +59,7 @@ public:
 
     void link(char* to);
     void unlink();
-    void start_listening(SPObject* to);
+    void start_listening(SPItem* to);
     void quit_listening();
     void refresh_source();
 

@@ -7,13 +7,24 @@
  * Copyright (C) 2018 Authors
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
-#include <cairo.h>
 
 #include "sp-linear-gradient.h"
 
-#include "attributes.h"
-#include "style.h"
-#include "xml/repr.h"
+#include "attributes.h"                   // for SPAttr
+#include <2geom/rect.h>                   // for Rect
+#include "style-internal.h"               // for SPIFontSize
+#include "style.h"                        // for SPStyle
+
+#include "display/drawing-paintserver.h"  // for DrawingLinearGradient, Draw...
+#include "object/sp-gradient-units.h"     // for SPGradientUnits
+#include "object/sp-gradient-vector.h"    // for SPGradientVector
+#include "object/sp-gradient.h"           // for SPGradient
+#include "object/sp-item.h"               // for SPItemCtx
+#include "object/sp-object.h"             // for SP_OBJECT_MODIFIED_FLAG
+#include "xml/document.h"                 // for Document
+#include "xml/node.h"                     // for Node
+
+class SPDocument;
 
 /*
  * Linear Gradient
@@ -118,16 +129,11 @@ Inkscape::XML::Node* SPLinearGradient::write(Inkscape::XML::Document *xml_doc, I
     return repr;
 }
 
-cairo_pattern_t* SPLinearGradient::pattern_new(cairo_t * /*ct*/, Geom::OptRect const &bbox, double opacity) {
-    this->ensureVector();
-
-    cairo_pattern_t *cp = cairo_pattern_create_linear(
-        this->x1.computed, this->y1.computed,
-        this->x2.computed, this->y2.computed);
-
-    sp_gradient_pattern_common_setup(cp, this, bbox, opacity);
-
-    return cp;
+std::unique_ptr<Inkscape::DrawingPaintServer> SPLinearGradient::create_drawing_paintserver()
+{
+    ensureVector();
+    return std::make_unique<Inkscape::DrawingLinearGradient>(getSpread(), getUnits(), gradientTransform,
+                                                             x1.computed, y1.computed, x2.computed, y2.computed, vector.stops);
 }
 
 /*

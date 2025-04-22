@@ -303,19 +303,25 @@ class hpglEncoder(object):
             oldPosX = 0.0
             oldPosY = 0.0
             for singlePath in path:
-                cmd = "PU"
-                for singlePathPoint in singlePath:
+                non_empty_subpath = False
+                for i, singlePathPoint in enumerate(singlePath):
                     posX, posY = singlePathPoint[1]
                     # check if point is repeating, if so, ignore
                     if int(round(posX)) != int(round(oldPosX)) or int(
                         round(posY)
                     ) != int(round(oldPosY)):
-                        self.processOffset(cmd, Vector2d(posX, posY), pen, speed, force)
-                        cmd = "PD"
+                        non_empty_subpath = True
+                        self.processOffset(
+                            "PU" if not i else "PD",
+                            Vector2d(posX, posY),
+                            pen,
+                            speed,
+                            force,
+                        )
                         oldPosX = posX
                         oldPosY = posY
                 # perform overcut
-                if self.overcut > 0.0 and not self.dryRun:
+                if self.overcut > 0.0 and not self.dryRun and non_empty_subpath:
                     # check if last and first points are the same, otherwise the path
                     # is not closed and no overcut can be performed
                     if int(round(oldPosX)) == int(round(singlePath[0][1][0])) and int(
@@ -338,11 +344,11 @@ class hpglEncoder(object):
                                         -(overcutLength - self.overcut),
                                     )
                                     self.processOffset(
-                                        cmd, newEndPoint, pen, speed, force
+                                        "PD", newEndPoint, pen, speed, force
                                     )
                                     break
                                 self.processOffset(
-                                    cmd, Vector2d(posX, posY), pen, speed, force
+                                    "PD", Vector2d(posX, posY), pen, speed, force
                                 )
                                 oldPosX = posX
                                 oldPosY = posY

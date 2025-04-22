@@ -20,21 +20,21 @@
 
 #include <2geom/rect.h>
 #include <cairomm/context.h>
-#include "display/rendermode.h"
 
 namespace Inkscape {
 
 /**
  * Class used when rendering canvas items.
  */
-struct CanvasItemBuffer {
+struct CanvasItemBuffer
+{
     Geom::IntRect rect;
     int device_scale; // For high DPI monitors.
-    bool outline_overlay_pass; // Hack for not painting page colour in outline overlay mode
     Cairo::RefPtr<Cairo::Context> cr;
+    bool outline_pass;
 };
 
-} // Namespace Inkscape
+} // namespace Inkscape
 
 #endif // SEEN_CANVAS_ITEM_BUFFER_H
 

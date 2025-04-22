@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#ifndef __SP_SPRAY_CONTEXT_H__
-#define __SP_SPRAY_CONTEXT_H__
+#ifndef INKSCAPE_UI_TOOLS_SPRAY_TOOl_H
+#define INKSCAPE_UI_TOOLS_SPRAY_TOOl_H
 
 /*
  * Spray Tool
@@ -21,34 +21,23 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
+#include <2geom/pathvector.h>
 #include <2geom/point.h>
-#include "ui/tools/tool-base.h"
+
+#include "display/control/canvas-item-ptr.h"
 #include "object/object-set.h"
+#include "ui/tools/tool-base.h"
 
-#define SP_SPRAY_CONTEXT(obj) (dynamic_cast<Inkscape::UI::Tools::SprayTool*>((Inkscape::UI::Tools::ToolBase*)obj))
-#define SP_IS_SPRAY_CONTEXT(obj) (dynamic_cast<const Inkscape::UI::Tools::SprayTool*>((const Inkscape::UI::Tools::ToolBase*)obj) != NULL)
-
-namespace Inkscape {
-  class CanvasItemBpath;
-  namespace UI {
-      namespace Dialog {
-          class Dialog;
-      }
-  }
-}
-
-
-#define SAMPLING_SIZE 8        /* fixme: ?? */
+namespace Inkscape { class CanvasItemBpath; }
 
 #define TC_MIN_PRESSURE      0.0
 #define TC_MAX_PRESSURE      1.0
 #define TC_DEFAULT_PRESSURE  0.35
 
-namespace Inkscape {
-namespace UI {
-namespace Tools {
+namespace Inkscape::UI::Tools {
 
-enum {
+enum
+{
     SPRAY_MODE_COPY,
     SPRAY_MODE_CLONE,
     SPRAY_MODE_SINGLE_PATH,
@@ -56,83 +45,86 @@ enum {
     SPRAY_OPTION,
 };
 
-class SprayTool : public ToolBase {
+class SprayTool : public ToolBase
+{
 public:
     SprayTool(SPDesktop *desktop);
     ~SprayTool() override;
 
-    //ToolBase event_context;
     /* extended input data */
-    gdouble pressure;
+    double pressure;
 
     /* attributes */
-    bool dragging;           /* mouse state: mouse is dragging */
-    bool usepressurewidth;
-    bool usepressurepopulation;
-    bool usepressurescale;
-    bool usetilt;
-    bool usetext;
+    bool usepressurewidth = false;
+    bool usepressurepopulation = false;;
+    bool usepressurescale = false;
+    bool usetilt = false;
+    bool usetext = false;
 
-    double width;
-    double ratio;
-    double tilt;
-    double rotation_variation;
-    double population;
-    double scale_variation;
-    double scale;
-    double mean;
-    double standard_deviation;
+    double width = 0.2;
+    double ratio = 0.0;
+    double tilt = 0.0;
+    double rotation_variation = 0.0;
+    double population = 0.0;
+    double scale_variation = 1.0;
+    double scale = 1.0;
+    double mean = 0.2;
+    double standard_deviation = 0.2;
 
-    gint distrib;
+    int distrib = 1;
 
-    gint mode;
+    int mode = 0;
 
-    bool is_drawing;
+    bool is_drawing = false;
 
-    bool is_dilating;
-    bool has_dilated;
+    bool is_dilating = false;
+    bool has_dilated = false;
     Geom::Point last_push;
-    Inkscape::CanvasItemBpath *dilate_area;
-    bool no_overlap;
-    bool picker;
-    bool pick_center;
-    bool pick_inverse_value;
-    bool pick_fill;
-    bool pick_stroke;
-    bool pick_no_overlap;
-    bool over_transparent;
-    bool over_no_transparent;
-    double offset;
-    int pick;
-    bool do_trace;
-    bool pick_to_size;
-    bool pick_to_presence;
-    bool pick_to_color;
-    bool pick_to_opacity;
-    bool invert_picked;
-    double gamma_picked;
-    double rand_picked;
-    sigc::connection style_set_connection;
+    CanvasItemPtr<CanvasItemBpath> dilate_area;
+    CanvasItemPtr<CanvasItemBpath> shapes_area;
+    std::vector<SPItem*> items;
+    bool no_overlap = false;
+    bool picker = false;
+    bool pick_center = false;
+    bool pick_inverse_value = false;
+    bool pick_fill = false;
+    bool pick_stroke = false;
+    bool pick_no_overlap = false;
+    bool over_transparent = true;
+    bool over_no_transparent = true;
+    double offset = 0.0;
+    int pick = 0;
+    bool do_trace = false;
+    bool pick_to_size = false;
+    bool pick_to_presence = false;
+    bool pick_to_color = false;
+    bool pick_to_opacity = false;
+    bool single_click = false;
+    double single_scale = 0;
+    double single_angle = 0;
+    double last_pressure = 0;
+    bool invert_picked = false;
+    double gamma_picked = 0.0;
+    double rand_picked = 0.0;
+    Geom::PathVector shapes;
 
-    void set(const Inkscape::Preferences::Entry& val) override;
+    Inkscape::auto_connection release_connection;
+
+    void set(Preferences::Entry const &val) override;
     virtual void setCloneTilerPrefs();
-    bool root_handler(GdkEvent* event) override;
+    bool root_handler(CanvasEvent const &event) override;
     void update_cursor(bool /*with_shift*/);
 
-    ObjectSet* objectSet() {
-        return &object_set;
-    }
-    SPItem* single_path_output = nullptr;
+    ObjectSet *objectSet() { return &object_set; }
+    SPItem *single_path_output = nullptr;
 
 private:
     ObjectSet object_set;
 };
 
-}
-}
-}
+} // namespace Inkscape::UI::Tools
 
-#endif
+#endif // INKSCAPE_UI_TOOLS_SPRAY_TOOl_H
 
 /*
   Local Variables:

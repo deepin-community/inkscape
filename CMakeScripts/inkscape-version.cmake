@@ -9,7 +9,7 @@
 # - ${INKSCAPE_SOURCE_DIR}
 # - ${INKSCAPE_BINARY_DIR}
 
-set(INKSCAPE_REVISION "b0a8486541, 2022-12-01")
+set(INKSCAPE_REVISION "e7c3feb100, 2024-10-09")
 
 if(EXISTS ${INKSCAPE_SOURCE_DIR}/.git)
     execute_process(COMMAND git rev-parse --short HEAD
@@ -28,7 +28,7 @@ if(EXISTS ${INKSCAPE_SOURCE_DIR}/.git)
         OUTPUT_VARIABLE INKSCAPE_SOURCE_MODIFIED
         OUTPUT_STRIP_TRAILING_WHITESPACE)
     if(NOT INKSCAPE_SOURCE_MODIFIED STREQUAL "")
-        set(INKSCAPE_REVISION "${INKSCAPE_REVISION}, custom")
+        set(INKSCAPE_REVISION "${INKSCAPE_REVISION}")
     endif()
 elseif(EXISTS ${INKSCAPE_SOURCE_DIR}/debian/git-build-recipe.manifest)
     # workaround for debian packaging in ppa (where we have no repo)
@@ -38,6 +38,12 @@ elseif(EXISTS ${INKSCAPE_SOURCE_DIR}/debian/git-build-recipe.manifest)
         OUTPUT_VARIABLE DEB_VERSION
         OUTPUT_STRIP_TRAILING_WHITESPACE)
     set(INKSCAPE_REVISION "${DEB_VERSION}")
+endif()
+
+if(${INKSCAPE_REVISION_DATE} MATCHES "^([0-9][0-9][0-9][0-9])-[0-9][0-9]-[0-9][0-9]$")
+    set(INKSCAPE_BUILD_YEAR ${CMAKE_MATCH_1})
+else()
+    string(TIMESTAMP INKSCAPE_BUILD_YEAR %Y UTC)
 endif()
 
 if(NOT "${INKSCAPE_BINARY_DIR}" STREQUAL "")

@@ -19,6 +19,7 @@
  *   Tavmjong Bah <tavmjong@free.fr>
  *   Abhishek Sharma
  *   Kris De Gussem <Kris.DeGussem@gmail.com>
+ *   Vaibhav Malik <vaibhavmalik2018@gmail.com>
  *
  * Copyright (C) 2004 David Turner
  * Copyright (C) 2003 MenTaLguY
@@ -28,23 +29,23 @@
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
 
-#include "object/sp-item.h"
-#include "object/sp-object.h"
-#include "toolbar.h"
-#include "text-editing.h"
-#include "style.h"
-#include <gtkmm/adjustment.h>
-#include <gtkmm/box.h>
-#include <gtkmm/popover.h>
-#include <gtkmm/separatortoolitem.h>
 #include <sigc++/connection.h>
 
-class SPDesktop;
+#include "object/sp-item.h"
+#include "object/sp-object.h"
+#include "style.h"
+#include "text-editing.h"
+#include "toolbar.h"
 
 namespace Gtk {
-class ComboBoxText;
-class ToggleToolButton;
-}
+class Builder;
+class Button;
+class ListBox;
+class RadioButton;
+class ToggleButton;
+} // namespace Gtk
+
+class SPDesktop;
 
 namespace Inkscape {
 class Selection;
@@ -58,44 +59,52 @@ class TextTool;
 namespace Widget {
 class ComboBoxEntryToolItem;
 class ComboToolItem;
-class SpinButtonToolItem;
+class SpinButton;
 class UnitTracker;
 }
 
 namespace Toolbar {
-class TextToolbar : public Toolbar {
+
+class TextToolbar final : public Toolbar
+{
+public:
+    TextToolbar(SPDesktop *desktop);
+    ~TextToolbar() override;
+
 private:
-    bool _freeze;
-    bool _text_style_from_prefs;
+    using ValueChangedMemFun = void (TextToolbar::*)();
+    using ModeChangedMemFun = void (TextToolbar::*)(int);
+
+    Glib::RefPtr<Gtk::Builder> _builder;
+
     UI::Widget::UnitTracker *_tracker;
     UI::Widget::UnitTracker *_tracker_fs;
+
+    std::vector<Gtk::RadioButton *> _alignment_buttons;
+    std::vector<Gtk::RadioButton *> _writing_buttons;
+    std::vector<Gtk::RadioButton *> _orientation_buttons;
+    std::vector<Gtk::RadioButton *> _direction_buttons;
+
+    Gtk::ListBox &_font_collections_list;
+    Gtk::Button &_reset_button;
 
     UI::Widget::ComboBoxEntryToolItem *_font_family_item;
     UI::Widget::ComboBoxEntryToolItem *_font_size_item;
     UI::Widget::ComboToolItem *_font_size_units_item;
     UI::Widget::ComboBoxEntryToolItem *_font_style_item;
     UI::Widget::ComboToolItem *_line_height_units_item;
-    UI::Widget::SpinButtonToolItem *_line_height_item;
-    Gtk::ToggleToolButton *_superscript_item;
-    Gtk::ToggleToolButton *_subscript_item;
+    UI::Widget::SpinButton &_line_height_item;
+    Gtk::ToggleButton &_superscript_btn;
+    Gtk::ToggleButton &_subscript_btn;
 
-    UI::Widget::ComboToolItem *_align_item;
-    UI::Widget::ComboToolItem *_writing_mode_item;
-    UI::Widget::ComboToolItem *_orientation_item;
-    UI::Widget::ComboToolItem *_direction_item;
+    UI::Widget::SpinButton &_word_spacing_item;
+    UI::Widget::SpinButton &_letter_spacing_item;
+    UI::Widget::SpinButton &_dx_item;
+    UI::Widget::SpinButton &_dy_item;
+    UI::Widget::SpinButton &_rotation_item;
 
-    UI::Widget::SpinButtonToolItem *_word_spacing_item;
-    UI::Widget::SpinButtonToolItem *_letter_spacing_item;
-    UI::Widget::SpinButtonToolItem *_dx_item;
-    UI::Widget::SpinButtonToolItem *_dy_item;
-    UI::Widget::SpinButtonToolItem *_rotation_item;
-
-    Glib::RefPtr<Gtk::Adjustment> _line_height_adj;
-    Glib::RefPtr<Gtk::Adjustment> _word_spacing_adj;
-    Glib::RefPtr<Gtk::Adjustment> _letter_spacing_adj;
-    Glib::RefPtr<Gtk::Adjustment> _dx_adj;
-    Glib::RefPtr<Gtk::Adjustment> _dy_adj;
-    Glib::RefPtr<Gtk::Adjustment> _rotation_adj;
+    bool _freeze;
+    bool _text_style_from_prefs;
     bool _outer;
     SPItem *_sub_active_item;
     int _lineheight_unit;
@@ -105,16 +114,25 @@ private:
     int _cusor_numbers;
     SPStyle _query_cursor;
     double selection_fontsize;
+
+    auto_connection fc_changed_selection;
+    auto_connection fc_update;
+    auto_connection font_count_changed_connection;
     sigc::connection c_selection_changed;
     sigc::connection c_selection_modified;
     sigc::connection c_selection_modified_select_tool;
     sigc::connection c_subselection_changed;
+
+    void setup_derived_spin_button(UI::Widget::SpinButton &btn, Glib::ustring const &name, double default_value,
+                                   ValueChangedMemFun const value_changed_mem_fun);
+    void configure_mode_buttons(std::vector<Gtk::RadioButton *> &buttons, Gtk::Box &box, Glib::ustring const &name,
+                                ModeChangedMemFun const mode_changed_mem_fun);
     void text_outer_set_style(SPCSSAttr *css);
     void fontfamily_value_changed();
     void fontsize_value_changed();
     void subselection_wrap_toggle(bool start);
     void fontstyle_value_changed();
-    void script_changed(Gtk::ToggleToolButton *btn);
+    void script_changed(int mode);
     void align_mode_changed(int mode);
     void writing_mode_changed(int mode);
     void orientation_changed(int mode);
@@ -133,15 +151,15 @@ private:
     void selection_modified(Inkscape::Selection *selection, guint flags);
     void selection_modified_select_tool(Inkscape::Selection *selection, guint flags);
     void subselection_changed(Inkscape::UI::Tools::TextTool* texttool);
-    void watch_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* ec);
+    void watch_ec(SPDesktop* desktop, Inkscape::UI::Tools::ToolBase* tool);
     void set_sizes(int unit);
+    void display_font_collections();
+    void on_fcm_button_pressed();
+    void on_reset_button_pressed();
     Inkscape::XML::Node *unindent_node(Inkscape::XML::Node *repr, Inkscape::XML::Node *before);
+    bool mergeDefaultStyle(SPCSSAttr *css);
 
-  protected:
-    TextToolbar(SPDesktop *desktop);
-
-public:
-    static GtkWidget * create(SPDesktop *desktop);
+    Inkscape::auto_connection _fonts_updated_signal;
 };
 }
 }

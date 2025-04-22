@@ -12,6 +12,7 @@ python3 dpiswitcher.py --switcher=1 tests/data/svg/dpiswitcher_96dpi.svg >
         tests/data/refs/dpiswitcher__--switcher__1.out
 
 """
+
 from dpiswitcher import DPISwitcher
 from inkex.tester import ComparisonMixin, TestCase
 from inkex.tester.filters import CompareNumericFuzzy

@@ -2,7 +2,8 @@
 /**
  * @file
  * Fill/stroke conversion routines for LPEs which draw a stroke
- *
+ */
+/*
  * Authors:
  *   Liam P White
  *
@@ -21,6 +22,7 @@
 #include "svg/svg-color.h"
 #include "svg/css-ostringstream.h"
 #include "style.h"
+#include "util/units.h"
 
 static SPObject *generate_linked_fill(SPShape *source)
 {
@@ -39,6 +41,9 @@ static SPObject *generate_linked_fill(SPShape *source)
     effectTarget = g_strdup_printf("#%s,0,1", source->getId());
     effectRepr->setAttribute("effect", "fill_between_many");
     effectRepr->setAttribute("method", "bsplinespiro");
+    effectRepr->setAttribute("autoreverse", "false");
+    effectRepr->setAttribute("close", "false");
+    effectRepr->setAttribute("join", "false");
     effectRepr->setAttribute("linkedpaths", effectTarget);
     defs->appendChild(effectRepr);
     Inkscape::GC::release(effectRepr);
@@ -147,8 +152,7 @@ static bool has_stroke(SPObject *source)
     return source->style->stroke.isColor() || source->style->stroke.isPaintserver();
 }
 
-namespace Inkscape {
-namespace LivePathEffect {
+namespace Inkscape::LivePathEffect {
 
 void lpe_shape_convert_stroke_and_fill(SPShape *shape)
 {
@@ -184,6 +188,7 @@ void lpe_shape_convert_stroke_and_fill(SPShape *shape)
 
 void lpe_shape_revert_stroke_and_fill(SPShape *shape, double width)
 {
+    // width is in pixels, if use in a LPE with other units convert before use
     SPObject *linked = get_linked_fill(shape);
     SPCSSAttr *css = sp_repr_css_attr_new();
 
@@ -206,17 +211,23 @@ void lpe_shape_revert_stroke_and_fill(SPShape *shape, double width)
     } else {
         sp_repr_css_set_property(css, "fill", "none");
     }
-
     Inkscape::CSSOStringStream os;
     os << fabs(width);
     sp_repr_css_set_property(css, "stroke-width", os.str().c_str());
-
+    // Reverse affine by desktop style apply.
+    {
+        Geom::Affine const local(shape->i2doc_affine());
+        double const ex(local.descrim());
+        if ( ( ex != 0. )
+                && ( ex != 1. ) ) {
+            sp_css_attr_scale(css, ex);
+        }
+    }
     sp_desktop_apply_css_recursive(shape, css, true);
     sp_repr_css_attr_unref(css);
 }
 
-}
-}
+} // namespace Inkscape::LivePathEffect
 
 /*
   Local Variables:

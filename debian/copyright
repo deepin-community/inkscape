@@ -1,9 +1,8 @@
-This package was debianized by Wolfram Quester <wolfi@mittelerde.physik.uni-konstanz.de> on
-Wed, 12 Nov 2003 10:39:40 +0100.
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Source: http://inkscape.sourceforge.net/
 
-It was downloaded from http://inkscape.sourceforge.net/
-
-Upstream Authors:
+Files: *
+Copyright:
   Josh Andler; John Bintz; Arpad Biro; Daniel Borgmann; Hans Breuer;
   Nicu Buculei; Bulia Byak; Chema Celorio; Johan Ceuppens; Zbigniew Chyla;
   Alexander Clausen; John Cliff; Kees Cook; Ben Cromwell; Robert Crosbie;
@@ -20,15 +19,15 @@ Upstream Authors:
   Shivaken; Boštjan Špetič; Aaron Spike; Kaushik Sridharan; Dariusz Stojek;
   Pat Suwalski; Adib Taraben; David Turner; Aleksandar Urosevic; Lucas Vieites;
   Michael Wybrow; Daniel Yacob; Masatake Yamato.
-
+ .
   See http://www.inkscape.org/discussion.php for Jabber/IRC discussion details,
   and http://www.inkscape.org/mailing_lists.php for Inkscape-related mailing lists.
-
-License: GNU GPL; some portions public domain.
-
+License: GPL and public-domain
+  GNU GPL; some portions public domain.
+ .
   On Debian systems, the text of the GNU GPL can be found in
   /usr/share/common-licenses/GPL.
-
+ .
   Some parts of the inkscape source code are released into the Public Domain;
   this is stated in the files and functions concerned.
   Please consult the individual source files for more information.

@@ -21,31 +21,27 @@
 #include "desktop.h"
 #include "document-undo.h"
 #include "document.h"
-#include "message-context.h"
-
 #include "include/gtkmm_version.h"
-
+#include "message-context.h"
 #include "object/sp-guide.h"
 #include "object/sp-namedview.h"
-
+#include "page-manager.h"
 #include "ui/dialog-events.h"
+#include "ui/dialog-run.h"
+#include "ui/pack.h"
 #include "ui/tools/tool-base.h"
 #include "ui/widget/spinbutton.h"
 
-#include "widgets/desktop-widget.h"
-
-namespace Inkscape {
-namespace UI {
-namespace Dialogs {
+namespace Inkscape::UI::Dialog {
 
 GuidelinePropertiesDialog::GuidelinePropertiesDialog(SPGuide *guide, SPDesktop *desktop)
 : _desktop(desktop), _guide(guide),
   _locked_toggle(_("Lo_cked")),
   _relative_toggle(_("Rela_tive change")),
-  _spin_button_x(C_("Guides", "_X:"), "", UNIT_TYPE_LINEAR, "", "", &_unit_menu),
-  _spin_button_y(C_("Guides", "_Y:"), "", UNIT_TYPE_LINEAR, "", "", &_unit_menu),
+  _spin_button_x(C_("Guides", "_X:"), Glib::ustring{}, UNIT_TYPE_LINEAR, Glib::ustring{}, &_unit_menu),
+  _spin_button_y(C_("Guides", "_Y:"), Glib::ustring{}, UNIT_TYPE_LINEAR, Glib::ustring{}, &_unit_menu),
   _label_entry(_("_Label:"), _("Optionally give this guideline a name")),
-  _spin_angle(_("_Angle:"), "", UNIT_TYPE_RADIAL),
+  _spin_angle(_("_Angle:"), {}, UNIT_TYPE_RADIAL),
   _mode(true), _oldpos(0.,0.), _oldangle(0.0)
 {
     _locked_toggle.set_use_underline();
@@ -66,7 +62,7 @@ GuidelinePropertiesDialog::~GuidelinePropertiesDialog() {
 void GuidelinePropertiesDialog::showDialog(SPGuide *guide, SPDesktop *desktop) {
     GuidelinePropertiesDialog dialog(guide, desktop);
     dialog._setup();
-    dialog.run();
+    Inkscape::UI::dialog_run(dialog);
 }
 
 void GuidelinePropertiesDialog::_modeChanged()
@@ -82,8 +78,17 @@ void GuidelinePropertiesDialog::_modeChanged()
         // absolute
         _spin_angle.setValueKeepUnit(_oldangle, DEG);
 
-        _spin_button_x.setValueKeepUnit(_oldpos[Geom::X], "px");
-        _spin_button_y.setValueKeepUnit(_oldpos[Geom::Y], "px");
+        auto pos = _oldpos;
+
+        // Adjust position by the page position
+        auto prefs = Inkscape::Preferences::get();
+        if (prefs->getBool("/options/origincorrection/page", true)) {
+            auto &pm = _guide->document->getPageManager();
+            pos *= pm.getSelectedPageAffine().inverse();
+        }
+
+        _spin_button_x.setValueKeepUnit(pos[Geom::X], "px");
+        _spin_button_y.setValueKeepUnit(pos[Geom::Y], "px");
     }
 }
 
@@ -116,8 +121,15 @@ void GuidelinePropertiesDialog::_onOKimpl()
     double const points_x = _spin_button_x.getValue("px");
     double const points_y = _spin_button_y.getValue("px");
     Geom::Point newpos(points_x, points_y);
-    if (!_mode)
+
+    // Adjust position by either the relative position, or the page offset
+    auto prefs = Inkscape::Preferences::get();
+    if (!_mode) {
         newpos += _oldpos;
+    } else if (prefs->getBool("/options/origincorrection/page", true)) {
+        auto &pm = _guide->document->getPageManager();
+        newpos *= pm.getSelectedPageAffine();
+    }
 
     _guide->moveto(newpos, true);
 
@@ -184,9 +196,9 @@ void GuidelinePropertiesDialog::_setup() {
     auto mainVBox = get_content_area();
     _layout_table.set_row_spacing(4);
     _layout_table.set_column_spacing(4);
-    _layout_table.set_border_width(4);
+    _layout_table.property_margin().set_value(4);
 
-    mainVBox->pack_start(_layout_table, false, false, 0);
+    UI::pack_start(*mainVBox, _layout_table, false, false);
 
     _label_name.set_label("foo0");
     _label_name.set_halign(Gtk::ALIGN_START);
@@ -219,8 +231,8 @@ void GuidelinePropertiesDialog::_setup() {
     /* fixme: We should allow percents here too, as percents of the canvas size */
     _unit_menu.setUnitType(UNIT_TYPE_LINEAR);
     _unit_menu.setUnit("px");
-    if (_desktop->namedview->display_units) {
-        _unit_menu.setUnit( _desktop->namedview->display_units->abbr );
+    if (_desktop->getNamedView()->display_units) {
+        _unit_menu.setUnit( _desktop->getNamedView()->display_units->abbr );
     }
     _spin_angle.setUnit(_angle_unit_status);
 
@@ -232,10 +244,19 @@ void GuidelinePropertiesDialog::_setup() {
     _spin_button_x.setIncrements(1.0, 10.0);
     _spin_button_x.setRange(-1e6, 1e6);
     _spin_button_y.setDigits(minimumexponent);
-    
     _spin_button_y.setAlignment(1.0);
     _spin_button_y.setIncrements(1.0, 10.0);
     _spin_button_y.setRange(-1e6, 1e6);
+
+    _spin_button_x.setWidthChars(12);
+    _spin_button_y.setWidthChars(12);
+    _spin_angle.setWidthChars(12);
+
+    _row_labels = Gtk::SizeGroup::create(Gtk::SIZE_GROUP_HORIZONTAL);
+    for (auto label : {_label_entry.getLabel(), _spin_button_x.getLabel(), _spin_button_y.getLabel(), _spin_angle.getLabel()}) {
+        _row_labels->add_widget(*label);
+        label->set_xalign(0);
+    }
 
     _spin_button_x.set_halign(Gtk::ALIGN_FILL);
     _spin_button_x.set_valign(Gtk::ALIGN_FILL);
@@ -281,7 +302,7 @@ void GuidelinePropertiesDialog::_setup() {
     _relative_toggle.signal_toggled().connect(sigc::mem_fun(*this, &GuidelinePropertiesDialog::_modeChanged));
     _relative_toggle.set_active(_relative_toggle_status);
 
-    bool global_guides_lock = _desktop->namedview->getLockGuides();
+    bool global_guides_lock = _desktop->getNamedView()->getLockGuides();
     if(global_guides_lock){
         _locked_toggle.set_sensitive(false);
     }
@@ -292,9 +313,9 @@ void GuidelinePropertiesDialog::_setup() {
     auto sby = dynamic_cast<UI::Widget::SpinButton *>(_spin_button_y.getWidget());
     auto sba = dynamic_cast<UI::Widget::SpinButton *>(_spin_button_y.getWidget());
 
-    if(sbx) sbx->signal_activate().connect(sigc::mem_fun(this, &GuidelinePropertiesDialog::on_sb_activate));
-    if(sby) sby->signal_activate().connect(sigc::mem_fun(this, &GuidelinePropertiesDialog::on_sb_activate));
-    if(sba) sba->signal_activate().connect(sigc::mem_fun(this, &GuidelinePropertiesDialog::on_sb_activate));
+    if(sbx) sbx->signal_activate().connect(sigc::mem_fun(*this, &GuidelinePropertiesDialog::on_sb_activate));
+    if(sby) sby->signal_activate().connect(sigc::mem_fun(*this, &GuidelinePropertiesDialog::on_sb_activate));
+    if(sba) sba->signal_activate().connect(sigc::mem_fun(*this, &GuidelinePropertiesDialog::on_sb_activate));
 
     // dialog
     set_default_response(Gtk::RESPONSE_OK);
@@ -353,9 +374,8 @@ GuidelinePropertiesDialog::on_sb_activate()
 {
     activate_default();
 }
-}
-}
-}
+
+} // namespace Inkscape::UI::Dialog
 
 /*
   Local Variables:

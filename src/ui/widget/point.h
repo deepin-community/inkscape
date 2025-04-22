@@ -11,83 +11,78 @@
  *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
+
 #ifndef INKSCAPE_UI_WIDGET_POINT_H
 #define INKSCAPE_UI_WIDGET_POINT_H
 
-#include "ui/widget/labelled.h"
 #include <2geom/point.h>
+
+#include "ui/widget/labelled.h"
 #include "ui/widget/scalar.h"
 
 namespace Gtk {
 class Adjustment;
-}
+} // namespace Gtk
 
-namespace Inkscape {
-namespace UI {
-namespace Widget {
+namespace Inkscape::UI::Widget {
 
 /**
- * A labelled text box, with spin buttons and optional icon or suffix, for
+ * A labelled text box, with spin buttons and optional icon, for
  * entering arbitrary coordinate values.
  */
 class Point : public Labelled
 {
 public:
-
-
     /**
      * Construct a Point Widget.
      *
-     * @param label     Label.
-     * @param suffix    Suffix, placed after the widget (defaults to "").
-     * @param icon      Icon filename, placed before the label (defaults to "").
+     * @param label     Label, as per the Labelled base class.
+     * @param tooltip   Tooltip, as per the Labelled base class.
+     * @param icon      Icon name, placed before the label (defaults to empty).
      * @param mnemonic  Mnemonic toggle; if true, an underscore (_) in the label
      *                  indicates the next character should be used for the
      *                  mnemonic accelerator key (defaults to false).
      */
-    Point( Glib::ustring const &label,
-           Glib::ustring const &tooltip,
-           Glib::ustring const &suffix = "",
-           Glib::ustring const &icon = "",
-           bool mnemonic = true);
+    Point(Glib::ustring const &label,
+          Glib::ustring const &tooltip,
+          Glib::ustring const &icon = {},
+          bool mnemonic = true);
 
     /**
      * Construct a Point Widget.
      *
-     * @param label     Label.
+     * @param label     Label, as per the Labelled base class.
+     * @param tooltip   Tooltip, as per the Labelled base class.
      * @param digits    Number of decimal digits to display.
-     * @param suffix    Suffix, placed after the widget (defaults to "").
-     * @param icon      Icon filename, placed before the label (defaults to "").
+     * @param icon      Icon name, placed before the label (defaults to empty).
      * @param mnemonic  Mnemonic toggle; if true, an underscore (_) in the label
      *                  indicates the next character should be used for the
      *                  mnemonic accelerator key (defaults to false).
      */
-    Point( Glib::ustring const &label,
-           Glib::ustring const &tooltip,
-           unsigned digits,
-           Glib::ustring const &suffix = "",
-           Glib::ustring const &icon = "",
-           bool mnemonic = true);
+    Point(Glib::ustring const &label,
+          Glib::ustring const &tooltip,
+          unsigned digits,
+          Glib::ustring const &icon = {},
+          bool mnemonic = true);
 
     /**
      * Construct a Point Widget.
      *
-     * @param label     Label.
+     * @param label     Label, as per the Labelled base class.
+     * @param tooltip   Tooltip, as per the Labelled base class.
      * @param adjust    Adjustment to use for the SpinButton.
      * @param digits    Number of decimal digits to display (defaults to 0).
-     * @param suffix    Suffix, placed after the widget (defaults to "").
-     * @param icon      Icon filename, placed before the label (defaults to "").
+     * @param icon      Icon name, placed before the label (defaults to empty).
      * @param mnemonic  Mnemonic toggle; if true, an underscore (_) in the label
      *                  indicates the next character should be used for the
      *                  mnemonic accelerator key (defaults to true).
      */
-    Point( Glib::ustring const &label,
-           Glib::ustring const &tooltip,
-	   Glib::RefPtr<Gtk::Adjustment> &adjust,
-           unsigned digits = 0,
-           Glib::ustring const &suffix = "",
-           Glib::ustring const &icon = "",
-           bool mnemonic = true);
+    Point(Glib::ustring const &label,
+          Glib::ustring const &tooltip,
+	  Glib::RefPtr<Gtk::Adjustment> const &adjust,
+          unsigned digits = 0,
+          Glib::ustring const &icon = {},
+          bool mnemonic = true);
 
     /**
      * Fetches the precision of the spin button.
@@ -160,9 +155,8 @@ public:
     /**
      * Signal raised when the spin button's value changes.
      */
-    Glib::SignalProxy0<void> signal_x_value_changed();
-
-    Glib::SignalProxy0<void> signal_y_value_changed();
+    Glib::SignalProxy<void> signal_x_value_changed();
+    Glib::SignalProxy<void> signal_y_value_changed();
 
     /**
      * Check 'setProgrammatically' of both scalar widgets.   False if value is changed by user by clicking the widget.
@@ -170,17 +164,17 @@ public:
      * if a callback checks it, it must reset it back to false.
      */
     bool setProgrammatically();
-
     void clearProgrammatically();
 
 protected:
     Scalar xwidget;
     Scalar ywidget;
+
+private:
+    void construct_impl();
 };
 
-} // namespace Widget
-} // namespace UI
-} // namespace Inkscape
+} // namespace Inkscape::UI::Widget
 
 #endif // INKSCAPE_UI_WIDGET_POINT_H
 

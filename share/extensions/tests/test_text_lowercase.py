@@ -1,5 +1,6 @@
 # coding=utf-8
 """Test the lowercase effect"""
+
 import string
 
 from inkex.tester import ComparisonMixin, TestCase

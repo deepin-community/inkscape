@@ -18,6 +18,7 @@
 """
 Wraps the gtk windows with something a little nicer.
 """
+
 import logging
 
 from gi.repository import Gtk

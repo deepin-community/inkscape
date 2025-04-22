@@ -38,9 +38,7 @@ SSN = {b: a for (a, b) in NSS.items()}
 class InxLookup(etree.CustomElementClassLookup):
     """Custom inx xml file lookup"""
 
-    def lookup(
-        self, node_type, document, namespace, name
-    ):  # pylint: disable=unused-argument
+    def lookup(self, node_type, document, namespace, name):  # pylint: disable=unused-argument
         if name == "param":
             return ParamElement
         return InxElement

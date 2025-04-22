@@ -13,6 +13,25 @@
 #define SEEN_POPPLER_TRANSITION_API_H
 
 #include <glib/poppler-features.h>
+#include <poppler/UTF.h>
+
+#if POPPLER_CHECK_VERSION(24, 5, 0)
+#define _POPPLER_HAS_UNICODE_BOM(value) (hasUnicodeByteOrderMark(value->toStr()))
+#define _POPPLER_HAS_UNICODE_BOMLE(value) (hasUnicodeByteOrderMarkLE(value->toStr()))
+#else
+#define _POPPLER_HAS_UNICODE_BOM(value) (value->hasUnicodeMarker())
+#define _POPPLER_HAS_UNICODE_BOMLE(value) (value->hasUnicodeMarkerLE())
+#endif
+
+#if POPPLER_CHECK_VERSION(24, 3, 0)
+#define _POPPLER_FUNCTION_TYPE_SAMPLED Function::Type::Sampled
+#define _POPPLER_FUNCTION_TYPE_EXPONENTIAL Function::Type::Exponential
+#define _POPPLER_FUNCTION_TYPE_STITCHING Function::Type::Stitching
+#else
+#define _POPPLER_FUNCTION_TYPE_SAMPLED 0
+#define _POPPLER_FUNCTION_TYPE_EXPONENTIAL 2
+#define _POPPLER_FUNCTION_TYPE_STITCHING 3
+#endif
 
 #if POPPLER_CHECK_VERSION(22, 4, 0)
 #define _POPPLER_FONTPTR_TO_GFX8(font_ptr) ((Gfx8BitFont *)font_ptr.get())
@@ -75,21 +94,14 @@ typedef bool GBool;
 #define _POPPLER_DICTADD(dict, key, obj) (dict).dictAdd(copyString(key), &obj)
 #endif
 
-#if POPPLER_CHECK_VERSION(0,58,0)
 #define POPPLER_NEW_OBJECT_API
 #define _POPPLER_FREE(obj)
 #define _POPPLER_CALL(ret, func) (ret = func())
 #define _POPPLER_CALL_ARGS(ret, func, ...) (ret = func(__VA_ARGS__))
 #define _POPPLER_CALL_ARGS_DEREF _POPPLER_CALL_ARGS
-#else
-#define _POPPLER_FREE(obj) (obj).free()
-#define _POPPLER_CALL(ret, func) (*func(&ret))
-#define _POPPLER_CALL_ARGS(ret, func, ...) (func(__VA_ARGS__, &ret))
-#define _POPPLER_CALL_ARGS_DEREF(...) (*_POPPLER_CALL_ARGS(__VA_ARGS__))
-#endif
 
-#if !POPPLER_CHECK_VERSION(0, 29, 0)
-#error "Requires poppler >= 0.29"
+#if !POPPLER_CHECK_VERSION(0, 58, 0)
+#error "Requires poppler >= 0.58"
 #endif
 
 #endif

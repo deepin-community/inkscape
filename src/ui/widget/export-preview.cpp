@@ -9,219 +9,197 @@
 
 #include "export-preview.h"
 
-#include <glibmm/i18n.h>
+#include <utility>
+#include <glibmm/convert.h>
 #include <glibmm/main.h>
-#include <glibmm/timer.h>
-#include <gtkmm.h>
+#include <gdkmm/pixbuf.h>
 
+#include "document.h"
 #include "display/cairo-utils.h"
-#include "inkscape.h"
-#include "object/sp-defs.h"
 #include "object/sp-item.h"
-#include "object/sp-namedview.h"
 #include "object/sp-root.h"
 #include "util/preview.h"
+#include "io/resource.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
+namespace Inkscape::UI::Dialog {
 
-void ExportPreview::resetPixels()
+/**
+ * A preview drawing object is responsible for constructing a drawing and showing it's contents
+ *
+ * On destruction it will gracefully invoke hide itself. You should destroy this object when
+ * you need to change the document object being used for the preview.
+ */
+PreviewDrawing::PreviewDrawing(SPDocument *doc)
+    : _document{doc}
+{
+}
+
+PreviewDrawing::~PreviewDrawing()
+{
+    destruct();
+}
+
+void PreviewDrawing::destruct()
+{
+    if (!_visionkey)
+        return;
+
+    // On exiting the document root might have gone already.
+    if (auto root = _document->getRoot()) {
+        root->invoke_hide(_visionkey);
+    }
+    _drawing.reset();
+    _visionkey = 0;
+}
+
+/**
+ * Construct the drawing, when needed
+ */
+void PreviewDrawing::construct()
+{
+    auto drawing = std::make_shared<Inkscape::Drawing>();
+    _visionkey = SPItem::display_key_new(1);
+    if (auto di = _document->getRoot()->invoke_show(*drawing, _visionkey, SP_ITEM_SHOW_DISPLAY)) {
+        drawing->setRoot(di);
+    } else {
+        drawing.reset();
+    }
+
+    if (!_shown_items.empty()) {
+        _document->getRoot()->invoke_hide_except(_visionkey, _shown_items);
+    }
+
+    _drawing = std::move(drawing);
+}
+
+/**
+  * Render the drawing into a cairo image surface.
+  */
+bool PreviewDrawing::render(ExportPreview *widget, uint32_t bg, SPItem const *item, unsigned size, Geom::OptRect const &dbox, bool only_item)
+{
+    if (!_drawing || _to_destruct) {
+        if (!_construct_idle.connected()) {
+            _construct_idle = Glib::signal_timeout().connect([=]() {
+                _to_destruct = false;
+                destruct();
+                construct();
+                return false;
+            }, 100);
+        }
+        return false;
+    }
+
+    Geom::OptRect bbox = dbox;
+    DrawingItem *di = nullptr;
+
+    if (item) {
+        bbox = item->documentVisualBounds();
+        if (only_item)
+            di = item->get_arenaitem(_visionkey);
+    } else if (!dbox)
+        bbox = _document->getRoot()->documentVisualBounds();
+
+    if (!bbox)
+        return true; // Force quit
+
+    // Use a callback to set the preview rendering;
+    widget->setPreview(UI::Preview::render_preview(_document, _drawing, bg, di, size, size, *bbox));
+    return true;
+}
+
+/**
+ * Limit the preview to just these items.
+ *
+ * You must call refresh after this for the change to take effect.
+ */
+void PreviewDrawing::set_shown_items(std::vector<SPItem const *> &&list)
+{
+    _shown_items = std::move(list);
+    _to_destruct = true;
+}
+
+void ExportPreview::resetPixels(bool new_size)
 {
     clear();
-    show();
+    // An icon to use when the preview hasn't loaded yet
+    static Glib::RefPtr<Gdk::Pixbuf> preview_loading;
+    if (!preview_loading || new_size) {
+        using namespace Inkscape::IO::Resource;
+        auto path_utf8 = (Glib::ustring)Inkscape::IO::Resource::get_path(SYSTEM, UIS, "resources", "preview-loading.svg");
+        auto path = Glib::filename_from_utf8(path_utf8);
+        preview_loading = Gdk::Pixbuf::create_from_file(path, size, size);
+    }
+    if (preview_loading) {
+        set(preview_loading);
+    }
+    set_visible(true);
+}
+
+void ExportPreview::setSize(int newSize)
+{
+    size = newSize;
+    resetPixels(true);
 }
 
 ExportPreview::~ExportPreview()
 {
-    if (drawing) {
-        if (_document) {
-            _document->getRoot()->invoke_hide(visionkey);
-        }
-        delete drawing;
-        drawing = nullptr;
-    }
-    if (timer) {
-        timer->stop();
-        delete timer;
-        timer = nullptr;
-    }
-    if (renderTimer) {
-        renderTimer->stop();
-        delete renderTimer;
-        renderTimer = nullptr;
-    }
-    _item = nullptr;
-    _document = nullptr;
+    refresh_conn.disconnect();
 }
 
-void ExportPreview::setItem(SPItem *item)
+void ExportPreview::setItem(SPItem const *item, bool is_layer)
 {
+    _is_layer = is_layer;
     _item = item;
-    _dbox = Geom::OptRect();
+    _dbox = {};
 }
-void ExportPreview::setDbox(double x0, double x1, double y0, double y1)
+
+void ExportPreview::setBox(Geom::Rect const &bbox)
 {
-    if (!_document) {
+    if (bbox.hasZeroArea())
         return;
-    }
-    if ((x1 - x0 == 0) || (y1 - y0) == 0) {
-        return;
-    }
+
     _item = nullptr;
-    _dbox = Geom::Rect(Geom::Point(x0, y0), Geom::Point(x1, y1)) * _document->dt2doc();
+    _dbox = bbox;
 }
 
-void ExportPreview::setDocument(SPDocument *document)
+void ExportPreview::setDrawing(std::shared_ptr<PreviewDrawing> drawing)
 {
-    if (drawing) {
-        if (_document) {
-            _document->getRoot()->invoke_hide(visionkey);
-        }
-        delete drawing;
-        drawing = nullptr;
-    }
-    _document = document;
-    if (_document) {
-        drawing = new Inkscape::Drawing();
-        visionkey = SPItem::display_key_new(1);
-        DrawingItem *ai = _document->getRoot()->invoke_show(*drawing, visionkey, SP_ITEM_SHOW_DISPLAY);
-        if (ai) {
-            drawing->setRoot(ai);
-        }
-    }
-}
-
-void ExportPreview::refreshHide(const std::vector<SPItem *> &list)
-{
-    _hidden_excluded = std::vector<SPItem *>(list.begin(), list.end());
-    _hidden_requested = true;
-}
-
-void ExportPreview::performHide(const std::vector<SPItem *> *list)
-{
-    if (_document) {
-        if (isLastHide) {
-            if (drawing) {
-                if (_document) {
-                    _document->getRoot()->invoke_hide(visionkey);
-                }
-                delete drawing;
-                drawing = nullptr;
-            }
-            drawing = new Inkscape::Drawing();
-            visionkey = SPItem::display_key_new(1);
-            DrawingItem *ai = _document->getRoot()->invoke_show(*drawing, visionkey, SP_ITEM_SHOW_DISPLAY);
-            if (ai) {
-                drawing->setRoot(ai);
-            }
-            isLastHide = false;
-        }
-        if (list && !list->empty()) {
-            hide_other_items_recursively(_document->getRoot(), *list);
-            isLastHide = true;
-        }
-    }
-}
-
-void ExportPreview::hide_other_items_recursively(SPObject *o, const std::vector<SPItem *> &list)
-{
-    if (SP_IS_ITEM(o) && !SP_IS_DEFS(o) && !SP_IS_ROOT(o) && !SP_IS_GROUP(o) &&
-        list.end() == find(list.begin(), list.end(), o)) {
-        SP_ITEM(o)->invoke_hide(visionkey);
-    }
-
-    // recurse
-    if (list.end() == find(list.begin(), list.end(), o)) {
-        for (auto &child : o->children) {
-            hide_other_items_recursively(&child, list);
-        }
-    }
-}
-
-void ExportPreview::queueRefresh()
-{
-    if (drawing == nullptr) {
-        return;
-    }
-    if (!pending) {
-        pending = true;
-        if (!timer) {
-            timer = new Glib::Timer();
-        }
-        Glib::signal_idle().connect(sigc::mem_fun(this, &ExportPreview::refreshCB), Glib::PRIORITY_DEFAULT_IDLE);
-    }
-}
-
-bool ExportPreview::refreshCB()
-{
-    bool callAgain = true;
-    if (!timer) {
-        timer = new Glib::Timer();
-    }
-    if (timer->elapsed() > minDelay) {
-        callAgain = false;
-        refreshPreview();
-        pending = false;
-    }
-    return callAgain;
-}
-
-void ExportPreview::refreshPreview()
-{
-    auto document = _document;
-    if (!timer) {
-        timer = new Glib::Timer();
-    }
-    if (timer->elapsed() < minDelay) {
-        // Do not refresh too quickly
-        queueRefresh();
-    } else if (document) {
-        renderPreview();
-        timer->reset();
-    }
+    _drawing = std::move(drawing);
 }
 
 /*
-This is main function which finally render preview. Call this after setting document, item and dbox.
-If dbox is given it will use it.
-if item is given and not dbox then item is used
-If both are not given then simply we do nothing.
-*/
-void ExportPreview::renderPreview()
+ * This is the main function which finally renders the preview.
+ * If dbox is given it will use it.
+ * if item is given and not dbox then item is used.
+ * If both are not given then we simply do nothing.
+ */
+void ExportPreview::queueRefresh()
 {
-    if (!renderTimer) {
-        renderTimer = new Glib::Timer();
-    }
-    renderTimer->reset();
-    if (drawing == nullptr) {
+    if (!_drawing || _render_idle.connected())
         return;
-    }
 
-    if (_hidden_requested) {
-        this->performHide(&_hidden_excluded);
-        _hidden_requested = false;
-    }
-    if (_document) {
-        GdkPixbuf *pb = nullptr;
-        if (_item) {
-            pb = Inkscape::UI::PREVIEW::render_preview(_document, *drawing, _item, size, size);
-        } else if (_dbox) {
-            pb = Inkscape::UI::PREVIEW::render_preview(_document, *drawing, nullptr, size, size, &_dbox);
-        }
-        if (pb) {
-            set(Glib::wrap(pb));
-            show();
-        }
-    }
-
-    renderTimer->stop();
-    minDelay = std::max(0.1, renderTimer->elapsed() * 3.0);
+    _render_idle = Glib::signal_timeout().connect([=]() {
+        return !_drawing->render(this, _bg_color, _item, size, _dbox, _is_layer);
+    }, 100);
 }
 
-} // namespace Dialog
-} // namespace UI
-} // namespace Inkscape
+/**
+ * Callback when the rendering is complete.
+ */
+void ExportPreview::setPreview(Cairo::RefPtr<Cairo::ImageSurface> surface)
+{
+    if (surface) {
+        set(Gdk::Pixbuf::create(surface, 0, 0, surface->get_width(), surface->get_height()));
+        set_visible(true);
+    }
+}
+
+void ExportPreview::setBackgroundColor(uint32_t bg_color)
+{
+    _bg_color = bg_color;
+}
+
+} // namespace Inkscape::UI::Dialog
 
 /*
   Local Variables:

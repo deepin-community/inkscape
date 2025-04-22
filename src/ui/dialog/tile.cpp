@@ -18,23 +18,27 @@
 #include "tile.h"
 
 #include <glibmm/i18n.h>
+#include <gtkmm/box.h>
+#include <gtkmm/button.h>
+#include <gtkmm/image.h>
+#include <gtkmm/label.h>
+#include <gtkmm/notebook.h>
 
 #include "ui/dialog/grid-arrange-tab.h"
 #include "ui/dialog/polar-arrange-tab.h"
 #include "ui/dialog/align-and-distribute.h"
 #include "ui/icon-names.h"
+#include "ui/pack.h"
 
-namespace Inkscape {
-namespace UI {
-namespace Dialog {
+namespace Inkscape::UI::Dialog {
 
 Gtk::Box& create_tab_label(const char* label_text, const char* icon_name) {
-    auto box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL, 4);
-    auto image = Gtk::make_managed<Gtk::Image>();
+    auto const box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL, 4);
+    auto const image = Gtk::make_managed<Gtk::Image>();
     image->set_from_icon_name(icon_name, Gtk::ICON_SIZE_MENU);
-    auto label = Gtk::make_managed<Gtk::Label>(label_text, true);
-    box->pack_start(*image, false, true);
-    box->pack_start(*label, false, true);
+    auto const label = Gtk::make_managed<Gtk::Label>(label_text, true);
+    UI::pack_start(*box, *image, false, true);
+    UI::pack_start(*box, *label, false, true);
     box->show_all();
     return *box;
 }
@@ -42,12 +46,12 @@ Gtk::Box& create_tab_label(const char* label_text, const char* icon_name) {
 ArrangeDialog::ArrangeDialog()
     : DialogBase("/dialogs/gridtiler", "AlignDistribute")
 {
-    _align_tab = Gtk::manage(new AlignAndDistribute(this));
-    _arrangeBox = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL));
+    _align_tab = Gtk::make_managed<AlignAndDistribute>(this);
+    _arrangeBox = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
     _arrangeBox->set_valign(Gtk::ALIGN_START);
-    _notebook = Gtk::manage(new Gtk::Notebook());
-    _gridArrangeTab = Gtk::manage(new GridArrangeTab(this));
-    _polarArrangeTab = Gtk::manage(new PolarArrangeTab(this));
+    _notebook = Gtk::make_managed<Gtk::Notebook>();
+    _gridArrangeTab = Gtk::make_managed<GridArrangeTab>(this);
+    _polarArrangeTab = Gtk::make_managed<PolarArrangeTab>(this);
 
     set_valign(Gtk::ALIGN_START);
 
@@ -57,30 +61,28 @@ ArrangeDialog::ArrangeDialog()
     _notebook->append_page(*_gridArrangeTab, create_tab_label(C_("Arrange dialog", "Grid"), INKSCAPE_ICON("arrange-grid")));
     // TRANSLATORS: "Circular" refers to circular/radial arrangement
     _notebook->append_page(*_polarArrangeTab, create_tab_label(C_("Arrange dialog", "Circular"), INKSCAPE_ICON("arrange-circular")));
-    _arrangeBox->pack_start(*_notebook);
+    UI::pack_start(*_arrangeBox, *_notebook);
     _notebook->signal_switch_page().connect([=](Widget*, guint page){
         update_arrange_btn();
     });
-    pack_start(*_arrangeBox);
+    UI::pack_start(*this, *_arrangeBox);
 
     // Add button
-    _arrangeButton = Gtk::manage(new Gtk::Button(C_("Arrange dialog", "_Arrange")));
+    _arrangeButton = Gtk::make_managed<Gtk::Button>(C_("Arrange dialog", "_Arrange"));
     _arrangeButton->signal_clicked().connect(sigc::mem_fun(*this, &ArrangeDialog::_apply));
     _arrangeButton->set_use_underline(true);
     _arrangeButton->set_tooltip_text(_("Arrange selected objects"));
     _arrangeButton->get_style_context()->add_class("wide-apply-button");
     _arrangeButton->set_no_show_all();
 
-    Gtk::ButtonBox *button_box = Gtk::manage(new Gtk::ButtonBox());
-    button_box->set_layout(Gtk::BUTTONBOX_CENTER);
+    auto const button_box = Gtk::make_managed<Gtk::Box>();
+    button_box->set_halign(Gtk::ALIGN_CENTER);
     button_box->set_spacing(6);
-    button_box->set_border_width(4);
-    button_box->set_valign(Gtk::ALIGN_FILL);
+    button_box->property_margin().set_value(4);
+    UI::pack_end(*button_box, *_arrangeButton);
+    UI::pack_start(*this, *button_box);
 
-    button_box->pack_end(*_arrangeButton);
-    pack_start(*button_box);
-
-    show();
+    set_visible(true);
     show_all_children();
     update_arrange_btn();
 }
@@ -88,15 +90,12 @@ ArrangeDialog::ArrangeDialog()
 void ArrangeDialog::update_arrange_btn() {
     // "align" page doesn't use "Arrange" button
     if (_notebook->get_current_page() == 0) {
-        _arrangeButton->hide();
+        _arrangeButton->set_visible(false);
     }
     else {
-        _arrangeButton->show();
+        _arrangeButton->set_visible(true);
     }
 }
-
-ArrangeDialog::~ArrangeDialog()
-{ }
 
 void ArrangeDialog::_apply()
 {
@@ -120,9 +119,7 @@ void ArrangeDialog::desktopReplaced()
     _align_tab->desktop_changed(getDesktop());
 }
 
-} //namespace Dialog
-} //namespace UI
-} //namespace Inkscape
+} // namespace Inkscape::UI::Dialog
 
 /*
   Local Variables:
