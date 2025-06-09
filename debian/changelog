@@ -1,3 +1,9 @@
+inkscape (1.4-6deepin1) unstable; urgency=medium
+
+  * fix the error when importing DXF files
+
+ -- lhdjply <lhdjply@126.com>  Mon, 9 Jun 2025 14:31:24 +0800
+
 inkscape (1.4-6) unstable; urgency=medium
 
   * Enable Build-Depends: lib2geom-dev for all architectures (Closes: #1089675)
