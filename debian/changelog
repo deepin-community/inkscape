@@ -1,3 +1,9 @@
+inkscape (1.4-6deepin2) unstable; urgency=medium
+
+  * fix the error when exporting jpg files
+
+ -- lhdjply <lhdjply@126.com>  Mon, 7 Jul 2025 08:07:37 +0800
+
 inkscape (1.4-6deepin1) unstable; urgency=medium
 
   * fix the error when importing DXF files
