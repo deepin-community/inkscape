@@ -11,7 +11,7 @@ else
 	NUMJOBS = 1
 endif
 
-ifeq (${DEB_HOST_ARCH},i386)
+ifeq (${DEB_HOST_ARCH_CPU},i386)
 export DEB_CFLAGS_MAINT_APPEND=-fexcess-precision=fast -ffloat-store
 export DEB_CXXFLAGS_MAINT_APPEND=-fexcess-precision=fast -ffloat-store
 endif

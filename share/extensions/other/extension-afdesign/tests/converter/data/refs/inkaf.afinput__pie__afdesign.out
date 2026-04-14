@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg"
+    xmlns:xlink="http://www.w3.org/1999/xlink"
+    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+    viewBox="0.0 0.0 2480.314960629921 3507.8740157480315" width="2480.314960629921"
+    height="3507.8740157480315">
+    <sodipodi:namedview guidecolor="#0080dc" guideopacity="0.8000000715255737" />
+    <g style="opacity:1.0;fill:none;fill-opacity:1.0;stroke:none;stroke-opacity:1.0">
+        <path
+            d="M 484.543 169.772 L 388.245 380.235 L 598.708 476.533 C 561.032 558.875 478.797 611.682 388.245 611.682 C 260.506 611.682 156.798 507.974 156.798 380.235 C 156.798 252.496 260.506 148.788 388.245 148.788 C 421.479 148.788 454.323 155.945 484.543 169.772 Z"
+            style="fill:#bcbcbc;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path
+            d="M 1060.95 211.538 L 1019.22 340.231 C 968.7 323.849 914.468 351.52 898.086 402.036 C 887.965 433.247 894.456 467.464 915.305 492.799 L 810.84 578.767 C 760.656 517.786 745.031 435.425 769.394 360.302 C 808.825 238.711 939.359 172.107 1060.95 211.538 Z"
+            style="fill:#bcbcbc;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path
+            d="M 550.743 684.45 L 665.867 696.213 C 662.727 726.944 672.005 757.656 691.635 781.509 L 602.278 855.044 C 563.018 807.337 544.463 745.914 550.743 684.45 Z"
+            style="fill:#bcbcbc;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path
+            d="M 249.698 815.155 L 489.861 879.603 C 498.524 899.093 532.459 924.653 584.112 950.591 L 438.201 957.131 C 334.895 905.254 267.023 854.135 249.698 815.155 Z"
+            style="fill:#bcbcbc;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path
+            d="M 1248.98 935.111 L 1172.08 848.629 C 1176.78 844.45 1181.13 839.895 1185.09 835.009 C 1225.31 785.389 1217.67 712.455 1168.05 672.241 C 1118.43 632.027 1045.5 639.664 1005.28 689.285 C 965.069 738.905 972.706 811.839 1022.33 852.053 C 1053 876.915 1094.24 884.419 1131.71 871.956 L 1168.23 981.765 C 1093.3 1006.69 1010.82 991.683 949.464 941.959 C 850.223 861.531 834.949 715.663 915.377 616.423 C 995.804 517.182 1141.67 501.908 1240.91 582.335 C 1340.15 662.763 1355.43 808.631 1275 907.871 C 1267.08 917.643 1258.38 926.753 1248.98 935.111 Z"
+            style="fill:#bcbcbc;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path sodipodi:cx="4745.765634660166" sodipodi:cy="363.44915992338304"
+            sodipodi:rx="240.27901218302486" sodipodi:ry="101.28353237956492" sodipodi:type="arc"
+            sodipodi:arc-type="slice" sodipodi:start="-2.812715768814087"
+            sodipodi:end="-1.5707963705062866"
+            d="m 4518.36 330.737 a 240.279 101.284 0 0 1 227.401 -68.5709 l 1.05029e-05 101.284 z"
+            style="fill:#bcbcbc;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0"
+            transform="translate(-3311, -80.357)" />
+    </g>
+    <g
+        style="opacity:1.0;fill:none;fill-opacity:1.0;stroke:#ff0000;stroke-opacity:0.4796747863292694;stroke-width:10.416666666666378;stroke-linecap:butt;paint-order:fill stroke markers;stroke-linejoin:round">
+        <path
+            d="M 484.543 169.772 L 388.245 380.235 L 598.708 476.533 C 561.032 558.875 478.797 611.682 388.245 611.682 C 260.506 611.682 156.798 507.974 156.798 380.235 C 156.798 252.496 260.506 148.788 388.245 148.788 C 421.479 148.788 454.323 155.945 484.543 169.772 Z"
+            style="fill:none;fill-opacity:1.0;stroke:#ff0000;stroke-opacity:0.4796747863292694;stroke-width:10.416666666666378;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 1060.95 211.538 L 1019.22 340.231 C 968.7 323.849 914.468 351.52 898.086 402.036 C 887.965 433.247 894.456 467.464 915.305 492.799 L 810.84 578.767 C 760.656 517.786 745.031 435.425 769.394 360.302 C 808.825 238.711 939.359 172.107 1060.95 211.538 Z"
+            style="fill:none;fill-opacity:1.0;stroke:#ff0000;stroke-opacity:0.4796747863292694;stroke-width:10.416666666666378;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 550.743 684.45 L 665.867 696.213 C 662.727 726.944 672.005 757.656 691.635 781.509 L 602.278 855.044 C 563.018 807.337 544.463 745.914 550.743 684.45 Z"
+            style="fill:none;fill-opacity:1.0;stroke:#ff0000;stroke-opacity:0.4796747863292694;stroke-width:10.416666666666378;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 249.698 815.155 L 489.861 879.603 C 498.524 899.093 532.459 924.653 584.112 950.591 L 438.201 957.131 C 334.895 905.254 267.023 854.135 249.698 815.155 Z"
+            style="fill:none;fill-opacity:1.0;stroke:#ff0000;stroke-opacity:0.4796747863292694;stroke-width:10.416666666666378;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 1248.98 935.111 L 1172.08 848.629 C 1176.78 844.45 1181.13 839.895 1185.09 835.009 C 1225.31 785.389 1217.67 712.455 1168.05 672.241 C 1118.43 632.027 1045.5 639.664 1005.28 689.285 C 965.069 738.905 972.706 811.839 1022.33 852.053 C 1053 876.915 1094.24 884.419 1131.71 871.956 L 1168.23 981.765 C 1093.3 1006.69 1010.82 991.683 949.464 941.959 C 850.223 861.531 834.949 715.663 915.377 616.423 C 995.804 517.182 1141.67 501.908 1240.91 582.335 C 1340.15 662.763 1355.43 808.631 1275 907.871 C 1267.08 917.643 1258.38 926.753 1248.98 935.111 Z"
+            style="fill:none;fill-opacity:1.0;stroke:#ff0000;stroke-opacity:0.4796747863292694;stroke-width:10.416666666666378;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 1434.77 181.809 L 1434.77 283.092 L 1207.37 250.38 C 1240.57 209.372 1331.98 181.809 1434.77 181.809 Z"
+            style="fill:none;fill-opacity:1.0;stroke:#ff0000;stroke-opacity:0.4796747863292694;stroke-width:10.416666666666378;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+    </g>
+    <title>pie.svg</title>
+</svg>

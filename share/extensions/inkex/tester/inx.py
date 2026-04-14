@@ -55,7 +55,8 @@ class InxMixin:
         """Confirm the params in the inx match the python script
 
         .. versionchanged:: 1.2
-            Also checks that the default values are identical"""
+            Also checks that the default values are identical
+        """
         params = {param.name: self.parse_param(param) for param in inx.params}
         args = dict(self.introspect_arg_parser(cls().arg_parser))
         mismatch_a = list(set(params) ^ set(args) & set(params))
@@ -96,9 +97,9 @@ class InxMixin:
             inxchoices = params[param]["choices"]
             argschoices = args[param]["choices"]
             if argschoices is not None and len(argschoices) > 0:
-                assert set(inxchoices).issubset(
-                    argschoices
-                ), f"params don't match: inx={inxchoices}, py={argschoices}"
+                assert set(inxchoices).issubset(argschoices), (
+                    f"params don't match: inx={inxchoices}, py={argschoices}"
+                )
 
     def introspect_arg_parser(self, arg_parser):
         """Pull apart the arg parser to find out what we have in it"""

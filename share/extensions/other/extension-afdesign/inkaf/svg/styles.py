@@ -4,16 +4,18 @@
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+from __future__ import annotations
+
 import itertools
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 import inkex
 
 from ..parser.types import AFObject
 from .curve import AFCurve
-from .fill import AFColor, AFColorSpace, AFGradient, parse_bfil, parse_fdsc
+from .fill import AFColor, AFGradient, parse_bfil, parse_fdsc
 
 
 class AFBlendModeV0(Enum):
@@ -133,6 +135,7 @@ class AFStroke:
     order: AFStrokeOrder
     align: AFStrokeAlign
     miter_clip: float
+    scale_with_object: bool
     dash_pattern: List[float]
     width_curve: Optional[AFCurve] = None
 
@@ -163,6 +166,7 @@ class AFStroke:
             dash_pattern=liln["LDeL"].get("Patn", [1, 1, 0, 0, 0, 0]),
             order=AFStrokeOrder(liln["LDBe"]),
             align=AFStrokeAlign(liln["LDSa"]),
+            scale_with_object=liln["LDSc"],
             width_curve=(
                 AFCurve.from_af(liln["LDeP"]) if "Data" in liln["LDeP"] else None
             ),
@@ -212,7 +216,7 @@ class AFStroke:
                 for point in self.width_curve.curves[0]
                 if point.index == 0
             )
-        width = float(svg.style("stroke-width"))
+        width = svg.to_dimensionless(svg.style("stroke-width"))
 
         offset_pts = " | ".join(
             f"{location:.6f},{offset * width / 2:.6f}"
@@ -254,25 +258,25 @@ def parse_transform(xfrm: List[float]) -> inkex.Transform:
     return inkex.Transform((xfrm[:3], xfrm[3:]))
 
 
-def parse_fill(child: AFObject) -> Union[AFColor, AFGradient]:
+def parse_fill(child: AFObject) -> Optional[AFColor | AFGradient]:
     if "BFil" in child:
         return parse_bfil(child["BFil"])
     elif "BFCr" in child and "BFFl" in child:
         fill_idx = child["BFCr"]
         return parse_fdsc(child["BFFl"][fill_idx])
     else:
-        return AFColor([255, 39, 255], 0, AFColorSpace.RGB)
+        return None
 
 
-def parse_stroke_color(child: AFObject) -> Union[AFColor, AFGradient]:
+def parse_stroke_color(child: AFObject) -> Optional[AFColor | AFGradient]:
     if "LICr" in child and "LIFl" in child:
         stroke_idx = child["LICr"]
         return parse_fdsc(child["LIFl"][stroke_idx])
     else:
-        return AFColor([255, 39, 255], 0, AFColorSpace.RGB)
+        return None
 
 
-def parse_stroke(child) -> AFStroke:
+def parse_stroke(child) -> Optional[AFStroke]:
     # Stroke
     # TODO: Align, Textured style, Start-End markers
     if "LSty" in child:
@@ -281,13 +285,4 @@ def parse_stroke(child) -> AFStroke:
         stroke_idx = child["LICr"]
         return AFStroke.from_af(child["LILn"][stroke_idx])
     else:
-        return AFStroke(
-            1,
-            AFStrokeType.NONE,
-            AFStrokeCap.ROUND,
-            AFStrokeJoin.ROUND,
-            AFStrokeOrder.FRONT,
-            AFStrokeAlign.CENTER,
-            1.5,
-            [1, 1, 0, 0, 0, 0],
-        )
+        return None

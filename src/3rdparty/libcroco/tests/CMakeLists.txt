@@ -30,6 +30,7 @@ if(1)
     # Run each test separately
 
     set(testscripts
+        test-custom-prop.sh
         test-functional-notation.sh
         test-lots-of-comments.sh
         test-parsing-location.sh

@@ -1,14 +1,35 @@
-inkscape (1.4-6deepin2) unstable; urgency=medium
+inkscape (1.4.2-3) unstable; urgency=medium
 
-  * fix the error when exporting jpg files
+  * Team upload
+  * Depends: python3-tinycss2 instead of python3-tinycss (Closes: #1098976)
 
- -- lhdjply <lhdjply@126.com>  Mon, 7 Jul 2025 08:07:37 +0800
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Sun, 07 Sep 2025 20:40:08 -0400
 
-inkscape (1.4-6deepin1) unstable; urgency=medium
+inkscape (1.4.2-2) unstable; urgency=medium
 
-  * fix the error when importing DXF files
+  [ Pino Toscano ]
+  * d/rules: Tweak i386 flags on all the OSes, not only Linux
+  * Backport upstream commit to implement get_program_name() on GNU/Hurd
 
- -- lhdjply <lhdjply@126.com>  Mon, 9 Jun 2025 14:31:24 +0800
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Fri, 05 Sep 2025 22:17:39 -0400
+
+inkscape (1.4.2-1) unstable; urgency=medium
+
+  * Team upload
+
+  [ Jeremy Bícha ]
+  * New upstream release (Closes: #1109328, #1114150)
+  * Add Depends: python3-tinycss (Closes: #1098976)
+  * Add Depends: python3-cachecontrol (Closes: #1052303, #1073976)
+  * Don't require gtksourceview4 on i386 or x32
+  * Remove 4 patches applied in new release
+  * Cherry-pick patch to fix build against poppler 25.06
+
+  [ Alexandre Detiste ]
+  * replace deprecated python appdirs with platformdirs (Closes: #999496)
+    (LP: #2028763)
+
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Fri, 05 Sep 2025 15:46:32 -0400
 
 inkscape (1.4-6) unstable; urgency=medium
 

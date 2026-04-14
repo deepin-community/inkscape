@@ -50,7 +50,9 @@ def test_color_to_svg(
     assert (
         AFConverter._convert_color(afcolor) == expected
         and afcolor.alpha == expected_alpha
-    ), f"Color mismatch: {AFConverter._convert_color(afcolor), afcolor.alpha} != {expected, expected_alpha}"
+    ), (
+        f"Color mismatch: {AFConverter._convert_color(afcolor), afcolor.alpha} != {expected, expected_alpha}"
+    )
 
 
 @pytest.mark.parametrize(

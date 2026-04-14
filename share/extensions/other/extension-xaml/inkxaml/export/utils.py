@@ -44,6 +44,8 @@ def convert_attributes(source, target: XAMLObject, definitions):  # convert with
             val = dfn[4]
         if val is None:
             continue
+        if dfn[0] == "stroke-dasharray" and val == []:
+            continue
         result: str = ""
         if isinstance(dfn[2], dict):
             # This should be always true, by the EnumValue construct in properties

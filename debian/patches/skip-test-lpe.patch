@@ -10,7 +10,7 @@ Forwarded: https://gitlab.com/inkscape/inkscape/-/issues/3554#note_1035680690
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/testfiles/CMakeLists.txt b/testfiles/CMakeLists.txt
-index a541afd..fce8a82 100644
+index 914e052..18e45f8 100644
 --- a/testfiles/CMakeLists.txt
 +++ b/testfiles/CMakeLists.txt
 @@ -53,7 +53,7 @@ if(${CMAKE_SIZEOF_VOID_P} EQUAL 8)
@@ -22,7 +22,7 @@ index a541afd..fce8a82 100644
      )
  endif()
  
-@@ -103,7 +103,7 @@ set(TEST_SOURCES
+@@ -104,7 +104,7 @@ set(TEST_SOURCES
      2geom-characterization-test
      xml-test
      sp-item-group-test

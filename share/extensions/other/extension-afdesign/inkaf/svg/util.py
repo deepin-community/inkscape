@@ -5,35 +5,13 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 from __future__ import annotations
-from dataclasses import dataclass
+
+import math
+from typing import Tuple
 
 import inkex
 
-MAX_CLIP_PATH_RECURSION = 50
-
-
-@dataclass
-class AFBoundingBox:
-    x1: float
-    y1: float
-    x2: float
-    y2: float
-
-    @property
-    def x(self) -> float:
-        return self.x1
-
-    @property
-    def y(self) -> float:
-        return self.y1
-
-    @property
-    def width(self) -> float:
-        return self.x2 - self.x1
-
-    @property
-    def height(self) -> float:
-        return self.y2 - self.y1
+MAX_CLIP_PATH_RECURSION = 1
 
 
 class ClipPathRecursionError(Exception):
@@ -48,19 +26,49 @@ def safe_div(num1: float, num2: float, on_fail: float) -> float:
     return num1 / num2 if num2 != 0 else on_fail
 
 
-def get_transformed_bbox(bbox: AFBoundingBox, tfm: inkex.Transform) -> AFBoundingBox:
+def get_scale(tfm: inkex.Transform) -> Tuple[float, float]:
+    dt = tfm.a * tfm.d - tfm.b * tfm.c
+
+    if tfm.a or tfm.b:
+        r = math.hypot(tfm.a, tfm.b)
+        return r, dt / r
+
+    if tfm.c or tfm.d:
+        s = math.hypot(tfm.c, tfm.d)
+        return dt / s, s
+
+    return 0, 0
+
+
+def get_scale_tfm(tfm: inkex.Transform) -> inkex.Transform:
+    scale_x, scale_y = get_scale(tfm)
+    return inkex.Transform((scale_x, 0, 0, scale_y, 0, 0))
+
+
+def get_scale_tfm_abs(tfm: inkex.Transform) -> inkex.Transform:
+    scale_x, scale_y = get_scale(tfm)
+    return inkex.Transform((abs(scale_x), 0, 0, abs(scale_y), 0, 0))
+
+
+def bbox_helper(values: Tuple[float, float, float, float]) -> inkex.BoundingBox:
+    """Create a bounding box object from AF-sorted values"""
+    return inkex.BoundingBox((values[0], values[2]), (values[1], values[3]))
+
+
+def get_transformed_bbox(
+    bbox: inkex.BoundingBox, tfm: inkex.Transform
+) -> inkex.BoundingBox:
     """Get the bounding box of the transformed rectangle defined by `bbox` and `tfm`"""
+
     pts = [
-        inkex.Vector2d(bbox.x1, bbox.y1),
-        inkex.Vector2d(bbox.x1, bbox.y2),
-        inkex.Vector2d(bbox.x2, bbox.y1),
-        inkex.Vector2d(bbox.x2, bbox.y2),
+        inkex.Vector2d(bbox.left, bbox.top),
+        inkex.Vector2d(bbox.left, bbox.bottom),
+        inkex.Vector2d(bbox.right, bbox.top),
+        inkex.Vector2d(bbox.right, bbox.bottom),
     ]
     pts[:] = map(tfm.apply_to_point, pts)
 
-    return AFBoundingBox(
-        min(pts, key=lambda p: p.x).x,
-        min(pts, key=lambda p: p.y).y,
-        max(pts, key=lambda p: p.x).x,
-        max(pts, key=lambda p: p.y).y,
+    return inkex.BoundingBox(
+        (min(pts, key=lambda p: p.x).x, max(pts, key=lambda p: p.x).x),
+        (min(pts, key=lambda p: p.y).y, max(pts, key=lambda p: p.y).y),
     )

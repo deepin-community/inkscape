@@ -8,7 +8,6 @@
 
 import os
 import sys
-from io import BytesIO
 
 import inkex
 
@@ -19,16 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(HERE, "..")))
 
 from inkaf.utils import to_pretty_xml  # noqa: E402
 from inkaf.parser.extract import AFExtractor  # noqa: E402
-from inkaf.parser.parse import AFParser, Document  # noqa: E402
 from inkaf.svg.convert import AFConverter  # noqa: E402
-
-
-def parse(stream) -> Document:
-    extractor = AFExtractor(stream)
-    doc = extractor.content.files["doc.dat"]  # type: ignore
-
-    result = AFParser(BytesIO(doc))
-    return result.parse()
 
 
 class AFInput(inkex.InputExtension):
@@ -45,20 +35,20 @@ class AFInput(inkex.InputExtension):
             help="Create an SVG file that has several lines and looks pretty to read.",
         )
 
-    def load(self, stream) -> bytes:
+    def load(self, stream) -> str:
         """Load the afdesign file"""
-        converter = AFConverter(parse(stream))
-        converter.convert()
+        converter = AFConverter()
+        converter.convert(AFExtractor(stream))
         return self.svg_to_string(converter.doc.getroot())
 
-    def svg_to_string(self, svg: inkex.SvgDocumentElement) -> bytes:
+    def svg_to_string(self, svg: inkex.SvgDocumentElement) -> str:
         """Convert the SvgDocumentElement to a string.
 
         This is mostly copied from inkex.elements._svg.SvgDocumentElement.tostring().
         """
         result = svg.tostring()
         if self.options.pretty_print:
-            return to_pretty_xml(result)
+            return to_pretty_xml(result).decode("utf-8")
         return result
 
 

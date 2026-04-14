@@ -325,9 +325,9 @@ class AFExtractor(BinaryParser):
         if alg == 1:
             extracted = zlib.decompress(data, bufsize=file.size)
         elif alg == 2:
-            assert (
-                data[:4] == b"(\xb5/\xfd"
-            ), "Expected zstd, but magic header doesn't match"
+            assert data[:4] == b"(\xb5/\xfd", (
+                "Expected zstd, but magic header doesn't match"
+            )
             extracted = zstandard.decompress(data, file.size)
         else:
             extracted = data

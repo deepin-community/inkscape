@@ -6,6 +6,15 @@ confinement: strict
 base: core22
 compression: lzo
 
+# ----
+# hacks to make `evince` work for the print preview
+layout:
+  /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/evince/4/backends:
+    bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/evince/4/backends
+  /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/glib-2.0:
+    bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/glib-2.0
+# ----
+
 plugs:
   dot-config-inkscape:
     interface: personal-files
@@ -18,6 +27,14 @@ plugs:
     interface: content
     target: $SNAP/data-dir/icons
     default-provider: gtk-common-themes
+# ----
+# hack needed to ensure that the "cups" slot is available on the host, see https://snapcraft.io/docs/cups-interface
+  foo-install-cups:
+    interface: content
+    content: foo
+    default-provider: cups
+    target: $SNAP_DATA/foo
+# ----
 
 slots:
   inkscape-dbus:
@@ -25,14 +42,17 @@ slots:
     bus: session
     name: org.inkscape.Inkscape
 
-assumes: [ command-chain ]
+# commented out to work around https://github.com/canonical/snapcraft/issues/4931
+# assumes: [ command-chain ]
 
 parts:
   inkscape:
     plugin: cmake
     source: .
+    source-type: local
     cmake-parameters:
       - '-DCMAKE_INSTALL_PREFIX='
+      - '-DLINUX_SNAP_PACKAGE=1'
     build-packages:
       - build-essential
       - cmake
@@ -103,13 +123,16 @@ parts:
       - python3-pil
       - python3-gi
       - python3-gi-cairo
+# ----
+# needed by the print preview feature
+      - evince
+      - libglib2.0-0
+# ----
     prime:
       - -lib/inkscape/*.a
       - -*canberra*so* # We don't have sound permissions anyway
       - -usr/lib/*/gtk-2.0
     override-build: |
-      patch -p1 --batch --directory=$SNAPCRAFT_PART_SRC --input=$SNAPCRAFT_PART_SRC/snap/local/filedialog-native.patch
-      patch -p1 --batch --directory=$SNAPCRAFT_PART_SRC --input=$SNAPCRAFT_PART_SRC/snap/local/glib-spawn-no-close.patch
       sed -i.bak -e 's|Icon=${INKSCAPE_ICONPATH}|Icon=${SNAP}/share/inkscape/branding/inkscape.svg|g' $SNAPCRAFT_PART_SRC/org.inkscape.Inkscape.desktop.template
       snapcraftctl build
       INKSCAPE_VERSION=`g++ -I${SNAPCRAFT_PART_SRC}/src ${SNAPCRAFT_PART_BUILD}/src/inkscape-version.cpp ${SNAPCRAFT_PROJECT_DIR}/snap/local/print-inkscape-version.cpp -o print-inkscape-version && ./print-inkscape-version`
@@ -136,6 +159,13 @@ parts:
       - packaging
       - scour
       - virtualenv
+      - tinycss2
+      - zstandard
+      - lxml
+      - numpy
+      - packaging
+      - pyparsing
+      - cssselect
     stage-packages:
       - optipng
       - pstoedit
@@ -145,6 +175,7 @@ parts:
     source: snap/local/scripts
   desktop-helpers:
     source: https://github.com/ubuntu/snapcraft-desktop-helpers.git
+    source-type: git
     source-subdir: gtk
     plugin: make
     make-parameters: ["FLAVOR=gtk3"]

@@ -650,29 +650,27 @@ InkscapeApplication::InkscapeApplication()
         _gio_application = Gio::Application::create(app_id, flags);
         _with_gui = false;
     }
-
-    auto *gapp = gio_app();
-
-    gapp->signal_startup().connect([this]() { this->on_startup(); });
-    gapp->signal_activate().connect([this]() { this->on_activate(); });
-    gapp->signal_open().connect(sigc::mem_fun(*this, &InkscapeApplication::on_open));
-
     // ==================== Initializations =====================
+
     // Garbage Collector
     Inkscape::GC::init();
 
-#ifndef NDEBUG
-    // Use environment variable INKSCAPE_DEBUG_LOG=log.txt for event logging
-    Inkscape::Debug::Logger::init();
-#endif
+    auto *gapp = gio_app();
 
 #ifdef ENABLE_NLS
     // Native Language Support (shouldn't this always be used?).
     Inkscape::initialize_gettext();
 #endif
 
-    // Autosave
-    Inkscape::AutoSave::getInstance().init(this);
+    gapp->signal_startup().connect([this]() { this->on_startup(); });
+    gapp->signal_activate().connect([this]() { this->on_activate(); });
+    gapp->signal_open().connect(sigc::mem_fun(*this, &InkscapeApplication::on_open));
+
+#ifndef NDEBUG
+    // Use environment variable INKSCAPE_DEBUG_LOG=log.txt for event logging
+    Inkscape::Debug::Logger::init();
+#endif
+
 
     // Don't set application name for now. We don't use it anywhere but
     // it overrides the name used for adding recently opened files and breaks the Gtk::RecentFilter
@@ -846,6 +844,8 @@ InkscapeApplication::create_window(SPDocument *document, bool replace)
         window = window_open (document);
     }
     window->set_visible(true);
+
+    startup_close();
 
     return window;
 }
@@ -1030,6 +1030,14 @@ InkscapeApplication::process_document(SPDocument* document, std::string output_p
 void
 InkscapeApplication::on_startup()
 {
+    // Add the start/splash screen to the app as soon as possible
+    if (_with_gui && !_use_pipe && !_use_command_line_argument && gtk_app() &&
+        Inkscape::UI::Dialog::StartScreen::get_start_mode() > 0) {
+        _start_screen = std::make_unique<Inkscape::UI::Dialog::StartScreen>();
+        _start_screen->show_now();
+        gtk_app()->add_window(*_start_screen);
+    }
+
 #if defined(GDK_WINDOWING_X11)
     if (_with_gui) {
         // The XIM input method can cause graphical artifacts.
@@ -1049,6 +1057,9 @@ InkscapeApplication::on_startup()
         }
     }
 #endif
+
+    // Autosave
+    Inkscape::AutoSave::getInstance().init(this);
 
     // Deprecated...
     Inkscape::Application::create(_with_gui);
@@ -1091,7 +1102,6 @@ InkscapeApplication::on_activate()
 
     // Create new document, either from pipe or from template.
     SPDocument *document = nullptr;
-    auto prefs = Inkscape::Preferences::get();
 
     if (_use_pipe) {
 
@@ -1101,23 +1111,18 @@ InkscapeApplication::on_activate()
         document = document_open (s);
         output = "-";
 
-    } else if(prefs->getBool("/options/boot/enabled", true)
-               && !_use_command_line_argument
-               && (gtk_app() && gtk_app()->get_windows().empty())) {
-
-        Inkscape::UI::Dialog::StartScreen start_screen;
-
-        // add start window to gtk_app to ensure proper closing on quit
-        gtk_app()->add_window(start_screen);
-
-        Inkscape::UI::dialog_run(start_screen);
-        document = start_screen.get_document();
+    } else if (_start_screen && Inkscape::UI::Dialog::StartScreen::get_start_mode() == 2) {
+        _start_screen->setup_welcome();
+        _start_screen->run(); // Blocks until document selected
+        document = _start_screen->get_document();
+        if (!document) {
+            _start_screen.reset();
+            return; // Start screen forcefully closed.
+        }
     } else {
-
         // Create a blank document from template
         document = document_new();
     }
-    startup_close();
 
     if (!document) {
         std::cerr << "ConcreteInkscapeApplication::on_activate: failed to create document!" << std::endl;
@@ -1136,14 +1141,7 @@ InkscapeApplication::on_activate()
 void
 InkscapeApplication::startup_close()
 {
-    if (auto app = gtk_app()) {
-        // Close any open start screens preventing double opens
-        for (auto win : app->get_windows()) {
-            if (auto start = dynamic_cast<Inkscape::UI::Dialog::StartScreen *>(win)) {
-                start->close();
-            }
-        }
-    }
+    _start_screen.reset();
 }
 
 // Open document window for each file. Either this or on_activate() is called.

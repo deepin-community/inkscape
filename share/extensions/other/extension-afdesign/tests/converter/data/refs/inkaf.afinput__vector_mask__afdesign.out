@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg"
+    xmlns:xlink="http://www.w3.org/1999/xlink"
+    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" viewBox="0.0 0.0 1280.0 800.0"
+    width="1280.0" height="800.0">
+    <sodipodi:namedview guidecolor="#0080dc" guideopacity="0.8000000715255737">
+        <sodipodi:guide position="640,0" orientation="1,0" />
+        <sodipodi:guide position="320,0" orientation="1,0" />
+        <sodipodi:guide position="960,0" orientation="1,0" />
+        <sodipodi:guide position="0,400" orientation="0,1" />
+        <sodipodi:guide position="0,600" orientation="0,1" />
+        <sodipodi:guide position="0,200" orientation="0,1" />
+    </sodipodi:namedview>
+    <defs>
+        <mask id="mask-g5815">
+            <g style="opacity:1.0;fill:#ffffff;stroke:#ffffff"
+                transform="translate(716.021, -12.4668)" id="g8555" mask="url(#mask-g8555)">
+                <ellipse cx="325.1458885941645" cy="212.46684350132625" rx="129.70822281167108"
+                    ry="129.70822281167108"
+                    style="fill-opacity:0.8999999761581421;stroke-opacity:1.0"
+                    transform="translate(-132.626, -2.84217e-14)" />
+            </g>
+        </mask>
+        <mask id="mask-g8555">
+            <g style="opacity:1.0;fill:#ffffff;stroke:#ffffff"
+                transform="translate(0.000220159, -4.35013e-05)">
+                <ellipse cx="325.1458885941645" cy="212.46684350132625" rx="129.70822281167108"
+                    ry="129.70822281167108" style="fill-opacity:0.75;stroke-opacity:1.0"
+                    transform="translate(-29.7082, -2.84217e-14)" />
+            </g>
+        </mask>
+        <mask id="mask-g5392">
+            <g style="opacity:1.0;fill:#ffffff;stroke:#ffffff" id="g9603" mask="url(#mask-g9603)"
+                transform="translate(76.0212, 387.533)">
+                <ellipse cx="325.1458885941645" cy="212.46684350132625" rx="129.70822281167108"
+                    ry="129.70822281167108" style="fill-opacity:0.75;stroke-opacity:1.0"
+                    transform="translate(-29.7082, -5.68434e-14)" />
+            </g>
+        </mask>
+        <mask id="mask-g9603">
+            <g style="opacity:1.0;fill:#ffffff;stroke:#ffffff"
+                transform="translate(-29.7082, -5.68434e-14)">
+                <ellipse cx="325.1458885941645" cy="212.46684350132625" rx="129.70822281167108"
+                    ry="129.70822281167108"
+                    style="fill-opacity:0.8999999761581421;stroke-opacity:1.0"
+                    transform="translate(-102.918, 0)" />
+            </g>
+        </mask>
+        <mask id="mask-g4306">
+            <g style="opacity:1.0;fill:#ffffff;stroke:#ffffff"
+                transform="translate(716.021, 387.533)">
+                <ellipse cx="325.1458885941645" cy="212.46684350132625" rx="129.70822281167108"
+                    ry="129.70822281167108" style="fill-opacity:0.75;stroke-opacity:1.0"
+                    id="ellipse7856" transform="translate(-29.7082, 0)" />
+                <ellipse cx="325.1458885941645" cy="212.46684350132625" rx="129.70822281167108"
+                    ry="129.70822281167108"
+                    style="fill-opacity:0.8999999761581421;stroke-opacity:1.0;opacity:1.0"
+                    clip-path="url(#clip-path0-g5654)" transform="translate(-132.626, 0)" />
+            </g>
+        </mask>
+        <clipPath id="clip-path0-g5654">
+            <use xlink:href="#ellipse7856" transform="translate(132.626, 0)" />
+        </clipPath>
+        <rect x="187.63925729442974" y="355.4376657824934" width="276.5780866055878"
+            height="106.77341838754984" rx="0.0" id="rect6457" />
+        <rect x="187.63925729442974" y="355.4376657824934" width="445.9271072344899"
+            height="106.77341838754984" rx="0.0" id="rect2304" />
+        <rect x="187.63925729442974" y="355.4376657824934" width="674.176172885713"
+            height="106.77341838754984" rx="0.0" id="rect5347" />
+        <rect x="187.63925729442974" y="355.4376657824934" width="473.6001041480198"
+            height="106.77341838754984" rx="0.0" id="rect266" />
+    </defs>
+    <rect x="111.61803713527854" y="82.75862068965517" width="259.41644562334216"
+        height="259.41644562334216" rx="0.0"
+        style="fill:#7f7f7f;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0"
+        transform="translate(76.0212, -12.4668)" />
+    <ellipse cx="325.1458885941645" cy="212.46684350132625" rx="129.70822281167108"
+        ry="129.70822281167108"
+        style="fill:#ff7d7d;fill-opacity:0.75;stroke:none;stroke-opacity:1.0;opacity:1.0"
+        transform="translate(46.313, -12.4668)" />
+    <ellipse cx="325.1458885941645" cy="212.46684350132625" rx="129.70822281167108"
+        ry="129.70822281167108"
+        style="fill:#8560ff;fill-opacity:0.8999999761581421;stroke:none;stroke-opacity:1.0;opacity:1.0"
+        transform="translate(-56.6048, -12.4668)" />
+    <g style="opacity:1.0" id="g5815" mask="url(#mask-g5815)">
+        <rect x="111.61803713527854" y="82.75862068965517" width="259.41644562334216"
+            height="259.41644562334216" rx="0.0" inkscape:label="MultipleMasks"
+            style="fill:#7f7f7f;fill-opacity:1.0;stroke:none;stroke-opacity:1.0"
+            transform="translate(716.021, -12.4668)" />
+    </g>
+    <g style="opacity:1.0" id="g5392" mask="url(#mask-g5392)">
+        <rect x="111.61803713527854" y="82.75862068965517" width="259.41644562334216"
+            height="259.41644562334216" rx="0.0" inkscape:label="Vector Mask of Vector Mask"
+            style="fill:#7f7f7f;fill-opacity:1.0;stroke:none;stroke-opacity:1.0"
+            transform="translate(76.0212, 387.533)" />
+    </g>
+    <g style="opacity:1.0" id="g4306" mask="url(#mask-g4306)">
+        <rect x="111.61803713527854" y="82.75862068965517" width="259.41644562334216"
+            height="259.41644562334216" rx="0.0"
+            style="fill:#7f7f7f;fill-opacity:1.0;stroke:none;stroke-opacity:1.0"
+            transform="translate(716.021, 387.533)" />
+    </g>
+    <text
+        style="shape-inside:url(#rect6457);white-space:pre;font-size:0;line-height:0;fill:none;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0"
+        xml:space="preserve" transform="translate(25.8607, 0)"><tspan sodipodi:role="line"><tspan style="line-height:40.437204710528135pt;text-anchor:start;text-align:start"><tspan style="fill:#000000;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;font-size:62.21108417004328;font-family:Arial;font-weight:400;font-style:normal;font-stretch:normal;lang:zxx">Original</tspan></tspan></tspan></text>
+    <text
+        style="shape-inside:url(#rect2304);white-space:pre;font-size:0;line-height:0;fill:none;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0"
+        xml:space="preserve" transform="translate(-61.4262, 375.03)"><tspan sodipodi:role="line"><tspan style="line-height:40.437204710528135pt;text-anchor:start;text-align:start"><tspan style="fill:#000000;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;font-size:62.21108417004328;font-family:Arial;font-weight:400;font-style:normal;font-stretch:normal;lang:zxx">Mask of mask</tspan></tspan></tspan></text>
+    <text
+        style="shape-inside:url(#rect5347);white-space:pre;font-size:0;line-height:0;fill:none;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0"
+        xml:space="preserve" transform="translate(465.528, 375.03)"><tspan sodipodi:role="line"><tspan style="line-height:40.437204710528135pt;text-anchor:start;text-align:start"><tspan style="fill:#000000;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;font-size:62.21108417004328;font-family:Arial;font-weight:400;font-style:normal;font-stretch:normal;lang:zxx">Mask with sub-objects</tspan></tspan></tspan></text>
+    <text
+        style="shape-inside:url(#rect266);white-space:pre;font-size:0;line-height:0;fill:none;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0"
+        xml:space="preserve" transform="translate(565.557, 0)"><tspan sodipodi:role="line"><tspan style="line-height:40.437204710528135pt;text-anchor:start;text-align:start"><tspan style="fill:#000000;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;font-size:62.21108417004328;font-family:Arial;font-weight:400;font-style:normal;font-stretch:normal;lang:zxx">Multiple masks</tspan></tspan></tspan></text>
+    <title>vector_mask.svg</title>
+</svg>

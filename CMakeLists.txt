@@ -1,13 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-cmake_minimum_required(VERSION 3.1.0)
+cmake_minimum_required(VERSION 3.12.0)
 
-cmake_policy(SET CMP0003 NEW) # don't be prolific with library paths
-cmake_policy(SET CMP0005 NEW) # proper define quoting
-cmake_policy(SET CMP0009 NEW) # don't follow symbolic links when using GLOB
-
-if(POLICY CMP0075)
-    cmake_policy(SET CMP0075 NEW) # link check-executable to CMAKE_REQUIRED_LIBRARIES (CMake 3.12.1)
-endif(POLICY CMP0075)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW) # use FindBoost from boost 1.70+ (cmake 3.30+)
+endif()
 
 message("------------------------------")
 message("Building Makefile for Inkscape")
@@ -44,7 +40,7 @@ set(PROJECT_NAME inkscape)
 # see https://gitlab.com/inkscape/inkscape/-/issues/551 for versioning suffixes
 set(INKSCAPE_VERSION_MAJOR  1)
 set(INKSCAPE_VERSION_MINOR  4)
-set(INKSCAPE_VERSION_PATCH  0)
+set(INKSCAPE_VERSION_PATCH  2)
 set(INKSCAPE_VERSION_SUFFIX "")
 
 set(INKSCAPE_VERSION ${INKSCAPE_VERSION_MAJOR}.${INKSCAPE_VERSION_MINOR})
@@ -68,9 +64,6 @@ if(APPLE)
 else()
     SET(CMAKE_INSTALL_RPATH "$ORIGIN/${INKSCAPE_INSTALL_LIBDIR_RELATIVE_TO_BINDIR}")
 endif()
-
-# this can be removed if/when cmake 3.1 is made the minimum required version
-set(PKG_CONFIG_USE_CMAKE_PREFIX_PATH ON)
 
 # console output is slow as hell on Windows and as a result status messages of the "install" target slow down
 # the whole build process considerably (especially since we also copy a lot of files from the devlibs)
@@ -138,6 +131,7 @@ mark_as_advanced(WITH_MANPAGE_COMPRESSION)
 
 option(ENABLE_BINRELOC "Enable relocatable binaries" OFF)
 
+option(LINUX_SNAP_PACKAGE "Compile for use in Linux snap package format" OFF)
 
 include(CMakeScripts/DefineDependsandFlags.cmake) # Includes, Compiler Flags, and Link Libraries
 include(CMakeScripts/HelperMacros.cmake) # Misc Utility Macros

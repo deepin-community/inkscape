@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /** @file
- * @brief A dialog for the about screen
+ * @brief A splash screen and welcome screen
  */
 /*
- * Copyright (C) Martin Owens 2019 <doctormo@gmail.com>
+ * Copyright (C) Martin Owens 2019-2025 <doctormo@geek-2.com>
  *
  * Released under GNU GPL v2+, read the file 'COPYING' for more information.
  */
@@ -20,6 +20,7 @@
 #include <gtkmm/cssprovider.h>
 #include <gtkmm/infobar.h>
 #include <gtkmm/liststore.h>
+#include <gtkmm/main.h>
 #include <gtkmm/notebook.h>
 #include <gtkmm/overlay.h>
 #include <gtkmm/recentmanager.h>
@@ -51,6 +52,7 @@ using namespace Inkscape::IO;
 using namespace Inkscape::UI::View;
 
 namespace Inkscape::UI::Dialog {
+
 
 class NameIdCols: public Gtk::TreeModel::ColumnRecord {
     public:
@@ -149,55 +151,94 @@ using Inkscape::UI::Widget::TemplateList;
 
 StartScreen::StartScreen()
     : Gtk::Dialog()
-    , builder(create_builder("inkscape-start.glade"))
-    , window         (get_widget<Gtk::Window>  (builder, "start-screen-window"))
+    , opt_shown(std::string("/options/boot/shown/ver") + Inkscape::version_string_without_revision)
+    , build_splash(create_builder("inkscape-splash.glade"))
       // Global widgets
-    , tabs           (get_widget<Gtk::Notebook>        (builder, "tabs"))
-    , templates      (get_derived_widget<TemplateList> (builder, "kinds"))
-    , banners        (get_widget<Gtk::Overlay>         (builder, "banner"))
-    , themes         (get_widget<Gtk::ComboBox>        (builder, "themes"))
-    , recent_treeview(get_widget<Gtk::TreeView>        (builder, "recent_treeview"))
-    , load_btn       (get_widget<Gtk::Button>          (builder, "load"))
+    , banners        (get_widget<Gtk::Overlay> (build_splash, "banner"))
+    , close_btn      (get_widget<Gtk::Button>  (build_splash, "close_window"))
+    , messages       (get_widget<Gtk::Label>   (build_splash, "messages"))
 {
     set_name("start-screen-window");
     set_title(Inkscape::inkscape_version());
     set_can_focus(true);
-    grab_focus();
     set_can_default(true);
-    grab_default();
     set_urgency_hint(true);  // Draw user's attention to this window!
     set_modal(true);
     set_position(Gtk::WIN_POS_CENTER_ALWAYS);
-    set_default_size(700, 360);
 
-    // Populate with template extensions
-    templates.init(Inkscape::Extension::TEMPLATE_NEW_WELCOME);
+    // Move banner to dialog window
+    set_titlebar(banners);
+    get_content_area()->add(messages);
+}
 
-    // Get references to various widget used locally. (In order of appearance.)
-    auto canvas      = &get_widget<Gtk::ComboBox>(builder, "canvas");
-    auto keys        = &get_widget<Gtk::ComboBox>(builder, "keys");
-    auto save        = &get_widget<Gtk::Button>  (builder, "save");
-    auto thanks      = &get_widget<Gtk::Button>  (builder, "thanks");
-    auto close_btn   = &get_widget<Gtk::Button>  (builder, "close_window");
-    auto new_btn     = &get_widget<Gtk::Button>  (builder, "new");
-    auto show_toggle = &get_widget<Gtk::Button>  (builder, "show_toggle");
-    auto dark_toggle = &get_widget<Gtk::Switch>  (builder, "dark_toggle");
+void StartScreen::show_now()
+{
+    set_default_size(700, 0);
+    set_resizable(false);
 
-    // Unparent to move to our dialog window.
-    auto parent = banners.get_parent();
-    parent->remove(banners);
-    parent->remove(tabs);
+    // Show the main banner when already welcomed for the first time
+    if (Inkscape::Preferences::get()->getBool(opt_shown, false)) {
+        banner_switch(2);
+    }
 
-    // Add signals and setup things.
+    show_all_children();
+    show();
+    close_btn.hide();
+
+    property_resizable() = false;
+    set_visible(true);
+    present(); // This makes the widget actually appear
+    timer.start();
+
+    // The main loop won't get called until the main window is initialized,
+    // so we need to iterate the loop a few times here to show the splash screen.
+    while (Gtk::Main::events_pending())
+        Gtk::Main::iteration(false);
+}
+
+void StartScreen::setup_welcome()
+{
+    _welcome = true;
+
     auto prefs = Inkscape::Preferences::get();
 
+    set_default_size(700, 360);
+    messages.hide();
+    grab_default();
+    grab_focus();
+
+    build_welcome = create_builder("inkscape-welcome.glade");
+
+    // Populate with template extensions
+    templates = &get_derived_widget<TemplateList>(build_welcome, "kinds");
+    templates->init(Inkscape::Extension::TEMPLATE_NEW_WELCOME);
+
+    recentfiles = &get_widget<Gtk::TreeView>(build_welcome, "recent_treeview");
+
+    auto tabs = &get_widget<Gtk::Notebook>(build_welcome, "tabs");
+    get_content_area()->add(*tabs);
+
+    // Get references to various widget used locally. (In order of appearance.)
+    auto canvas      = &get_widget<Gtk::ComboBox>(build_welcome, "canvas");
+    auto themes      = &get_widget<Gtk::ComboBox>(build_welcome, "themes");
+    auto keys        = &get_widget<Gtk::ComboBox>(build_welcome, "keys");
+    auto save        = &get_widget<Gtk::Button>  (build_welcome, "save");
+    auto thanks      = &get_widget<Gtk::Button>  (build_welcome, "thanks");
+    auto load_btn    = &get_widget<Gtk::Button>  (build_welcome, "load");
+    auto new_btn     = &get_widget<Gtk::Button>  (build_welcome, "new");
+    auto show_toggle = &get_widget<Gtk::Button>  (build_welcome, "show_toggle");
+    auto dark_toggle = &get_widget<Gtk::Switch>  (build_welcome, "dark_toggle");
+
+    // Add signals and setup things.
     Controller::add_key<&StartScreen::on_key_pressed>(*this, *this);
-    tabs.signal_switch_page().connect(sigc::mem_fun(*this, &StartScreen::notebook_switch));
+    tabs->signal_switch_page().connect([this](Gtk::Widget *tab, unsigned page_num) {
+        banner_switch(page_num);
+    });
 
     // Setup the lists of items
     enlist_recent_files();
     enlist_keys();
-    filter_themes();
+    filter_themes(themes);
     set_active_combo("themes", prefs->getString("/options/boot/theme"));
     set_active_combo("canvas", prefs->getString("/options/boot/canvas"));
 
@@ -207,7 +248,7 @@ StartScreen::StartScreen()
     // Welcome! tab
     canvas->signal_changed().connect(sigc::mem_fun(*this, &StartScreen::canvas_changed));
     keys->signal_changed().connect(sigc::mem_fun(*this, &StartScreen::keyboard_changed));
-    themes.signal_changed().connect(sigc::mem_fun(*this, &StartScreen::theme_changed));
+    themes->signal_changed().connect(sigc::mem_fun(*this, &StartScreen::theme_changed));
     dark_toggle->property_active().signal_changed().connect(sigc::mem_fun(*this, &StartScreen::theme_changed));
     save->signal_clicked().connect(sigc::bind(sigc::mem_fun(*this, &StartScreen::notebook_next), save));
 
@@ -215,46 +256,72 @@ StartScreen::StartScreen()
     thanks->signal_clicked().connect(sigc::bind(sigc::mem_fun(*this, &StartScreen::notebook_next), thanks));
 
     // "Time to Draw" tab
-    recent_treeview.signal_row_activated().connect(sigc::hide(sigc::hide((sigc::mem_fun(*this, &StartScreen::load_document)))));
-    recent_treeview.get_selection()->signal_changed().connect(sigc::mem_fun(*this, &StartScreen::on_recent_changed));
-    templates.signal_switch_page().connect(sigc::mem_fun(*this, &StartScreen::on_kind_changed));
-    load_btn.set_sensitive(true);
+    recentfiles->signal_row_activated().connect(sigc::hide(sigc::hide((sigc::mem_fun(*this, &StartScreen::load_document)))));
+    recentfiles->get_selection()->signal_changed().connect(sigc::mem_fun(*this, &StartScreen::on_recent_changed));
+    templates->signal_switch_page().connect(sigc::mem_fun(*this, &StartScreen::on_kind_changed));
+    load_btn->set_sensitive(true);
 
     show_toggle->signal_clicked().connect(sigc::mem_fun(*this, &StartScreen::show_toggle));
-    load_btn.signal_clicked().connect(sigc::mem_fun(*this, &StartScreen::load_document));
-    templates.connectItemSelected(sigc::mem_fun(*this, &StartScreen::new_document));
+    load_btn->signal_clicked().connect(sigc::mem_fun(*this, &StartScreen::load_document));
+    templates->connectItemSelected(sigc::mem_fun(*this, &StartScreen::new_document));
     new_btn->signal_clicked().connect(sigc::mem_fun(*this, &StartScreen::new_document));
-    close_btn->signal_clicked().connect([this] { response(GTK_RESPONSE_CANCEL); });
-
-    // Reparent to our dialog window
-    set_titlebar(banners);
-    Gtk::Box* box = get_content_area();
-    box->add(tabs);
+    close_btn.signal_clicked().connect([this] { response(GTK_RESPONSE_CLOSE); });
+    close_btn.show();
 
     // Show the first tab ONLY on the first run for this version
-    std::string opt_shown = "/options/boot/shown/ver";
-    opt_shown += Inkscape::version_string_without_revision;
     if (!prefs->getBool(opt_shown, false)) {
         theme_changed();
-        tabs.set_current_page(0);
+        tabs->set_current_page(0);
         prefs->setBool(opt_shown, true);
     } else {
-        tabs.set_current_page(2);
-        notebook_switch(nullptr, 2);
+        tabs->set_current_page(2);
     }
 
     set_modal(true);
+    set_default_size(700, 360);
     set_position(Gtk::WIN_POS_CENTER_ALWAYS);
     property_resizable() = false;
-    set_default_size(700, 360);
     set_visible(true);
+
+    // Splash screen is now finished
+    timer.stop();
 }
 
 StartScreen::~StartScreen()
 {
+    // Let than a second, we'll hide the splash if needed.
+    if (timer.elapsed() < 1.0) {
+        auto prefs = Inkscape::Preferences::get();
+        // But only if the welcome screen is disabled
+        if (prefs->getInt("/options/boot/mode", 2) == 1) {
+            prefs->setInt("/options/boot/mode", 0);
+        }
+    }
+
     // These are "owned" by builder... don't delete them!
     banners.get_parent()->remove(banners);
-    tabs.get_parent()->remove(tabs);
+    messages.get_parent()->remove(messages);
+
+    if (_welcome) {
+        auto tabs = &get_widget<Gtk::Notebook>(build_welcome, "tabs");
+        tabs->get_parent()->remove(*tabs);
+    }
+}
+
+/**
+ * Get the preference for the startup mode.
+ *
+ * @returns
+ *    0 - Show nothing
+ *    1 - Show only the splash screen
+ *    2 = Show the splash and startup screens
+ */
+int StartScreen::get_start_mode()
+{
+    auto prefs = Inkscape::Preferences::get();
+    auto old_enabled = prefs->getBool("/options/boot/enabled", true);
+    prefs->remove("/options/boot/enabled");
+    return prefs->getInt("/options/boot/mode", old_enabled ? 2 : 1);
 }
 
 /**
@@ -267,7 +334,7 @@ StartScreen::~StartScreen()
 Gtk::TreeModel::Row
 StartScreen::active_combo(std::string widget_name)
 {
-    auto &combo = get_widget<Gtk::ComboBox>(builder, widget_name.c_str());
+    auto &combo = get_widget<Gtk::ComboBox>(build_welcome, widget_name.c_str());
     Gtk::TreeModel::iterator iter = combo.get_active();
     if (!iter) throw 2;
     Gtk::TreeModel::Row row = *iter;
@@ -284,7 +351,7 @@ StartScreen::active_combo(std::string widget_name)
 void
 StartScreen::set_active_combo(std::string widget_name, std::string unique_id)
 {
-    auto &combo = get_widget<Gtk::ComboBox>(builder, widget_name.c_str());
+    auto &combo = get_widget<Gtk::ComboBox>(build_welcome, widget_name.c_str());
     if (unique_id.empty()) {
         combo.set_active(0); // Select the first
     } else if (!combo.set_active_id(unique_id)) {
@@ -296,9 +363,9 @@ StartScreen::set_active_combo(std::string widget_name, std::string unique_id)
  * When a notbook is switched, reveal the right banner image (gtk signal).
  */
 void
-StartScreen::notebook_switch(Gtk::Widget *tab, unsigned page_num)
+StartScreen::banner_switch(unsigned page_num)
 {
-    auto &stack = get_widget<Gtk::Stack>(builder, "banner-stack");
+    auto &stack = get_widget<Gtk::Stack>(build_splash, "banner-stack");
     auto const pages = UI::get_children(stack);
     auto &page = *pages.at(page_num);
     stack.set_visible_child(page);
@@ -310,7 +377,7 @@ StartScreen::enlist_recent_files()
     RecentCols cols;
 
     // We're not sure why we have to ask C for the TreeStore object
-    auto store = Glib::wrap(GTK_LIST_STORE(gtk_tree_view_get_model(recent_treeview.gobj())));
+    auto store = Glib::wrap(GTK_LIST_STORE(gtk_tree_view_get_model(recentfiles->gobj())));
     store->clear();
     // Now sort the result by visited time
     store->set_sort_column(cols.col_dt, Gtk::SORT_DESCENDING);
@@ -320,7 +387,7 @@ StartScreen::enlist_recent_files()
     first_row[cols.col_name] = _("Browse for other files...");
     first_row[cols.col_id] = "";
     first_row[cols.col_dt] = std::numeric_limits<gint64>::max();
-    recent_treeview.get_selection()->select(store->get_path(first_row));
+    recentfiles->get_selection()->select(store->get_path(first_row));
 
     Glib::RefPtr<Gtk::RecentManager> manager = Gtk::RecentManager::get_default();
     for (auto item : manager->get_items()) {
@@ -360,10 +427,11 @@ StartScreen::on_recent_changed()
 void
 StartScreen::on_kind_changed(Gtk::Widget *tab, unsigned page_num)
 {
+    auto load_btn = &get_widget<Gtk::Button>(build_welcome, "load");
     if (page_num == 0) {
-        load_btn.set_visible(true);
+        load_btn->set_visible(true);
     } else {
-        load_btn.set_visible(false);
+        load_btn->set_visible(false);
     }
 }
 
@@ -374,7 +442,7 @@ void
 StartScreen::new_document()
 {
     // Generate a new document from the selected template.
-    _document = templates.new_document();
+    _document = templates->new_document();
     if (_document) {
     // Quit welcome screen if options not 'canceled'
         response(GTK_RESPONSE_APPLY);
@@ -390,7 +458,7 @@ StartScreen::load_document()
     RecentCols cols;
     auto app = InkscapeApplication::instance();
 
-    auto iter = recent_treeview.get_selection()->get_selected();
+    auto iter = recentfiles->get_selection()->get_selected();
     if (iter) {
         Gtk::TreeModel::Row row = *iter;
         if (row) {
@@ -437,11 +505,12 @@ StartScreen::load_document()
 void
 StartScreen::notebook_next(Gtk::Widget *button)
 {
-    int page = tabs.get_current_page();
+    auto tabs = &get_widget<Gtk::Notebook>(build_welcome, "tabs");
+    int page = tabs->get_current_page();
     if (page == 2) {
         response(GTK_RESPONSE_CANCEL); // Only occurs from keypress.
     } else {
-        tabs.set_current_page(page + 1);
+        tabs->set_current_page(page + 1);
     }
 }
 
@@ -476,25 +545,25 @@ gboolean StartScreen::on_key_pressed(GtkEventControllerKey const * /*controller*
 void
 StartScreen::on_response(int response_id)
 {
-    if (response_id == GTK_RESPONSE_DELETE_EVENT) {
+    if (response_id == GTK_RESPONSE_DELETE_EVENT || response_id == GTK_RESPONSE_CLOSE) {
         // Don't open a window for force closing.
         return;
     }
     if (response_id == GTK_RESPONSE_CANCEL) {
-        templates.reset_selection();
+        templates->reset_selection();
     }
     if (response_id != GTK_RESPONSE_OK && !_document) {
         // Last ditch attempt to generate a new document while exiting.
-        _document = templates.new_document();
+        _document = templates->new_document();
     }
 }
 
 void
 StartScreen::show_toggle()
 {
-    auto &button = get_widget<Gtk::ToggleButton>(builder, "show_toggle");
+    auto &button = get_widget<Gtk::ToggleButton>(build_welcome, "show_toggle");
     auto prefs = Inkscape::Preferences::get();
-    prefs->setBool("/options/boot/enabled", button.get_active());
+    prefs->setInt("/options/boot/mode", button.get_active() ? 2 : 1);
 
 }
 
@@ -572,7 +641,7 @@ StartScreen::theme_changed()
         prefs->setString("/theme/iconTheme", icons);
         prefs->setBool("/theme/symbolicIcons", row[cols.symbolic]);
 
-        auto &dark_toggle = get_widget<Gtk::Switch>(builder, "dark_toggle");
+        auto &dark_toggle = get_widget<Gtk::Switch>(build_welcome, "dark_toggle");
         bool is_dark = dark_toggle.get_active();
         prefs->setBool("/theme/preferDarkTheme", is_dark);
         prefs->setBool("/theme/darkTheme", is_dark);
@@ -635,11 +704,11 @@ StartScreen::canvas_changed()
 }
 
 void
-StartScreen::filter_themes()
+StartScreen::filter_themes(Gtk::ComboBox *themes)
 {
     ThemeCols cols;
     // We need to disable themes which aren't available.
-    auto store = Glib::wrap(GTK_LIST_STORE(gtk_combo_box_get_model(themes.gobj())));
+    auto store = Glib::wrap(GTK_LIST_STORE(gtk_combo_box_get_model(themes->gobj())));
     auto available = INKSCAPE.themecontext->get_available_themes();
 
     // Detect use of custom theme here, detect defaults used in many systems.
@@ -673,7 +742,7 @@ void
 StartScreen::enlist_keys()
 {
     NameIdCols cols;
-    auto &keys = get_widget<Gtk::ComboBox>(builder, "keys");
+    auto &keys = get_widget<Gtk::ComboBox>(build_welcome, "keys");
 
     auto store = Glib::wrap(GTK_LIST_STORE(gtk_combo_box_get_model(keys.gobj())));
     store->clear();
@@ -705,7 +774,7 @@ StartScreen::keyboard_changed()
     prefs->setString("/options/kbshortcuts/shortcutfile", set_to);
     Inkscape::Shortcuts::getInstance().init();
 
-    auto &keys_warning = get_widget<Gtk::InfoBar>(builder, "keys_warning");
+    auto &keys_warning = get_widget<Gtk::InfoBar>(build_welcome, "keys_warning");
     if (set_to != "inkscape.xml" && set_to != "default.xml") {
         keys_warning.set_message_type(Gtk::MessageType::MESSAGE_WARNING);
         keys_warning.set_visible(true);
@@ -731,7 +800,7 @@ void StartScreen::refresh_dark_switch()
     auto themes = INKSCAPE.themecontext->get_available_themes();
     Glib::ustring current_theme = prefs->getString("/theme/gtkTheme", prefs->getString("/theme/defaultGtkTheme", ""));
 
-    auto &dark_toggle = get_widget<Gtk::Switch>(builder, "dark_toggle");
+    auto &dark_toggle = get_widget<Gtk::Switch>(build_welcome, "dark_toggle");
     dark_toggle.set_sensitive(themes[current_theme]);
     dark_toggle.set_active(dark);
 }

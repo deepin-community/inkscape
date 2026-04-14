@@ -41,9 +41,9 @@ class AFCurve:
             curve = data[curv_idx * 2 + curv_ptr + 1]
             assert isinstance(closed, bool), f"Invalid curve\n{data}"
             assert isinstance(curve, list), f"Invalid curve\n{data}"
-            assert not curve or isinstance(
-                curve[0], Curve18
-            ), f'Invalid curve type "{type(curve[0])}" in \n{data}'
+            assert not curve or isinstance(curve[0], Curve18), (
+                f'Invalid curve type "{type(curve[0])}" in \n{data}'
+            )
 
             curves.append(curve)
             closeds.append(closed)

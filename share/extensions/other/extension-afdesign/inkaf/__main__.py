@@ -14,7 +14,7 @@ PARENT = os.path.abspath(os.path.dirname(HERE))
 # This might lead to problems.
 # In this case, we move one down.
 #
-import warnings
+import warnings  # noqa: E402
 
 if not hasattr(warnings, "warn"):
     del sys.modules["warnings"]
@@ -23,8 +23,8 @@ if not hasattr(warnings, "warn"):
             del sys.path[i]
 
 try:
-    import inkex  # check inkex
-    from . import svg  # check that we are a package
+    import inkex  # check inkex #noqa: F401
+    from . import svg  # check that we are a package #noqa: F401
 except ImportError:
     # This is suggested by https://docs.python-guide.org/writing/structure/.
     sys.path.insert(0, PARENT)

@@ -268,7 +268,7 @@ file_save(Gtk::Window &parentWindow,
                                   checkoverwrite, official,
                                   save_method);
     } catch (Inkscape::Extension::Output::no_extension_found &e) {
-        gchar *text = g_strdup_printf(_("No Inkscape extension found to save document (%s).  This may have been caused by an unknown filename extension."), display_name.c_str());
+        gchar *text = g_strdup_printf(_("No Inkscape extension found to save document (%s).  This may have been caused by an unknown or missing filename extension."), display_name.c_str());
         SP_ACTIVE_DESKTOP->messageStack()->flash(Inkscape::ERROR_MESSAGE, _("Document not saved."));
         sp_ui_error_dialog(text);
         g_free(text);
@@ -312,7 +312,7 @@ file_save(Gtk::Window &parentWindow,
         doc->getReprRoot()->setAttribute("inkscape:version", sp_version_to_string( save ));
         return false;
     } catch (...) {
-        g_critical("Extension '%s' threw an unspecified exception.", key->get_id());
+        g_critical("Extension '%s' threw an unspecified exception.", key ? key->get_id() : nullptr);
         gchar *text = g_strdup_printf(_("File %s could not be saved."), display_name.c_str());
         SP_ACTIVE_DESKTOP->messageStack()->flash(Inkscape::ERROR_MESSAGE, _("Document not saved."));
         sp_ui_error_dialog(text);
@@ -708,8 +708,6 @@ void sp_import_document(SPDesktop *desktop, SPDocument *clipdoc, bool in_place, 
         node_after = obj_copy;
         Inkscape::GC::release(obj_copy);
 
-        pasted_objects.push_back(obj_copy);
-
         // if we are pasting a clone to an already existing object, its
         // transform is relative to the document, not to its original (see ui/clipboard.cpp)
         auto spobject = target_document->getObjectByRepr(obj_copy);
@@ -720,6 +718,10 @@ void sp_import_document(SPDesktop *desktop, SPDocument *clipdoc, bool in_place, 
                 Geom::Affine relative_use_transform = original->transform.inverse() * use->transform;
                 obj_copy->setAttributeOrRemoveIfEmpty("transform", sp_svg_transform_write(relative_use_transform));
             }
+        }
+
+        if (is<SPItem>(spobject)) {
+            pasted_objects.push_back(obj_copy);
         }
     }
 
@@ -828,7 +830,7 @@ file_import(SPDocument *in_doc, const std::string &path, Inkscape::Extension::Ex
         cancelled = true;
     }
 
-    if (prefs->getString("/dialogs/import/import_mode_svg") == "new") {
+    if (doc && prefs->getString("/dialogs/import/import_mode_svg") == "new") {
         // Opened instead of imported, open and return nothing
         auto *app = InkscapeApplication::instance();
         app->document_add(doc);

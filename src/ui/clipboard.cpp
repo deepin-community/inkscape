@@ -827,7 +827,7 @@ bool ClipboardManagerImpl::pasteSize(ObjectSet *set, bool separately, bool apply
         // resize the selection as a whole
         Geom::OptRect sel_size = set->preferredBounds();
         if (sel_size) {
-            set->setScaleRelative(sel_size->midpoint(),
+            set->scaleRelative(sel_size->midpoint(),
                                          _getScale(set->desktop(), min, max, *sel_size, apply_x, apply_y));
         }
     }
@@ -1071,6 +1071,7 @@ void ClipboardManagerImpl::_copySelection(ObjectSet *selection)
             auto &group = groups[item->parent];
             if (!group) {
                 group = _doc->createElement("svg:g");
+                group->setAttribute("id", item->parent->getId()); // avoid getting a clashing id
                 _root->appendChild(group);
                 Inkscape::GC::release(group);
 
@@ -1170,10 +1171,16 @@ void ClipboardManagerImpl::_copyCompleteStyle(SPItem *item, Inkscape::XML::Node 
  */
 void ClipboardManagerImpl::_copyUsedDefs(SPItem *item)
 {
-    auto use = cast<SPUse>(item);
-    if (use && use->get_original()) {
-        if(cloned_elements.insert(use->get_original()).second)
-            _copyUsedDefs(use->get_original());
+    bool recurse = true;
+
+    if (auto use = cast<SPUse>(item)) {
+        if (auto original = use->get_original()) {
+            if (original->document != use->document) {
+                recurse = false;
+            } else {
+                cloned_elements.insert(original);
+            }
+        }
     }
 
     // copy fill and stroke styles (patterns and gradients)
@@ -1291,6 +1298,10 @@ void ClipboardManagerImpl::_copyUsedDefs(SPItem *item)
                 }
             }
         }
+    }
+
+    if (!recurse) {
+        return;
     }
 
     // recurse
@@ -1424,8 +1435,10 @@ bool ClipboardManagerImpl::_pasteImage(SPDocument *doc)
     Inkscape::Preferences *prefs = Inkscape::Preferences::get();
     Glib::ustring attr_saved = prefs->getString("/dialogs/import/link");
     bool ask_saved = prefs->getBool("/dialogs/import/ask");
+    auto mode_saved = prefs->getString("/dialogs/import/import_mode_svg");
     prefs->setString("/dialogs/import/link", "embed");
     prefs->setBool("/dialogs/import/ask", false);
+    prefs->setString("/dialogs/import/import_mode_svg", "embed");
     png->set_gui(false);
 
     gchar *filename = g_build_filename( g_get_user_cache_dir(), "inkscape-clipboard-import", nullptr );
@@ -1434,6 +1447,7 @@ bool ClipboardManagerImpl::_pasteImage(SPDocument *doc)
     g_free(filename);
     prefs->setString("/dialogs/import/link", attr_saved);
     prefs->setBool("/dialogs/import/ask", ask_saved);
+    prefs->setString("/dialogs/import/import_mode_svg", mode_saved);
     png->set_gui(true);
 
     return true;

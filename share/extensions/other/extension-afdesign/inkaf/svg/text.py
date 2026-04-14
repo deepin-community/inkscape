@@ -16,7 +16,7 @@ from .curve import AFCurve
 from .fill import AFColor, AFGradient, parse_fdsc
 from .shape import AFRectangle, AFShape, parse_shape
 from .styles import AFStroke
-from .util import AFBoundingBox
+from .util import bbox_helper
 
 
 class AFTextStretch(Enum):
@@ -150,16 +150,16 @@ class AFGlyphAtt:
     rfnt: AFFont  # Unknown
 
     font_size: float
-    fill: AFColor | AFGradient
-    bg_fill: AFColor | AFGradient
-    stroke_fill: AFColor | AFGradient
+    fill: Optional[AFColor | AFGradient]
+    bg_fill: Optional[AFColor | AFGradient]
+    stroke_fill: Optional[AFColor | AFGradient]
     stroke: AFStroke
 
     underline: AFTextLineStyle
-    underline_fill: AFColor | AFGradient
+    underline_fill: Optional[AFColor | AFGradient]
 
     line_through: AFTextLineStyle
-    line_through_fill: AFColor | AFGradient
+    line_through_fill: Optional[AFColor | AFGradient]
 
     lang: str
 
@@ -201,6 +201,7 @@ class AFTextType(Enum):
     ARTISTIC = "TxtA"
     FRAMED = "TxtF"
     FOLLOW_CURVE = "CPTx"
+    FOLLOW_CURVE2 = "SPTN"
     IN_SHAPE = "TxtS"
     IN_CURVE = "TxtC"
 
@@ -244,10 +245,12 @@ class AFText:
         elif text_type == AFTextType.IN_CURVE:
             shape_inside = AFCurve.from_af(child["Crvs"])
         else:
-            shape_inside = AFRectangle(AFBoundingBox(*b_box))
+            shape_inside = AFRectangle(bbox_helper(b_box))
 
         text_path = (
-            AFTextPath.from_af(txth) if text_type == AFTextType.FOLLOW_CURVE else None
+            AFTextPath.from_af(txth)
+            if text_type in [AFTextType.FOLLOW_CURVE, AFTextType.FOLLOW_CURVE2]
+            else None
         )
 
         blocks = child["StSt"]["Blok"]

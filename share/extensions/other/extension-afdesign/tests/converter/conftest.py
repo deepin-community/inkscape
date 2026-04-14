@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
+import inkex
 import pytest
 
 from inkaf.parser.types import (
@@ -18,7 +19,6 @@ from inkaf.parser.types import (
 )
 from inkaf.svg.fill import AFGradientType
 from inkaf.svg.shape import AFCornerType
-from inkaf.svg.util import AFBoundingBox
 
 ## Fills
 
@@ -104,7 +104,7 @@ def make_gradient(make_color):
 
 @pytest.fixture
 def make_base_shape():
-    def _make_base_shape(bbox: AFBoundingBox, type_tag: str) -> AFDictObject:
+    def _make_base_shape(bbox: inkex.BoundingBox, type_tag: str) -> AFDictObject:
         return AFDictObject(
             id=0,
             types=[
@@ -130,7 +130,9 @@ def make_base_shape():
                         fields={},
                     ),
                 ),
-                "ShpB": Field(type=38, value=[bbox.x1, bbox.y1, bbox.x2, bbox.y2]),
+                "ShpB": Field(
+                    type=38, value=[bbox.left, bbox.top, bbox.right, bbox.bottom]
+                ),
             },
         )
 
@@ -140,7 +142,7 @@ def make_base_shape():
 @pytest.fixture
 def make_rectangle(make_base_shape):
     def _make_rectangle(
-        bbox: AFBoundingBox,
+        bbox: inkex.BoundingBox,
         radii: Optional[List[float]] = None,
         corner_types: Optional[List[AFCornerType]] = None,
         absz: Optional[bool] = None,
@@ -168,7 +170,7 @@ def make_rectangle(make_base_shape):
 
 @pytest.fixture
 def make_ellipse(make_base_shape):
-    def _make_ellipse(bbox: AFBoundingBox) -> AFDictObject:
+    def _make_ellipse(bbox: inkex.BoundingBox) -> AFDictObject:
         return make_base_shape(bbox, "ShpE")
 
     return _make_ellipse
@@ -177,7 +179,7 @@ def make_ellipse(make_base_shape):
 @pytest.fixture
 def make_triangle(make_base_shape):
     def _make_triangle(
-        bbox: AFBoundingBox, pos: Optional[float] = None
+        bbox: inkex.BoundingBox, pos: Optional[float] = None
     ) -> AFDictObject:
         shape = make_base_shape(bbox, "ShpT")
         if pos is not None:
@@ -189,7 +191,9 @@ def make_triangle(make_base_shape):
 
 @pytest.fixture
 def make_diamond(make_base_shape):
-    def _make_diamond(bbox: AFBoundingBox, pos: Optional[float] = None) -> AFDictObject:
+    def _make_diamond(
+        bbox: inkex.BoundingBox, pos: Optional[float] = None
+    ) -> AFDictObject:
         shape = make_base_shape(bbox, "ShpD")
         if pos is not None:
             shape["Shpe"].fields["Pos "] = Field(type=9, value=pos)
@@ -201,7 +205,9 @@ def make_diamond(make_base_shape):
 @pytest.fixture
 def make_trapezoid(make_base_shape):
     def _make_trapezoid(
-        bbox: AFBoundingBox, posl: Optional[float] = None, posr: Optional[float] = None
+        bbox: inkex.BoundingBox,
+        posl: Optional[float] = None,
+        posr: Optional[float] = None,
     ) -> AFDictObject:
         shape = make_base_shape(bbox, "ShTz")
         if posl is not None:

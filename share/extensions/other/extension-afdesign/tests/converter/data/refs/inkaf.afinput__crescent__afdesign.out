@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg"
+    xmlns:xlink="http://www.w3.org/1999/xlink"
+    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+    viewBox="0.0 0.0 2480.314960629921 3507.8740157480315" width="2480.314960629921"
+    height="3507.8740157480315">
+    <sodipodi:namedview guidecolor="#0080dc" guideopacity="0.8000000715255737" />
+    <g style="opacity:1.0;fill:#0037ff;fill-opacity:1.0;stroke:none;stroke-opacity:1.0">
+        <path
+            d="M 1325.92 1266.89 A 257.519 257.519 0 0 1 1325.92 751.848 A 258.838 258.838 0 0 0 1325.92 1266.89 Z"
+            style="fill:#0037ff;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path
+            d="M 468.243 1279.82 A 285.968 285.968 0 0 1 468.243 764.778 A 397.108 397.108 0 0 1 468.243 1279.82 Z"
+            style="fill:#0037ff;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path
+            d="M 719.499 1809.21 A 257.519 159.468 -74.5136 0 1 857.02 1312.87 A 268.249 166.112 -74.5136 0 0 719.499 1809.21 Z"
+            style="fill:#0037ff;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path
+            d="M 1513.4 1952.17 A 257.519 257.519 0 0 1 1513.4 1437.13 A 257.519 257.519 0 0 1 1513.4 1952.17 Z"
+            style="fill:#0037ff;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path
+            d="M 1802.17 1319.68 A 370.924 210.648 90 0 0 1802.17 970.578 A 174.552 99.1285 90 0 1 1802.17 1319.68 Z"
+            style="fill:#0037ff;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path d="M 1441.22 1267.96 L 1441.22 992.127 A 137.918 132.531 90 0 1 1441.22 1267.96 Z"
+            style="fill:#0037ff;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path d="M 1763.38 864.984 A 183.172 158.929 0 0 1 1763.38 610.698 L 1763.38 864.984 Z"
+            style="fill:#0037ff;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path
+            d="M 946.65 1076.17 A 182.095 96.9736 90 0 1 946.65 711.981 A 330.806 176.169 90 0 0 946.65 1076.17 Z"
+            style="fill:#0037ff;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+    </g>
+    <g
+        style="opacity:1.0;fill:#0037ff;fill-opacity:1.0;stroke:#d20000;stroke-opacity:0.5325203537940979;stroke-width:24.583333333333137;stroke-linecap:butt;paint-order:fill stroke markers;stroke-linejoin:round">
+        <path
+            d="M 1325.92 751.848 C 1197.47 760.109 1093.19 872.655 1093.19 1009.37 C 1093.19 1146.08 1197.47 1258.63 1325.92 1266.89 C 1183.8 1266.89 1068.41 1151.5 1068.41 1009.37 C 1068.41 867.239 1183.8 751.848 1325.92 751.848 Z"
+            style="fill:#0037ff;fill-opacity:1.0;stroke:#d20000;stroke-opacity:0.5325203537940979;stroke-width:24.583333333333137;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 468.247 764.778 C 520.579 819.011 563.066 915.732 563.066 1022.3 C 563.066 1128.86 520.579 1225.58 468.247 1279.82 C 379.045 1247.85 306.625 1143.46 306.625 1022.3 C 306.625 901.13 379.045 796.743 468.247 764.778 Z"
+            style="fill:#0037ff;fill-opacity:1.0;stroke:#d20000;stroke-opacity:0.5325203537940979;stroke-width:24.583333333333137;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 857.02 1312.87 C 787.677 1315.93 707.194 1405.7 673.002 1529.1 C 638.809 1652.51 661.617 1770.9 719.5 1809.21 C 634.683 1785.71 596.632 1655.43 634.582 1518.46 C 672.532 1381.49 772.203 1289.37 857.02 1312.87 Z"
+            style="fill:#0037ff;fill-opacity:1.0;stroke:#d20000;stroke-opacity:0.5325203537940979;stroke-width:24.583333333333137;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 1513.41 1437.13 C 1655.54 1437.13 1770.93 1552.52 1770.93 1694.65 C 1770.93 1836.78 1655.54 1952.17 1513.41 1952.17 C 1371.28 1952.17 1255.89 1836.78 1255.89 1694.65 C 1255.89 1552.52 1371.28 1437.13 1513.41 1437.13 Z"
+            style="fill:#0037ff;fill-opacity:1.0;stroke:#d20000;stroke-opacity:0.5325203537940979;stroke-width:24.583333333333137;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 1802.17 970.578 C 1856.88 970.578 1901.3 1048.79 1901.3 1145.13 C 1901.3 1241.47 1856.88 1319.68 1802.17 1319.68 C 1815.85 1276.04 1826.96 1212.85 1826.96 1145.13 C 1826.96 1077.41 1815.85 1014.22 1802.17 970.578 Z"
+            style="fill:#0037ff;fill-opacity:1.0;stroke:#d20000;stroke-opacity:0.5325203537940979;stroke-width:24.583333333333137;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 1441.22 992.127 C 1514.36 992.127 1573.75 1053.93 1573.75 1130.05 C 1573.75 1206.16 1514.36 1267.96 1441.22 1267.96 C 1441.22 1221.99 1441.22 1176.02 1441.22 1130.05 C 1441.22 1084.07 1441.22 1038.1 1441.22 992.127 Z"
+            style="fill:#0037ff;fill-opacity:1.0;stroke:#d20000;stroke-opacity:0.5325203537940979;stroke-width:24.583333333333137;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 1763.38 610.698 C 1763.38 653.079 1763.38 695.46 1763.38 737.841 C 1763.38 780.222 1763.38 822.603 1763.38 864.984 C 1722.95 843.794 1690.11 794.118 1690.11 737.841 C 1690.11 681.564 1722.95 631.888 1763.38 610.698 Z"
+            style="fill:#0037ff;fill-opacity:1.0;stroke:#d20000;stroke-opacity:0.5325203537940979;stroke-width:24.583333333333137;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 946.65 711.981 C 930.594 754.47 917.558 821.437 917.558 894.076 C 917.558 966.715 930.594 1033.68 946.65 1076.17 C 893.129 1076.17 849.677 994.577 849.677 894.076 C 849.677 793.575 893.129 711.981 946.65 711.981 Z"
+            style="fill:#0037ff;fill-opacity:1.0;stroke:#d20000;stroke-opacity:0.5325203537940979;stroke-width:24.583333333333137;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+    </g>
+    <title>sichel.svg</title>
+</svg>

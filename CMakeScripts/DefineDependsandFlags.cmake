@@ -159,7 +159,7 @@ add_definitions(${Intl_DEFINITIONS})
 
 # Check for system-wide version of 2geom and fallback to internal copy if not found
 if(NOT WITH_INTERNAL_2GEOM)
-    pkg_check_modules(2Geom QUIET IMPORTED_TARGET GLOBAL 2geom>=1.4.0)
+    pkg_check_modules(2Geom QUIET IMPORTED_TARGET GLOBAL 2geom>=${INKSCAPE_VERSION_MAJOR}.${INKSCAPE_VERSION_MINOR})
     if(2Geom_FOUND)
         add_library(2Geom::2geom ALIAS PkgConfig::2Geom)
     else()
@@ -248,6 +248,10 @@ if(WITH_SVG2)
     add_definitions(-DWITH_MESH -DWITH_CSSBLEND -DWITH_SVG2)
 else()
     add_definitions(-UWITH_MESH -UWITH_CSSBLEND -UWITH_SVG2)
+endif()
+
+if(LINUX_SNAP_PACKAGE)
+    add_definitions(-DLINUX_SNAP_PACKAGE)
 endif()
 
 # ----------------------------------------------------------------------------

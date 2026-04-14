@@ -2,10 +2,9 @@ skip-test-lpe.patch
 skip-test-8_png_check_output.patch
 skip-test-glyph-big-endian.patch
 skip-tests-temp.patch
-Future-proof-against-poppler-24.10-changes.patch
-Fix-building-with-Poppler-24.11.patch
-Fix-building-with-poppler-24.12.0.patch
-Fix-building-with-poppler-25.02.0.patch
 skip-test-multi-page-sample-big-endian.patch
 skip-test-geom-pathstroke.patch
 skip-tests-multi-architectures.patch
+replace_appdirs_with_platformdirs.patch
+Fix-build-against-Poppler-25.06.patch
+Implement-get_program_name-on-GNU-Hurd.patch
