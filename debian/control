@@ -68,6 +68,7 @@ Depends:
  ${python3:Depends},
  ${shlibs:Depends},
  python3-cachecontrol,
+ python3-pil,
  python3-tinycss2
 Recommends:
  aspell,
