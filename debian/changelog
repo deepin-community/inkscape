@@ -1,3 +1,9 @@
+inkscape (1.4.2-3deepin1) unstable; urgency=medium
+
+  * fix the error when exporting jpg files
+
+ -- lhdjply <lhdjply@126.com>  Tue, 14 Apr 2026 13:26:08 +0800
+
 inkscape (1.4.2-3) unstable; urgency=medium
 
   * Team upload
