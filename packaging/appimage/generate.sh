@@ -90,7 +90,6 @@ apt_bundle \
     python3-msgpack \
     python3-lockfile \
     python3-cssselect \
-    python3-tinycss2 \
     python3-webencodings \
     python3-distutils \
     python3-packaging \
@@ -108,6 +107,10 @@ apt_bundle \
     make_ld_launcher "python${PY_VER}" python3
     make_ld_launcher "python${PY_VER}" python
 )
+
+python${PY_VER} -m pip install --target=./usr/lib/python3/dist-packages/ zstandard
+python${PY_VER} -m pip install --target=./usr/lib/python3/dist-packages/ tinycss2
+
 
 # Compile GLib schemas if the subdirectory is present in the AppImage
 # AppRun has to export GSETTINGS_SCHEMA_DIR for this to work

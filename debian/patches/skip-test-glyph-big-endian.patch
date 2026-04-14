@@ -10,10 +10,10 @@ Forwarded: https://gitlab.com/inkscape/inkscape/-/issues/4032
  1 file changed, 5 insertions(+)
 
 diff --git a/testfiles/rendering_tests/CMakeLists.txt b/testfiles/rendering_tests/CMakeLists.txt
-index 6fdef41..2024e75 100644
+index 01f7be6..83ec41e 100644
 --- a/testfiles/rendering_tests/CMakeLists.txt
 +++ b/testfiles/rendering_tests/CMakeLists.txt
-@@ -66,10 +66,15 @@ add_rendering_test(symbol-svg2-ref)
+@@ -67,10 +67,15 @@ add_rendering_test(symbol-svg2-ref)
  
  # Tests to run for 64-bit builds only. These fail in 32-bit builds (possibly due to rounding issues)
  # TODO: Figure out actual cause and see if we can fix it

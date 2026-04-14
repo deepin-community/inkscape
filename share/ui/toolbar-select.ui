@@ -46,6 +46,26 @@
       </object>
     </child>
   </object>
+  <object class="GtkPopover" id="popover3">
+    <property name="modal">True</property>
+    <child>
+      <object class="GtkBox" id="popover_box3">
+        <property name="visible">True</property>
+        <property name="valign">center</property>
+        <property name="spacing">3</property>
+      </object>
+    </child>
+  </object>
+  <object class="GtkPopover" id="popover4">
+    <property name="modal">True</property>
+    <child>
+      <object class="GtkBox" id="popover_box4">
+        <property name="visible">True</property>
+        <property name="valign">center</property>
+        <property name="spacing">3</property>
+      </object>
+    </child>
+  </object>
   <object class="GtkBox" id="select-toolbar">
     <property name="visible">True</property>
     <property name="halign">start</property>
@@ -157,14 +177,42 @@
       </object>
     </child>
     <child>
+      <object class="GtkMenuButton" id="menu_btn2">
+        <property name="visible">True</property>
+        <property name="can-focus">True</property>
+        <property name="focus-on-click">False</property>
+        <property name="receives-default">True</property>
+        <property name="popover">popover2</property>
+        <child>
+	  <object class="GtkBox">
+	    <property name="visible">True</property>
+	    <child>
+              <object class="GtkImage">
+		<property name="visible">True</property>
+		<property name="icon-name">object-rotate-left</property>
+              </object>
+	    </child>
+	    <child>
+              <object class="GtkImage">
+		<property name="visible">True</property>
+		<property name="icon-name">pan-down</property>
+              </object>
+	    </child>
+	  </object>
+        </child>
+      </object>
+    </child>
+    <child>
       <object class="GtkButton" id="rotate_left_btn">
         <property name="visible">True</property>
         <property name="can-focus">True</property>
         <property name="tooltip-text" translatable="yes">Rotate selection 90\xc2\xb0 counter-clockwise</property>
-        <property name="action-name">app.object-rotate-90-ccw</property>
+        <property name="action-name">app.transform-rotate</property>
+        <property name="action-target">-90.0</property>
         <property name="relief">none</property>
         <style>
           <class name="context_item"/>
+          <class name="tag2"/>
         </style>
         <child>
           <object class="GtkImage" id="image5">
@@ -179,10 +227,12 @@
         <property name="visible">True</property>
         <property name="can-focus">True</property>
         <property name="tooltip-text" translatable="yes">Rotate selection 90\xc2\xb0 clockwise</property>
-        <property name="action-name">app.object-rotate-90-cw</property>
+        <property name="action-name">app.transform-rotate</property>
+        <property name="action-target">90.0</property>
         <property name="relief">none</property>
         <style>
           <class name="context_item"/>
+          <class name="tag2"/>
         </style>
         <child>
           <object class="GtkImage" id="image6">
@@ -201,6 +251,7 @@
         <property name="relief">none</property>
         <style>
           <class name="context_item"/>
+          <class name="tag2"/>
         </style>
         <child>
           <object class="GtkImage" id="image7">
@@ -219,6 +270,7 @@
         <property name="relief">none</property>
         <style>
           <class name="context_item"/>
+          <class name="tag2"/>
         </style>
         <child>
           <object class="GtkImage" id="image8">
@@ -234,12 +286,12 @@
       </object>
     </child>
     <child>
-      <object class="GtkMenuButton" id="menu_btn2">
+      <object class="GtkMenuButton" id="menu_btn3">
         <property name="visible">True</property>
         <property name="can-focus">True</property>
         <property name="focus-on-click">False</property>
         <property name="receives-default">True</property>
-        <property name="popover">popover2</property>
+        <property name="popover">popover3</property>
         <child>
 	  <object class="GtkBox">
 	    <property name="visible">True</property>
@@ -268,7 +320,7 @@
         <property name="relief">none</property>
         <style>
           <class name="context_item"/>
-          <class name="tag2"/>
+          <class name="tag3"/>
         </style>
         <child>
           <object class="GtkImage" id="image9">
@@ -287,7 +339,7 @@
         <property name="relief">none</property>
         <style>
           <class name="context_item"/>
-          <class name="tag2"/>
+          <class name="tag3"/>
         </style>
         <child>
           <object class="GtkImage" id="image10">
@@ -306,7 +358,7 @@
         <property name="relief">none</property>
         <style>
           <class name="context_item"/>
-          <class name="tag2"/>
+          <class name="tag3"/>
         </style>
         <child>
           <object class="GtkImage" id="image11">
@@ -325,7 +377,7 @@
         <property name="relief">none</property>
         <style>
           <class name="context_item"/>
-          <class name="tag2"/>
+          <class name="tag3"/>
         </style>
         <child>
           <object class="GtkImage" id="image12">
@@ -468,11 +520,40 @@
       </object>
     </child>
     <child>
+      <object class="GtkMenuButton" id="menu_btn4">
+        <property name="visible">True</property>
+        <property name="can-focus">True</property>
+        <property name="focus-on-click">False</property>
+        <property name="receives-default">True</property>
+        <property name="popover">popover4</property>
+        <child>
+	  <object class="GtkBox">
+	    <property name="visible">True</property>
+	    <child>
+              <object class="GtkImage">
+		<property name="visible">True</property>
+		<property name="icon-name">transform-affect-stroke</property>
+              </object>
+	    </child>
+	    <child>
+              <object class="GtkImage">
+		<property name="visible">True</property>
+		<property name="icon-name">pan-down</property>
+              </object>
+	    </child>
+	  </object>
+        </child>
+      </object>
+    </child>
+    <child>
       <object class="GtkToggleButton" id="_transform_stroke_btn">
         <property name="visible">True</property>
         <property name="can-focus">True</property>
         <property name="tooltip-text" translatable="yes">When scaling objects, scale the stroke width by the same proportion</property>
         <property name="relief">none</property>
+        <style>
+          <class name="tag4"/>
+        </style>
         <child>
           <object class="GtkImage" id="image13">
             <property name="visible">True</property>
@@ -487,6 +568,9 @@
         <property name="can-focus">True</property>
         <property name="tooltip-text" translatable="yes">When scaling rectangles, scale the radii of rounded corners</property>
         <property name="relief">none</property>
+        <style>
+          <class name="tag4"/>
+        </style>
         <child>
           <object class="GtkImage" id="image14">
             <property name="visible">True</property>
@@ -501,6 +585,9 @@
         <property name="can-focus">True</property>
         <property name="tooltip-text" translatable="yes">Move gradients (in fill or stroke) along with the objects</property>
         <property name="relief">none</property>
+        <style>
+          <class name="tag4"/>
+        </style>
         <child>
           <object class="GtkImage" id="image15">
             <property name="visible">True</property>
@@ -515,6 +602,9 @@
         <property name="can-focus">True</property>
         <property name="tooltip-text" translatable="yes">Move patterns (in fill or stroke) along with the objects</property>
         <property name="relief">none</property>
+        <style>
+          <class name="tag4"/>
+        </style>
         <child>
           <object class="GtkImage" id="image16">
             <property name="visible">True</property>
@@ -524,7 +614,7 @@
       </object>
     </child>
     <style>
-      <class name="toolbar"/>
+      <class name="inkscape-toolbar"/>
     </style>
   </object>
 </interface>

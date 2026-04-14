@@ -38,10 +38,10 @@ not yet investigated
  2 files changed, 7 insertions(+), 4 deletions(-)
 
 diff --git a/testfiles/CMakeLists.txt b/testfiles/CMakeLists.txt
-index fce8a82..4c2d9e9 100644
+index 18e45f8..136c779 100644
 --- a/testfiles/CMakeLists.txt
 +++ b/testfiles/CMakeLists.txt
-@@ -124,7 +124,7 @@ endforeach()
+@@ -125,7 +125,7 @@ endforeach()
  
  ### CLI rendering tests and LPE
  add_subdirectory(cli_tests)

@@ -101,10 +101,16 @@ class BaseParser:
         """Checks if an object has a Blur filter applied, and in that case returns the
         equivalent XAML object"""
         value = self.element.specified_style()("filter")
-        if value is None or len(value) != 1 or value[0].TAG != "feGaussianBlur":
+        # Only if it's a single filter with a single blur primitive
+        if (
+            value is None
+            or len(value) != 1
+            or len(value[0]) != 1
+            or value[0][0].TAG != "feGaussianBlur"
+        ):
             return None
         result = BlurEffect()
-        std_dev = value[0].get("stdDeviation")
+        std_dev = value[0][0].get("stdDeviation")
         std_dev = float(std_dev.split()[0]) * 3.1  # empirical factor
         if std_dev < 0.5:
             # Ignore

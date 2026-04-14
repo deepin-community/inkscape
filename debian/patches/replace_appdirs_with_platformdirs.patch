@@ -1,0 +1,36 @@
+From: Alexandre Detiste <tchet@debian.org>
+Date: Sat, 2 Aug 2025 23:40:57 +0200
+Subject: replace_appdirs_with_platformdirs
+
+BugNr: #999496
+---
+ share/extensions/other/clipart/import_web_image.py | 2 +-
+ share/extensions/other/inkman/inkman/utils.py      | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/share/extensions/other/clipart/import_web_image.py b/share/extensions/other/clipart/import_web_image.py
+index 28fdfd7..c80c633 100755
+--- a/share/extensions/other/clipart/import_web_image.py
++++ b/share/extensions/other/clipart/import_web_image.py
+@@ -33,7 +33,7 @@ warnings.filterwarnings("ignore")
+ 
+ from collections import defaultdict
+ from base64 import encodebytes
+-from appdirs import user_cache_dir
++from platformdirs import user_cache_dir
+ 
+ import inkex
+ from inkex import Style
+diff --git a/share/extensions/other/inkman/inkman/utils.py b/share/extensions/other/inkman/inkman/utils.py
+index 30a2117..94411bb 100644
+--- a/share/extensions/other/inkman/inkman/utils.py
++++ b/share/extensions/other/inkman/inkman/utils.py
+@@ -23,7 +23,7 @@ import os
+ 
+ from collections import defaultdict
+ from email.parser import FeedParser
+-from appdirs import user_cache_dir
++from platformdirs import user_cache_dir
+ 
+ from inkex.inx import InxFile
+ from inkex.command import inkscape, ProgramRunError, CommandNotFound

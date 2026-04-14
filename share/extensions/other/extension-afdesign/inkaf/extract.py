@@ -20,8 +20,8 @@ import shutil
 import traceback
 import sys
 from typing import Any, Dict
+import logging
 
-from inkaf.afinput import parse
 from inkaf.svg.convert import AFConverter
 
 HERE = os.path.dirname(__file__) or "."
@@ -56,6 +56,12 @@ parser.add_argument(
     "--collect-unit-tests",
     action="store_true",
     help="Collect unit tests. Modify the wrapper function to decide what to collect",
+)
+parser.add_argument(
+    "-e",
+    "--no-enhance",
+    action="store_true",
+    help="Do not enhance the extracted svg",
 )
 
 
@@ -119,7 +125,7 @@ def process_fat_file(extractor: AFExtractor, fat_dir: Path, file: FATFile):
                 with open(fat_dir / (file.name + ".json"), "w") as f:
                     json.dump(parsed, f, cls=EnhancedJSONEncoder, indent=4)
                 print(
-                    f"\t{file.name}: Parsed content written to {fat_dir / (file.name +'.json')}"
+                    f"\t{file.name}: Parsed content written to {fat_dir / (file.name + '.json')}"
                 )
             except Exception as e:
                 print(
@@ -184,11 +190,10 @@ def process_file(file_name):
 
     try:
         with open(file_name, "rb") as stream:
-            converter = AFConverter(parse(stream))
-            converter.convert()
+            converter = AFConverter()
+            converter.convert(AFExtractor(stream), not args.no_enhance)
             res = converter.doc.getroot().tostring()
             newfile = file_name.with_suffix(".svg")
-            # print(res)
             if res != "":
                 with open(newfile, "w") as f:
                     f.write(res.decode())
@@ -204,6 +209,8 @@ def process_file(file_name):
 
 def main(files=args.filename):
     """Extract the files."""
+
+    logging.basicConfig(level=logging.INFO if args.verbose else logging.ERROR)
 
     did_something = False
     error = False

@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg"
+    xmlns:xlink="http://www.w3.org/1999/xlink"
+    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" viewBox="0.0 0.0 1280.0 800.0"
+    width="1280.0" height="800.0">
+    <sodipodi:namedview guidecolor="#0080dc" guideopacity="0.8000000715255737" />
+    <defs>
+        <inkscape:path-effect effect="fillet_chamfer" lpeversion="1" method="arc" flexible="true"
+            satellites_param="F,1,0,1,0,0.1364628820960699,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.2729257641921398,0,1 @ F,1,0,1,0,0.5,0,1"
+            nodesatellites_param="F,1,0,1,0,0.1364628820960699,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.2729257641921398,0,1 @ F,1,0,1,0,0.5,0,1"
+            id="path-effect5815" />
+        <inkscape:path-effect effect="fillet_chamfer" lpeversion="1" method="arc" flexible="true"
+            satellites_param="F,1,0,1,0,0.13137254901960782,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.26274509803921564,0,1 @ F,1,0,1,0,0.5,0,1"
+            nodesatellites_param="F,1,0,1,0,0.13137254901960782,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.26274509803921564,0,1 @ F,1,0,1,0,0.5,0,1"
+            id="path-effect8555" />
+        <inkscape:path-effect effect="fillet_chamfer" lpeversion="1" method="arc" flexible="true"
+            satellites_param="F,1,0,1,0,0.13137254901960776,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.26274509803921553,0,1 @ F,1,0,1,0,0.5,0,1"
+            nodesatellites_param="F,1,0,1,0,0.13137254901960776,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.26274509803921553,0,1 @ F,1,0,1,0,0.5,0,1"
+            id="path-effect5392" />
+        <inkscape:path-effect effect="fillet_chamfer" lpeversion="1" method="arc" flexible="true"
+            satellites_param="F,1,0,1,0,0.13137254901960776,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.26274509803921553,0,1 @ F,1,0,1,0,0.5,0,1"
+            nodesatellites_param="F,1,0,1,0,0.13137254901960776,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.26274509803921553,0,1 @ F,1,0,1,0,0.5,0,1"
+            id="path-effect9603" />
+        <inkscape:path-effect effect="fillet_chamfer" lpeversion="1" method="arc" flexible="true"
+            satellites_param="F,1,0,1,0,0.12973484848484837,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.25946969696969674,0,1 @ F,1,0,1,0,0.5,0,1"
+            nodesatellites_param="F,1,0,1,0,0.12973484848484837,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.25946969696969674,0,1 @ F,1,0,1,0,0.5,0,1"
+            id="path-effect4306" />
+        <inkscape:path-effect effect="fillet_chamfer" lpeversion="1" method="arc" flexible="true"
+            satellites_param="F,1,0,1,0,0.12973484848484837,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.25946969696969674,0,1 @ F,1,0,1,0,0.5,0,1"
+            nodesatellites_param="F,1,0,1,0,0.12973484848484837,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.25946969696969674,0,1 @ F,1,0,1,0,0.5,0,1"
+            id="path-effect7856" />
+        <inkscape:path-effect effect="fillet_chamfer" lpeversion="1" method="arc" flexible="true"
+            satellites_param="F,1,0,1,0,0.12973484848484826,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.2594696969696965,0,1 @ F,1,0,1,0,0.5,0,1"
+            nodesatellites_param="F,1,0,1,0,0.12973484848484826,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.2594696969696965,0,1 @ F,1,0,1,0,0.5,0,1"
+            id="path-effect5654" />
+        <inkscape:path-effect effect="fillet_chamfer" lpeversion="1" method="arc" flexible="true"
+            satellites_param="F,1,0,1,0,0.1364628820960699,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.2729257641921398,0,1 @ F,1,0,1,0,0.5,0,1"
+            nodesatellites_param="F,1,0,1,0,0.1364628820960699,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.2729257641921398,0,1 @ F,1,0,1,0,0.5,0,1"
+            id="path-effect6457" />
+        <inkscape:path-effect effect="fillet_chamfer" lpeversion="1" method="arc" flexible="true"
+            satellites_param="F,1,0,1,0,0.1364628820960699,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.2729257641921398,0,1 @ F,1,0,1,0,0.5,0,1"
+            nodesatellites_param="F,1,0,1,0,0.1364628820960699,0,1 @ F,1,0,1,0,0.30000001192092896,0,1 @ F,1,0,1,0,0.2729257641921398,0,1 @ F,1,0,1,0,0.5,0,1"
+            id="path-effect2304" />
+    </defs>
+    <rect x="172.77925139994105" y="147.36221632773353" width="242.97082228116713"
+        height="132.62599469496027" inkscape:path-effect="#path-effect5815"
+        style="fill:#ebebeb;fill-opacity:1.0;stroke:#000000;stroke-opacity:1.0;stroke-width:10.0;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0"
+        transform="translate(-129.066, -56.9097)" />
+    <rect x="192.39610963748913" y="157.97229590333043" width="270.55702917771913"
+        height="142.17506631299747" inkscape:path-effect="#path-effect8555"
+        style="fill:#ebebeb;fill-opacity:1.0;stroke:#000000;stroke-opacity:1.0;stroke-width:10.0;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0"
+        transform="matrix(-1 0 0 1 492.874 397.996)" />
+    <rect x="192.39611718884387" y="157.97230210358492" width="270.55703979681175"
+        height="142.17507189322652" inkscape:path-effect="#path-effect5392"
+        style="fill:#ebebeb;fill-opacity:1.0;stroke:#000000;stroke-opacity:1.0;stroke-width:10.0;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0"
+        transform="matrix(-0.865773 0.500437 0.500437 0.865773 745.797 271.269)" />
+    <rect x="192.39611718884393" y="245.76202822177623" width="270.55703979681175"
+        height="221.18582539959874" inkscape:path-effect="#path-effect9603"
+        style="fill:#ebebeb;fill-opacity:1.0;stroke:#000000;stroke-opacity:1.0;stroke-width:10.0;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0"
+        transform="matrix(-0.865773 0.500437 0.984895 0.17315 929.161 404.952)" />
+    <rect x="199.1865605658711" y="161.50898909519594" width="280.1061007957563"
+        height="145.35809018567642" inkscape:path-effect="#path-effect4306"
+        style="fill:#ebebeb;fill-opacity:1.0;stroke:#000000;stroke-opacity:1.0;stroke-width:10.0;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0"
+        transform="matrix(-1 -1.41716e-17 -1.27017e-17 -1 504.439 634.188)" />
+    <rect x="199.18649091280852" y="161.50893261751145" width="280.106002846137"
+        height="145.35803935576035" inkscape:path-effect="#path-effect7856"
+        style="fill:#ebebeb;fill-opacity:1.0;stroke:#000000;stroke-opacity:1.0;stroke-width:10.0;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0"
+        transform="matrix(-0.866025 0.5 -0.5 -0.866025 975.763 427.873)" />
+    <rect x="199.18649091280858" y="251.26357074560678" width="280.10600284613713"
+        height="226.13721367104614" inkscape:path-effect="#path-effect5654"
+        style="fill:#ebebeb;fill-opacity:1.0;stroke:#000000;stroke-opacity:1.0;stroke-width:10.0;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0"
+        transform="matrix(-0.866025 0.5 -0.984808 -0.173648 1628.36 290.712)" />
+    <rect x="172.77919098118602" y="147.3621647969995" width="242.97073731729287"
+        height="132.62594831729965" inkscape:path-effect="#path-effect6457"
+        style="fill:#ebebeb;fill-opacity:1.0;stroke:#000000;stroke-opacity:1.0;stroke-width:10.0;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0"
+        transform="matrix(-0.866025 0.5 -0.5 -0.866025 927.139 189.827)" />
+    <rect x="172.77919098118605" y="229.25508279708654" width="242.97073731729296"
+        height="206.32957451737806" inkscape:path-effect="#path-effect2304"
+        style="fill:#ebebeb;fill-opacity:1.0;stroke:#000000;stroke-opacity:1.0;stroke-width:10.0;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0"
+        transform="matrix(-0.866025 0.5 -0.984808 -0.173648 1559 64.6808)" />
+    <title>rectangle_radius_tfm.svg</title>
+</svg>

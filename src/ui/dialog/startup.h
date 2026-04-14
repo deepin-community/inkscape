@@ -14,6 +14,7 @@
 #include <string>             // for string
 #include <gdk/gdk.h>          // for GdkModifierType
 #include <glibmm/refptr.h>    // for RefPtr
+#include <glibmm/timer.h>     // for Timer
 #include <glibmm/ustring.h>   // for ustring
 #include <gtk/gtk.h>          // for GtkEventControllerKey
 #include <gtkmm/dialog.h>     // for Dialog
@@ -23,6 +24,7 @@ namespace Gtk {
 class Builder;
 class Button;
 class ComboBox;
+class Label;
 class Notebook;
 class Overlay;
 class TreeView;
@@ -45,7 +47,12 @@ public:
     StartScreen();
     ~StartScreen() override;
 
+    static int get_start_mode();
+
     SPDocument* get_document() { return _document; }
+
+    void show_now();
+    void setup_welcome();
 
 protected:
     void on_response(int response_id) override;
@@ -59,9 +66,9 @@ private:
     void show_toggle();
     void enlist_recent_files();
     void enlist_keys();
-    void filter_themes();
+    void filter_themes(Gtk::ComboBox *themes);
     void keyboard_changed();
-    void notebook_switch(Gtk::Widget *tab, unsigned page_num);
+    void banner_switch(unsigned page_num);
 
     void theme_changed();
     void canvas_changed();
@@ -73,18 +80,21 @@ private:
     void on_recent_changed();
     void on_kind_changed(Gtk::Widget *tab, unsigned page_num);
 
-
 private:
-    Glib::RefPtr<Gtk::Builder> builder;
-    Gtk::Window   &window;
-    Gtk::Notebook &tabs;
-    Gtk::Overlay  &banners;
-    Gtk::ComboBox &themes;
-    Gtk::TreeView &recent_treeview;
-    Gtk::Button   &load_btn;
-    Inkscape::UI::Widget::TemplateList &templates;
+    const std::string opt_shown;
+    Glib::Timer timer;
+
+    Glib::RefPtr<Gtk::Builder> build_splash;
+    Gtk::Overlay &banners;
+    Gtk::Button &close_btn;
+    Gtk::Label &messages;
+
+    Glib::RefPtr<Gtk::Builder> build_welcome;
+    UI::Widget::TemplateList *templates = nullptr;
+    Gtk::TreeView *recentfiles = nullptr;
 
     SPDocument* _document = nullptr;
+    bool _welcome = false;
 };
 
 } // namespace Dialog

@@ -11,10 +11,10 @@ Forwarded: https://gitlab.com/inkscape/lib2geom/-/issues/80
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/testfiles/CMakeLists.txt b/testfiles/CMakeLists.txt
-index 4c2d9e9..ac2d46b 100644
+index 136c779..26b3065 100644
 --- a/testfiles/CMakeLists.txt
 +++ b/testfiles/CMakeLists.txt
-@@ -93,7 +93,7 @@ set(TEST_SOURCES
+@@ -94,7 +94,7 @@ set(TEST_SOURCES
      sp-gradient-test
      svg-path-geom-test
      visual-bounds-test

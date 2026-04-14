@@ -5,6 +5,7 @@
 from typing import Type
 
 import inkex
+from inkex import BoundingBox
 import inkex.base
 import pytest
 
@@ -19,7 +20,6 @@ from inkaf.svg.shape import (
     AFTriangle,
     parse_shape,
 )
-from inkaf.svg.util import AFBoundingBox
 from inkaf.svg.convert import AFConverter
 
 
@@ -32,7 +32,7 @@ def test_convert():
         expected: inkex.ShapeElement,
     ) -> None:
         afshape = parse_shape(shape["Shpe"], shape["ShpB"])
-        svg = AFConverter(None)._convert_shape(afshape)
+        svg = AFConverter()._convert_shape(afshape)
 
         assert isinstance(afshape, expected_type), f"Test failed: {test_name}"
         assert svg.tostring() == expected.tostring(), f"Test failed: {test_name}"
@@ -45,14 +45,14 @@ def test_convert():
     [
         (
             "Default",
-            (AFBoundingBox(10, 20, 130, 140),),
+            (BoundingBox([10, 130], [20, 140]),),
             inkex.Rectangle.new(10, 20, 120, 120),
             None,
         ),
         (
             "No corners",
             (
-                AFBoundingBox(5, 0, 100, 100),
+                BoundingBox([5, 100], [0, 100]),
                 [0.2, 0.3, 0.4, 0.5],
                 [AFCornerType.NONE] * 4,
                 False,
@@ -64,7 +64,7 @@ def test_convert():
         (
             "Rounded corners",
             (
-                AFBoundingBox(5, 0, 100, 100),
+                BoundingBox([5, 100], [0, 100]),
                 [0.2, 0.3, 0.4, 0.5],
                 [AFCornerType.ROUNDED] * 4,
                 False,
@@ -76,13 +76,13 @@ def test_convert():
                 lpeversion="1",
                 method="arc",
                 flexible="true",
-                nodesatellites_param="F,1,0,1,0,0.19,0,1 @ F,1,0,1,0,0.3,0,1 @ F,1,0,1,0,0.38,0,1 @ F,1,0,1,0,0.5,0,1",
+                nodesatellites_param="F,1,0,1,0,0.2,0,1 @ F,1,0,1,0,0.285,0,1 @ F,1,0,1,0,0.4,0,1 @ F,1,0,1,0,0.475,0,1",
             ),
         ),
         (
             "Concave corners",
             (
-                AFBoundingBox(5, 0, 100, 100),
+                BoundingBox([5, 100], [0, 100]),
                 [0.2, 0.3, 0.4, 0.5],
                 [AFCornerType.CONCAVE] * 4,
                 False,
@@ -94,13 +94,13 @@ def test_convert():
                 lpeversion="1",
                 method="arc",
                 flexible="true",
-                nodesatellites_param="IF,1,0,1,0,0.19,0,1 @ IF,1,0,1,0,0.3,0,1 @ IF,1,0,1,0,0.38,0,1 @ IF,1,0,1,0,0.5,0,1",
+                nodesatellites_param="IF,1,0,1,0,0.2,0,1 @ IF,1,0,1,0,0.285,0,1 @ IF,1,0,1,0,0.4,0,1 @ IF,1,0,1,0,0.475,0,1",
             ),
         ),
         (
             "Cutout corners",
             (
-                AFBoundingBox(5, 0, 100, 100),
+                BoundingBox([5, 100], [0, 100]),
                 [0.2, 0.3, 0.4, 0.5],
                 [AFCornerType.CUTOUT] * 4,
                 False,
@@ -114,7 +114,7 @@ def test_convert():
         (
             "Straight corners",
             (
-                AFBoundingBox(5, 0, 100, 100),
+                BoundingBox([5, 100], [0, 100]),
                 [0.2, 0.3, 0.4, 0.5],
                 [AFCornerType.STRAIGHT] * 4,
                 False,
@@ -126,13 +126,13 @@ def test_convert():
                 lpeversion="1",
                 method="arc",
                 flexible="true",
-                nodesatellites_param="C,1,0,1,0,0.19,0,1 @ C,1,0,1,0,0.3,0,1 @ C,1,0,1,0,0.38,0,1 @ C,1,0,1,0,0.5,0,1",
+                nodesatellites_param="C,1,0,1,0,0.2,0,1 @ C,1,0,1,0,0.285,0,1 @ C,1,0,1,0,0.4,0,1 @ C,1,0,1,0,0.475,0,1",
             ),
         ),
         (
             "Radii 100%",
             (
-                AFBoundingBox(0, 0, 100, 100),
+                BoundingBox([0, 100], [0, 100]),
                 [1.0] * 4,
                 [AFCornerType.STRAIGHT] * 4,
                 False,
@@ -150,7 +150,7 @@ def test_convert():
         (
             "Radii 50%",
             (
-                AFBoundingBox(0, 0, 100, 100),
+                BoundingBox([0, 100], [0, 100]),
                 [0.5] * 4,
                 [AFCornerType.STRAIGHT] * 4,
                 False,
@@ -168,7 +168,7 @@ def test_convert():
         (
             "Radii 0%",
             (
-                AFBoundingBox(0, 0, 100, 100),
+                BoundingBox([0, 100], [0, 100]),
                 [0.0] * 4,
                 [AFCornerType.STRAIGHT] * 4,
                 False,
@@ -180,7 +180,7 @@ def test_convert():
         (
             "Radii overlap",
             (
-                AFBoundingBox(0, 0, 100, 100),
+                BoundingBox([0, 100], [0, 100]),
                 [0.8, 0.2, 0.2, 1.0],
                 [AFCornerType.STRAIGHT] * 4,
                 False,
@@ -210,7 +210,7 @@ def test_rectangle(
 
     rect = make_rectangle(*rectangle)
     afshape = parse_shape(rect["Shpe"], rect["ShpB"])
-    conv = AFConverter(None)
+    conv = AFConverter()
     conv.document = doc
     svg = conv._convert_rectangle(afshape)
 
@@ -238,7 +238,7 @@ def test_rectangle(
 
     exp_effect.set("id", effect.get_id())
     for k, v in exp_effect.items():
-        assert v == effect.get(k)
+        assert effect.get(k) == v
 
 
 @pytest.mark.parametrize(
@@ -246,12 +246,12 @@ def test_rectangle(
     [
         (
             "Circle",
-            (AFBoundingBox(0, 0, 100, 100),),
+            (BoundingBox([0, 100], [0, 100]),),
             inkex.Ellipse.new(center=(50.0, 50.0), radius=(50.0, 50.0)),
         ),
         (
             "Ellipse",
-            (AFBoundingBox(50, 25, 100, 100),),
+            (BoundingBox([50, 100], [25, 100]),),
             inkex.Ellipse.new(center=(75.0, 62.5), radius=(25.0, 37.5)),
         ),
     ],
@@ -265,12 +265,12 @@ def test_ellipse(test_convert, make_ellipse, test_name, ellipse, exp_shape):
     [
         (
             "Default",
-            (AFBoundingBox(0, 0, 100, 100),),
+            (BoundingBox([0, 100], [0, 100]),),
             inkex.Polygon.new(points="50.0,0 100,100 0,100"),
         ),
         (
             "Pos 0.25",
-            (AFBoundingBox(0, 0, 100, 100), 0.25),
+            (BoundingBox([0, 100], [0, 100]), 0.25),
             inkex.Polygon.new(points="25.0,0 100,100 0,100"),
         ),
     ],
@@ -284,12 +284,12 @@ def test_triangle(test_convert, make_triangle, test_name, triangle, exp_shape):
     [
         (
             "Default",
-            (AFBoundingBox(0, 0, 100, 100),),
+            (BoundingBox([0, 100], [0, 100]),),
             inkex.Polygon.new(points="50.0,0 100,50.0 50.0,100 0,50.0"),
         ),
         (
             "Pos 0.25",
-            (AFBoundingBox(0, 0, 100, 100), 0.25),
+            (BoundingBox([0, 100], [0, 100]), 0.25),
             inkex.Polygon.new(points="50.0,0 100,75.0 50.0,100 0,75.0"),
         ),
     ],
@@ -303,12 +303,12 @@ def test_diamond(test_convert, make_diamond, test_name, diamond, exp_shape):
     [
         (
             "Default",
-            (AFBoundingBox(0, 0, 100, 100),),
+            (BoundingBox([0, 100], [0, 100]),),
             inkex.Polygon.new(points="100,100 0,100 25.0,0 75.0,0"),
         ),
         (
             "LPos 0.1 RPos 0.9",
-            (AFBoundingBox(0, 0, 100, 100), 0.1, 0.9),
+            (BoundingBox([0, 100], [0, 100]), 0.1, 0.9),
             inkex.Polygon.new(points="100,100 0,100 10.0,0 90.0,0"),
         ),
     ],

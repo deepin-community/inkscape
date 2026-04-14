@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg"
+    xmlns:xlink="http://www.w3.org/1999/xlink"
+    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" viewBox="0.0 0.0 1280.0 800.0"
+    width="1280.0" height="800.0">
+    <sodipodi:namedview guidecolor="#0080dc" guideopacity="0.8000000715255737" />
+    <defs>
+        <rect x="69.17771883289129" y="53.05039787798409" width="352.02030886397296"
+            height="99.14674564558214" rx="0.0" id="rect5815" />
+        <rect x="750.837211671088" y="162.30641117855424" width="220.66368169761256"
+            height="178.35592303895243" rx="0.0" id="rect8555" />
+        <rect x="678.8682143236075" y="153.68432264188814" width="199.51270026525174"
+            height="168.88124764988905" rx="0.0" id="rect5392" />
+        <rect x="630.7425485411142" y="153.68432264188814" width="185.36903978779822"
+            height="168.88124764988905" rx="0.0" id="rect9603" />
+        <rect x="630.7425485411143" y="158.2002503241065" width="185.36903978779822"
+            height="173.84372845573438" rx="0.0" id="rect4306" />
+        <ellipse cx="338.0532407609315" cy="620.568185274989" rx="114.41850336040106"
+            ry="116.10993593811878" id="ellipse7856" />
+        <path
+            d="M 1482.36 549.435 C 1546.17 549.435 1597.97 598.073 1597.97 657.979 C 1597.97 717.886 1546.17 766.522 1482.36 766.522 C 1418.55 766.522 1366.75 717.886 1366.75 657.979 C 1366.75 598.073 1418.55 549.435 1482.36 549.435 Z"
+            id="path5654" />
+        <path
+            d="M 658.85 908.04 C 658.85 820.533 751.854 799.185 801.639 797.705 C 851.422 796.226 954.707 819.278 957.552 899.163"
+            id="path6457" />
+        <path
+            d="M 638.758 309.317 C 675.65 309.317 705.602 333.564 705.602 363.429 C 705.602 393.294 675.65 417.54 638.758 417.54 C 601.866 417.54 571.915 393.294 571.915 363.429 C 571.915 333.564 601.866 309.317 638.758 309.317 Z"
+            id="path2304" />
+    </defs>
+    <text
+        style="shape-inside:url(#rect5815);white-space:pre;font-size:0;line-height:0;fill:none;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0"
+        xml:space="preserve"
+        transform="matrix(1.63139 -0.749562 0.333726 0.726341 -66.8128 263.595)"><tspan sodipodi:role="line"><tspan style="line-height:37.54883294549045pt;text-anchor:start;text-align:start"><tspan style="fill:#000000;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;font-size:57.76743530075454;font-family:Arial;font-weight:400;font-style:normal;font-stretch:normal;lang:en-IN">Artistic Text</tspan></tspan></tspan></text>
+    <text
+        style="shape-inside:url(#rect8555);white-space:pre;font-size:0;line-height:0;fill:none;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0"
+        xml:space="preserve"
+        transform="matrix(1.05533 -0.677427 0.414011 0.644964 -346.461 604.791)"><tspan sodipodi:role="line"><tspan style="line-height:31.200000000000003pt;text-anchor:start;text-align:start"><tspan style="fill:#000000;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;font-size:48.0;font-family:Arial;font-weight:400;font-style:normal;font-stretch:normal;lang:en-IN">Text in frame TFM</tspan></tspan></tspan></text>
+    <text
+        style="shape-inside:url(#rect5392);white-space:pre;font-size:0;line-height:0;fill:none;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0"
+        xml:space="preserve" transform="matrix(1.25404 0 1.38675e-16 -0.766409 -299.836 862.003)"><tspan sodipodi:role="line"><tspan style="line-height:31.200000000000003pt;text-anchor:start;text-align:start"><tspan style="fill:#000000;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;font-size:48.0;font-family:Arial;font-weight:400;font-style:normal;font-stretch:normal;lang:en-IN">Text in frame TFM</tspan></tspan></tspan></text>
+    <text
+        style="shape-inside:url(#rect9603);white-space:pre;font-size:0;line-height:0;fill:none;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0"
+        xml:space="preserve"
+        transform="matrix(-1.25404 -3.18869e-16 5.22181e-17 -0.766409 1916.97 862.003)"><tspan sodipodi:role="line"><tspan style="line-height:31.200000000000003pt;text-anchor:start;text-align:start"><tspan style="fill:#000000;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;font-size:48.0;font-family:Arial;font-weight:400;font-style:normal;font-stretch:normal;lang:en-IN">Text in frame TFM</tspan></tspan></tspan></text>
+    <text
+        style="shape-inside:url(#rect4306);white-space:pre;font-size:0;line-height:0;fill:none;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0"
+        xml:space="preserve"
+        transform="matrix(-1.25404 1.65742e-17 -1.34309e-16 0.766409 1142.17 512.119)"><tspan sodipodi:role="line"><tspan style="line-height:31.200000000000003pt;text-anchor:start;text-align:start"><tspan style="fill:#000000;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;font-size:48.0;font-family:Arial;font-weight:400;font-style:normal;font-stretch:normal;lang:en-IN">Text in frame TFM</tspan></tspan></tspan></text>
+    <text
+        style="shape-inside:url(#ellipse7856);white-space:pre;font-size:0;line-height:0;fill:none;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0"
+        xml:space="preserve"
+        transform="matrix(1.18115 -0.655018 0.454589 0.819729 -402.151 152.119)"><tspan sodipodi:role="line"><tspan style="line-height:31.200000000000003pt;text-anchor:start;text-align:start"><tspan style="fill:#000000;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;font-size:48.0;font-family:Arial;font-weight:400;font-style:normal;font-stretch:normal;lang:en-IN">Text in shape TFM</tspan></tspan></tspan></text>
+    <text
+        style="shape-inside:url(#path5654);white-space:pre;font-size:0;line-height:0;fill:none;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0"
+        xml:space="preserve" transform="matrix(1.261 -0.740633 0.46781 0.796493 -1541.31 980.999)"><tspan sodipodi:role="line"><tspan style="line-height:31.200000000000003pt;text-anchor:start;text-align:start"><tspan style="fill:#000000;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;font-size:48.0;font-family:Arial;font-weight:400;font-style:normal;font-stretch:normal;lang:en-IN">Text in curve TFM</tspan></tspan></tspan></text>
+    <text
+        style="white-space:pre;font-size:0;line-height:0;fill:none;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0"
+        xml:space="preserve" transform="matrix(1.2771 -0.420518 0.24663 0.749007 -239.345 -124.518)"><textPath xlink:href="#path6457" startOffset="8.972995530614062%" side="left"><tspan style="line-height:57.76743530075454pt;text-anchor:start;text-align:start"><tspan style="fill:#000000;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;font-size:57.76743530075454;font-family:Arial;font-weight:400;font-style:normal;font-stretch:normal;lang:en-IN">Curve Text</tspan></tspan></textPath></text>
+    <text
+        style="white-space:pre;font-size:0;line-height:0;fill:none;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0"
+        xml:space="preserve" transform="matrix(1.37876 -0.922173 0.75762 1.13273 -146.275 607.377)"><textPath xlink:href="#path2304" startOffset="0.0%" side="left"><tspan style="line-height:57.76743530075454pt;text-anchor:start;text-align:start"><tspan style="fill:#000000;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;font-size:57.76743530075454;font-family:Arial;font-weight:400;font-style:normal;font-stretch:normal;lang:en-IN">Curve2 Text</tspan></tspan></textPath></text>
+    <title>text_transform.svg</title>
+</svg>

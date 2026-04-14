@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg"
+    xmlns:xlink="http://www.w3.org/1999/xlink"
+    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+    viewBox="0.0 0.0 2480.314960629921 3507.8740157480315" width="2480.314960629921"
+    height="3507.8740157480315">
+    <sodipodi:namedview guidecolor="#0080dc" guideopacity="0.8000000715255737" />
+    <g style="opacity:1.0;fill:#a6a6a6;fill-opacity:1.0;stroke:none;stroke-opacity:1.0">
+        <path
+            d="M 367.258 141.407 L 1061.98 476.766 A 431.157 431.157 0 0 1 837.34 861.095 L 206.067 556.366 A 431.157 431.157 0 0 1 367.258 141.407 Z"
+            style="fill:#a6a6a6;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path d="M 1773.43 702.059 L 1191.41 120.047 A 431.157 431.157 0 0 1 1773.43 702.059 Z"
+            style="fill:#a6a6a6;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path d="M 1732.42 951.956 L 965.891 1346.94 A 431.157 431.157 0 0 1 1732.42 951.956 Z"
+            style="fill:#a6a6a6;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path d="M 468.855 1059.93 L 1000.56 1591.63 A 431.157 431.157 0 1 1 468.855 1059.93 Z"
+            style="fill:#a6a6a6;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path d="M 226.668 2162.56 L 817.727 2753.62 A 431.157 431.157 0 0 1 226.668 2162.56 Z"
+            style="fill:#a6a6a6;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path
+            d="M 1220.38 2735.68 L 789.228 2304.53 A 431.157 431.157 0 0 1 849.954 2083.9 L 1441.01 2674.96 A 431.157 431.157 0 0 1 1220.38 2735.68 Z"
+            style="fill:#a6a6a6;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path
+            d="M 2208.04 2241.15 L 1604.48 1637.59 A 431.157 431.157 0 0 1 1861.45 1474 L 2371.63 1984.17 A 431.157 431.157 0 0 1 2208.04 2241.15 Z"
+            style="fill:#a6a6a6;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path
+            d="M 1757.39 1109.12 L 1488.05 1486.59 A 367.872 77.8647 -42.5391 1 1 1757.39 1109.12 Z"
+            style="fill:#a6a6a6;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+        <path
+            d="m 1293.56 2257.94 A 271.946 205.381 90 1 0 1293.56 1714.05 A 271.946 205.381 90 1 0 1293.56 2257.94"
+            style="fill:#a6a6a6;fill-opacity:1.0;stroke:none;stroke-opacity:1.0;opacity:1.0" />
+    </g>
+    <g
+        style="opacity:1.0;fill:none;fill-opacity:1.0;stroke:#0f15ed;stroke-opacity:1.0;stroke-width:3.0416666666666385;stroke-linecap:butt;paint-order:fill stroke markers;stroke-linejoin:round">
+        <path
+            d="M 367.259 141.407 L 1061.98 476.766 C 1062.01 478.708 1062.02 480.65 1062.02 482.593 C 1062.02 640.366 975.846 785.539 837.34 861.095 L 206.067 556.365 C 201.836 532.002 199.709 507.32 199.709 482.593 C 199.709 349.054 261.586 223.052 367.259 141.407 Z"
+            style="fill:none;fill-opacity:1.0;stroke:#0f15ed;stroke-opacity:1.0;stroke-width:3.0416666666666385;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 1773.43 702.059 L 1191.41 120.047 C 1253.15 87.6986 1321.82 70.8004 1391.52 70.8004 C 1629.48 70.8004 1822.67 263.995 1822.67 501.957 C 1822.67 571.658 1805.77 640.319 1773.43 702.059 Z"
+            style="fill:none;fill-opacity:1.0;stroke:#0f15ed;stroke-opacity:1.0;stroke-width:3.0416666666666385;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 1732.42 951.956 L 965.891 1346.94 C 934.42 1285.86 918 1218.15 918 1149.45 C 918 911.486 1111.19 718.291 1349.16 718.291 C 1510.58 718.291 1658.48 808.462 1732.42 951.956 Z"
+            style="fill:none;fill-opacity:1.0;stroke:#0f15ed;stroke-opacity:1.0;stroke-width:3.0416666666666385;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 468.854 1059.93 L 1000.56 1591.63 C 948.303 1777.64 778.685 1906.17 585.48 1906.17 C 347.519 1906.17 154.324 1712.97 154.324 1475.01 C 154.324 1281.8 282.852 1112.19 468.854 1059.93 Z"
+            style="fill:none;fill-opacity:1.0;stroke:#0f15ed;stroke-opacity:1.0;stroke-width:3.0416666666666385;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 226.667 2162.56 L 817.727 2753.62 C 750.996 2793.37 674.768 2814.35 597.099 2814.35 C 359.137 2814.35 165.942 2621.15 165.942 2383.19 C 165.942 2305.52 186.923 2229.29 226.667 2162.56 Z"
+            style="fill:none;fill-opacity:1.0;stroke:#0f15ed;stroke-opacity:1.0;stroke-width:3.0416666666666385;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 1220.38 2735.68 L 789.228 2304.52 C 789.228 2226.85 810.209 2150.63 849.953 2083.9 L 1441.01 2674.95 C 1374.28 2714.7 1298.05 2735.68 1220.38 2735.68 Z"
+            style="fill:none;fill-opacity:1.0;stroke:#0f15ed;stroke-opacity:1.0;stroke-width:3.0416666666666385;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 2208.04 2241.15 L 1604.47 1637.59 C 1667.37 1553.61 1758.74 1495.45 1861.45 1474 L 2371.62 1984.18 C 2350.18 2086.89 2292.02 2178.25 2208.04 2241.15 Z"
+            style="fill:none;fill-opacity:1.0;stroke:#0f15ed;stroke-opacity:1.0;stroke-width:3.0416666666666385;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 1757.4 1109.12 L 1488.05 1486.59 C 1364.73 1586.94 1263.22 1638.51 1239.63 1612.8 C 1210.58 1581.14 1308.44 1443.98 1458.04 1306.71 C 1579.5 1195.26 1701.83 1114.52 1757.4 1109.12 Z"
+            style="fill:none;fill-opacity:1.0;stroke:#0f15ed;stroke-opacity:1.0;stroke-width:3.041666666666639;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+        <path
+            d="M 1293.56 1714.06 C 1180.21 1714.06 1088.18 1835.91 1088.18 1986 C 1088.18 2136.09 1180.21 2257.95 1293.56 2257.95 C 1406.91 2257.95 1498.94 2136.09 1498.94 1986 C 1498.94 1835.91 1406.91 1714.06 1293.56 1714.06 Z"
+            style="fill:none;fill-opacity:1.0;stroke:#0f15ed;stroke-opacity:1.0;stroke-width:3.041666666666638;stroke-linecap:round;paint-order:fill stroke markers;stroke-linejoin:round;opacity:1.0" />
+    </g>
+    <title>segment.svg</title>
+</svg>

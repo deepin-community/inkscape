@@ -15,6 +15,26 @@
 #include <glib/poppler-features.h>
 #include <poppler/UTF.h>
 
+#if POPPLER_CHECK_VERSION(25,2,0)
+#define _POPPLER_GET_CODE_TO_GID_MAP(ff, len) getCodeToGIDMap(ff)
+#define _POPPLER_GET_CID_TO_GID_MAP(len) getCIDToGIDMap()
+#else
+#define _POPPLER_GET_CODE_TO_GID_MAP(ff, len) getCodeToGIDMap(ff, len)
+#define _POPPLER_GET_CID_TO_GID_MAP(len) getCIDToGIDMap(len)
+#endif
+
+#if POPPLER_CHECK_VERSION(24,12,0)
+#define _POPPLER_GET_IMAGE_PARAMS(bits, csMode, hasAlpha) getImageParams(bits, csMode, hasAlpha)
+#else
+#define _POPPLER_GET_IMAGE_PARAMS(bits, csMode, hasAlpha) getImageParams(bits, csMode)
+#endif
+
+#if POPPLER_CHECK_VERSION(24, 10, 0)
+#define _POPPLER_CONSUME_UNIQPTR_ARG(value) std::move(value)
+#else
+#define _POPPLER_CONSUME_UNIQPTR_ARG(value) value.release()
+#endif
+
 #if POPPLER_CHECK_VERSION(24, 5, 0)
 #define _POPPLER_HAS_UNICODE_BOM(value) (hasUnicodeByteOrderMark(value->toStr()))
 #define _POPPLER_HAS_UNICODE_BOMLE(value) (hasUnicodeByteOrderMarkLE(value->toStr()))

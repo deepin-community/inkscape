@@ -18,8 +18,10 @@ readme = "readme.md"
 repository = "https://gitlab.com/inkscape/extras/extension-xaml"
 
 [tool.poetry.dependencies]
-python = "^3.8"
-inkex = {git = "https://gitlab.com/inkscape/extensions.git", rev = "1.3.x"}
+python = "^3.9"
+inkex = [
+        {git = "https://gitlab.com/inkscape/extensions.git", rev = "1.4.x"}
+    ]
 
 
 [tool.poetry.dev-dependencies]

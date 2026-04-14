@@ -92,7 +92,7 @@ def localize():
 
 def are_near_relative(a, b, eps):
     _deprecated(
-        "inkex.are_near_relative was moved to " "inkex.units.are_near_relative", stack=2
+        "inkex.are_near_relative was moved to inkex.units.are_near_relative", stack=2
     )
     return units.are_near_relative(a, b, eps)
 
@@ -152,7 +152,9 @@ BaseElement.description = deprecate(description, "1.1")
 
 def composed_style(element: ShapeElement):
     """Calculate the final styles applied to this element
-    This function has been deprecated in favor of BaseElement.specified_style()"""
+
+    This function has been deprecated in favor of BaseElement.specified_style()
+    """
     return element.specified_style()
 
 
@@ -182,10 +184,11 @@ Transform.__mul__ = deprecate(transform_mul, "1.2")  # type: ignore
 
 
 def to_xpath(self):
-    """Depending on whether you need to apply the rule to an invididual element
+    """Depending on whether you need to apply the rule to an individual element
     or find all matches in a subtree, use
 
     .. code::
+
         style.matches(element)
         style.all_matches(subtree)
     """
@@ -193,10 +196,11 @@ def to_xpath(self):
 
 
 def to_xpaths(self):
-    """Depending on whether you need to apply the rule to an invididual element
+    """Depending on whether you need to apply the rule to an individual element
     or find all matches in a subtree, use
 
     .. code::
+
         style.matches(element)
         style.all_matches(subtree)
     """
@@ -217,8 +221,11 @@ ConditionalStyle.to_xpaths = deprecate(to_xpaths, "1.4")  # type: ignore
 
 
 def apply_shorthands(self):
-    """Apply all shorthands in this style. Shorthands are now simplified automatically,
-    so this method does nothing"""
+    """Apply all shorthands in this style.
+
+    Shorthands are now simplified automatically,
+    so this method does nothing
+    """
 
 
 Style.apply_shorthands = deprecate(apply_shorthands, "1.4")  # type: ignore

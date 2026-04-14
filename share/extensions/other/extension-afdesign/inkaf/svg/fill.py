@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import InitVar, dataclass, field
 from enum import Enum
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional
 
 import inkex
 
@@ -114,17 +114,17 @@ class AFColor:
         assert self.space != AFColorSpace.UNKNOWN, f"Unknown color space: {_space}"
 
         assert 0 <= self.alpha <= 1, f"Bad alpha: {self.alpha}"
-        assert (
-            len(self.color) == 1 or self.space != AFColorSpace.GRAY
-        ), f"Bad {self.space.name} color list: {self.color}"
+        assert len(self.color) == 1 or self.space != AFColorSpace.GRAY, (
+            f"Bad {self.space.name} color list: {self.color}"
+        )
         assert len(self.color) == 3 or self.space not in [
             AFColorSpace.RGB,
             AFColorSpace.HSL,
             AFColorSpace.LAB,
         ], f"Bad {self.space.name} color list: {self.color}"
-        assert (
-            len(self.color) == 4 or self.space != AFColorSpace.CMYK
-        ), f"Bad {self.space.name} color list: {self.color}"
+        assert len(self.color) == 4 or self.space != AFColorSpace.CMYK, (
+            f"Bad {self.space.name} color list: {self.color}"
+        )
 
     @classmethod
     def from_af(cls, color: AFObject) -> AFColor:
@@ -236,8 +236,8 @@ def parse_solid(fill: AFObject) -> AFColor:
     return AFColor.from_af(fill["Colr"])
 
 
-def parse_no_fill(_: Optional[AFObject] = None) -> AFColor:
-    return AFColor([0, 0, 0], alpha=0, _space=AFColorSpace.RGB)
+def parse_no_fill(_: Optional[AFObject] = None) -> None:
+    return None
 
 
 def parse_gradient(
@@ -246,7 +246,7 @@ def parse_gradient(
     return AFGradient.from_af(fill, tfm, fdsc)
 
 
-fdsc_map: Dict[str, Callable[[AFObject], Union[AFColor, AFGradient]]] = {
+fdsc_map: Dict[str, Callable[[AFObject], Optional[AFColor | AFGradient]]] = {
     "FilN": lambda _: parse_no_fill(),
     "FilS": lambda fdsc: parse_solid(fdsc["FDeF"]),
     "FilG": lambda fdsc: parse_gradient(fdsc["FDeF"], fdsc["FDeX"], fdsc.get("FDSc")),
@@ -254,7 +254,7 @@ fdsc_map: Dict[str, Callable[[AFObject], Union[AFColor, AFGradient]]] = {
 }
 
 
-def parse_fdsc(fdsc: AFObject) -> Union[AFColor, AFGradient]:
+def parse_fdsc(fdsc: AFObject) -> Optional[AFColor | AFGradient]:
     assert fdsc.get_type() == "FDsc", f"Not a fill desc: {fdsc}"
     fill_type = fdsc["FDeF"].get_type()
     assert fill_type in [
@@ -271,7 +271,7 @@ def parse_fdsc(fdsc: AFObject) -> Union[AFColor, AFGradient]:
     return fn(fdsc)
 
 
-def parse_bfil(bfil: AFObject) -> Union[AFColor, AFGradient]:
+def parse_bfil(bfil: AFObject) -> Optional[AFColor | AFGradient]:
     if bfil.get_type() == "FDsc":
         return parse_fdsc(bfil)
     if bfil.get_type() == "FilS":
